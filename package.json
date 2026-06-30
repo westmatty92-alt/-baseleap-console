@@ -1,0 +1,7 @@
+{
+  "name": "baseleap-console",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Baseleap Console — internal agency client-acquisition suite",
+  "engines": { "node": ">=18" }
+}
