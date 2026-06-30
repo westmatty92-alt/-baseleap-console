@@ -61,6 +61,39 @@
   .modal h3{font-size:16px;margin-bottom:14px;color:#0D1F2D}
   .modal input,.modal select{width:100%;padding:10px 12px;border:1px solid #E2E6E3;border-radius:10px;margin-bottom:10px;font-size:14px}
   .modal .row{display:flex;gap:8px;justify-content:flex-end;margin-top:8px}
+
+  /* Audit module */
+  .subtabs{display:flex;gap:4px;margin-bottom:18px;border-bottom:1px solid var(--line)}
+  .subtab{padding:8px 14px;font-size:13px;border:none;background:none;color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-1px}
+  .subtab.active{color:var(--midnight);border-bottom-color:var(--volt);font-weight:600}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:14px}
+  .phase-h{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px}
+  .phase-t{font-size:15px;font-weight:600;margin-bottom:10px}
+  .script{background:var(--midnight);color:#E2E8F0;border-radius:10px;padding:12px 14px;font-size:13px;font-style:italic;line-height:1.6;margin-bottom:10px}
+  .q{font-size:13px;padding:7px 0;border-bottom:1px solid var(--line);line-height:1.5}
+  .q:last-child{border-bottom:none}
+  .tip{background:#EAF7F2;border:1px solid #B7E6D6;color:#0A5C45;font-size:12px;padding:9px 12px;border-radius:8px;margin-top:10px;line-height:1.5}
+  .notes{width:100%;min-height:64px;font-size:13px;padding:9px 11px;border:1px solid var(--line);border-radius:8px;resize:vertical;font-family:inherit;line-height:1.5;margin-top:10px}
+  .notes:focus{outline:none;border-color:var(--volt)}
+  textarea.capture{width:100%;min-height:220px;font-size:13px;padding:12px;border:1px solid var(--line);border-radius:10px;resize:vertical;font-family:inherit;line-height:1.6}
+  textarea.capture:focus{outline:none;border-color:var(--volt)}
+  .btn-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;align-items:center}
+  .msg{font-size:12px;color:var(--muted)}
+  .gap-card{border:1px solid var(--line);border-radius:10px;margin-bottom:12px;overflow:hidden}
+  .gap-top{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--canvas)}
+  .gap-top input.gtitle{flex:1;border:none;background:none;font-size:14px;font-weight:600;color:var(--ink);padding:2px}
+  .gap-top input.gtitle:focus{outline:none}
+  .gap-top select{font-size:12px;padding:3px 6px;border:1px solid var(--line);border-radius:6px;background:#fff}
+  .gap-del{border:none;background:none;color:var(--muted);font-size:16px;cursor:pointer;padding:0 4px}
+  .gap-del:hover{color:#C0392B}
+  .gap-body{padding:10px 12px}
+  .gap-body label{font-size:11px;color:var(--muted);display:block;margin-bottom:2px}
+  .gap-body textarea{width:100%;font-size:13px;border:1px solid var(--line);border-radius:6px;padding:6px 8px;resize:vertical;font-family:inherit;min-height:40px;margin-bottom:8px;line-height:1.5}
+  .gap-body textarea:focus{outline:none;border-color:var(--volt)}
+  .sev-high{border-left:3px solid #E24B4A}
+  .sev-medium{border-left:3px solid #EF9F27}
+  .sev-low{border-left:3px solid #639922}
+  .audit-empty{color:var(--muted);font-size:13px;padding:24px 0}
 </style>
 </head>
 <body>
@@ -129,6 +162,8 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 /* ============================================================
    GLOBAL STATE  (S.* is reset on every client switch)
 ============================================================ */
+function freshAudit(){ return { tab:"guide", guideNotes:{}, captureText:"", summary:null, sessionId:null, loaded:false, analyzing:false, msg:"" }; }
+
 const S = {
   user: null,
   clients: [],
@@ -136,7 +171,7 @@ const S = {
   activeClient: null,
   module: 'audit',
   // per-client module state — cleared by resetClientState()
-  audit: null,
+  audit: freshAudit(),
   gaps: [],
   buildPlan: null,
   report: null,
@@ -146,7 +181,7 @@ const S = {
 function resetClientState(){
   // CRITICAL: clears all loaded module data before a new client loads,
   // so client B never sees client A's audit/report. (switchBusiness discipline)
-  S.audit = null;
+  S.audit = freshAudit();
   S.gaps = [];
   S.buildPlan = null;
   S.report = null;
@@ -278,6 +313,7 @@ function render(){
     return;
   }
   setStatus(S.activeClient.business_name + (S.activeClient.industry ? " · " + S.activeClient.industry : ""));
+  if(S.module === "audit"){ renderAudit(); return; }
   content.innerHTML = `
     <div class="panel-title">${m.title}</div>
     <div class="panel-sub">${m.sub}</div>
@@ -288,6 +324,213 @@ function render(){
 }
 
 function setStatus(t){ document.getElementById("status").textContent = t; }
+
+/* ============================================================
+   MODULE 1 — AI AUDIT ASSISTANT
+============================================================ */
+const GUIDE = [
+  { id:"pre", label:"Pre-call", title:"Pre-audit form",
+    tip:"Send 24–48h before the call. Read the answers first. Use their words back to them.",
+    questions:[
+      "What does your current process look like when a new lead comes in?",
+      "What is the most repetitive task your team does every week?",
+      "Where do things most often fall through the cracks?",
+      "What tools are you using right now? (everything — even spreadsheets)",
+      "If your operations were completely fixed, what would that look like?"
+    ]},
+  { id:"open", label:"Opening", title:"Set the tone",
+    tip:"Do not pitch. Open with this, then stop talking and take notes in their words.",
+    script:[
+      "\"Before I show you anything, I just want to understand how your business runs day to day.\"",
+      "\"Walk me through what happens from the moment someone reaches out to the moment they become a paying customer.\""
+    ]},
+  { id:"leads", label:"Leads", title:"Lead & intake",
+    tip:"If they mention a spreadsheet, note it — the clearest signal automation delivers visible value.",
+    questions:[
+      "Where do your leads come from right now?",
+      "When a lead comes in, who sees it first and what do they do with it?",
+      "How quickly does someone follow up, and how?",
+      "What happens if nobody follows up that day?",
+      "Have you ever lost a job because a lead didn't get a fast response?"
+    ]},
+  { id:"booking", label:"Booking", title:"Booking & scheduling",
+    tip:"Turn their scheduling-time answer into a dollar figure for the debrief.",
+    questions:[
+      "How do customers currently book or schedule with you?",
+      "Who manages the calendar and how do they communicate about it?",
+      "What happens when someone cancels or reschedules?",
+      "Do you get no-shows? What's the process when that happens?",
+      "How much time per week goes to scheduling back-and-forth?"
+    ]},
+  { id:"ops", label:"Operations", title:"Operations & repetitive work",
+    tip:"Quote the specific manual task back, in their words, during the debrief.",
+    questions:[
+      "Walk me through what happens after a booking is confirmed.",
+      "Which steps does someone do manually every single time?",
+      "What does your team spend the most time on that isn't serving a customer?",
+      "If you could remove one task from your team's day tomorrow, what would it be?",
+      "Do you have any automations running, or is most of it manual?"
+    ]},
+  { id:"followup", label:"Follow-up", title:"Follow-up & retention",
+    tip:"If they do nothing post-service, frame it as uncaptured revenue — not a failure.",
+    questions:[
+      "What happens after a job is completed or a service delivered?",
+      "Do you follow up — reviews, check-ins, offers?",
+      "Do you stay in touch with past customers, or only when they reach out?"
+    ]},
+  { id:"gut", label:"Gut check", title:"The gut check",
+    tip:"Let them articulate the cost of staying the same and the value of fixing it.",
+    questions:[
+      "On a scale of 1–10, how organized do your operations feel right now?",
+      "What is the cost of leaving things as they are — time, missed revenue, stress?",
+      "If we fixed the three biggest gaps today, what would that mean for the business?"
+    ]},
+  { id:"debrief", label:"Debrief", title:"Reflect it back",
+    tip:"Reflect back before proposing anything. When they say \"yes, exactly\" — trust is built.",
+    script:[
+      "\"Here is what I am seeing based on what you have told me.\"",
+      "[List their gaps back, in their language]",
+      "\"I'll put together a gap report and roadmap, then walk you through exactly what I'd fix and in what order.\""
+    ]}
+];
+
+function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function escAttr(s){ return esc(s).replace(/"/g,"&quot;"); }
+function setAuditMsg(t){ S.audit.msg = t; const el = document.getElementById("audit-msg"); if(el) el.textContent = t; }
+
+function renderAudit(){
+  const content = document.getElementById("content");
+  if(!S.audit.loaded){ content.innerHTML = `<div class="audit-empty">Loading audit…</div>`; loadAuditData(S.activeClientId); return; }
+  const tabs = [["guide","Guide"],["capture","Capture"],["gaps","Gaps"]];
+  content.innerHTML = `
+    <div class="panel-title">Audit assistant</div>
+    <div class="panel-sub">${esc(S.activeClient.business_name)}${S.activeClient.industry ? " · " + esc(S.activeClient.industry) : ""}</div>
+    <div class="subtabs">
+      ${tabs.map(([id,lbl]) => `<button class="subtab ${S.audit.tab===id?"active":""}" onclick="auditTab('${id}')">${lbl}${id==="gaps"&&S.gaps.length?` (${S.gaps.length})`:""}</button>`).join("")}
+    </div>
+    <div id="audit-body"></div>`;
+  renderAuditBody();
+}
+
+function auditTab(t){ S.audit.tab = t; renderAudit(); }
+
+function renderAuditBody(){
+  const body = document.getElementById("audit-body");
+  if(S.audit.tab === "guide") body.innerHTML = renderGuide();
+  else if(S.audit.tab === "capture") body.innerHTML = renderCapture();
+  else body.innerHTML = renderGaps();
+}
+
+function renderGuide(){
+  return GUIDE.map(p => `
+    <div class="card">
+      <div class="phase-h">${esc(p.label)}</div>
+      <div class="phase-t">${esc(p.title)}</div>
+      ${p.script ? `<div class="script">${p.script.map(l => esc(l)).join("<br><br>")}</div>` : ""}
+      ${p.questions ? p.questions.map(q => `<div class="q">${esc(q)}</div>`).join("") : ""}
+      <div class="tip">${esc(p.tip)}</div>
+      <textarea class="notes" placeholder="Notes — what did they say? (in their words)" onchange="S.audit.guideNotes['${p.id}']=this.value">${esc(S.audit.guideNotes[p.id]||"")}</textarea>
+    </div>`).join("");
+}
+
+function renderCapture(){
+  return `
+    <div class="card">
+      <div class="phase-t">Transcript / notes</div>
+      <p class="panel-sub">Paste the Zoom or Google Meet transcript, or any rough notes. This is combined with your Guide notes for the analysis.</p>
+      <textarea class="capture" placeholder="Paste transcript or notes here…" onchange="S.audit.captureText=this.value">${esc(S.audit.captureText)}</textarea>
+    </div>`;
+}
+
+function renderGaps(){
+  const sevSel = (i,v) => ["high","medium","low"].map(s => `<option value="${s}" ${v===s?"selected":""}>${s}</option>`).join("");
+  const cards = S.gaps.map((g,i) => `
+    <div class="gap-card sev-${esc(g.severity||"medium")}">
+      <div class="gap-top">
+        <input class="gtitle" value="${escAttr(g.title)}" onchange="editGap(${i},'title',this.value)">
+        <select onchange="editGap(${i},'severity',this.value);renderAudit()">${sevSel(i,g.severity||"medium")}</select>
+        <button class="gap-del" title="Remove" onclick="deleteGap(${i})">×</button>
+      </div>
+      <div class="gap-body">
+        <label>What's happening</label>
+        <textarea onchange="editGap(${i},'problem',this.value)">${esc(g.problem)}</textarea>
+        <label>Cost of leaving it</label>
+        <textarea onchange="editGap(${i},'cost',this.value)">${esc(g.cost)}</textarea>
+      </div>
+    </div>`).join("");
+  return `
+    <div class="card">
+      <div class="phase-t">Identified gaps</div>
+      <p class="panel-sub">${S.audit.summary ? esc(S.audit.summary) : "Run the analysis to surface gaps from your notes. Edit anything before saving."}</p>
+      <div class="btn-row">
+        <button class="btn-primary" style="width:auto" onclick="analyzeGaps()" ${S.audit.analyzing?"disabled":""}>${S.audit.analyzing?"Analyzing…":(S.gaps.length?"Re-analyze":"Analyze notes")}</button>
+        ${S.gaps.length?`<button class="btn-ghost" onclick="saveAudit()">Save to client</button>`:""}
+        <span class="msg" id="audit-msg">${esc(S.audit.msg)}</span>
+      </div>
+    </div>
+    ${S.gaps.length ? cards : `<div class="audit-empty">No gaps yet. Capture notes, then Analyze.</div>`}`;
+}
+
+function getAuditText(){
+  const guide = GUIDE.map(p => { const n = (S.audit.guideNotes[p.id]||"").trim(); return n ? `[${p.title}] ${n}` : ""; }).filter(Boolean).join("\n");
+  return [guide, S.audit.captureText.trim()].filter(Boolean).join("\n\n");
+}
+
+function editGap(i, field, val){ if(S.gaps[i]) S.gaps[i][field] = val; }
+function deleteGap(i){ S.gaps.splice(i,1); renderAudit(); }
+
+async function analyzeGaps(){
+  const text = getAuditText();
+  if(text.length < 40){ setAuditMsg("Add Guide notes or a transcript first."); return; }
+  S.audit.analyzing = true; renderAudit();
+  try{
+    const out = await ai({
+      system: "You are an expert business-systems analyst on a GHL automation agency's audit call. From the notes, identify the business gaps that cost the client time or money and could be fixed with automation. Respond ONLY with valid JSON, no markdown:\n{\"summary\":\"2-3 sentence plain-language summary of their current workflow\",\"gaps\":[{\"title\":\"short gap name\",\"problem\":\"what's happening, in their words\",\"cost\":\"the time or money cost of leaving it\",\"severity\":\"high|medium|low\",\"category\":\"gap|tool|pain|win\"}]}\nThree sharp, specific gaps beat five generic ones. Use the client's own words.",
+      messages: [{ role:"user", content:`Client: ${S.activeClient.business_name} (${S.activeClient.industry||"industry n/a"})\n\nAudit notes:\n${text}` }],
+      max_tokens: 1500,
+    });
+    const parsed = JSON.parse(out.replace(/```json|```/g,"").trim());
+    S.audit.summary = parsed.summary || null;
+    S.gaps = (parsed.gaps || []).map((g,i) => ({ title:g.title||"Untitled gap", problem:g.problem||"", cost:g.cost||"", severity:g.severity||"medium", category:g.category||"gap", sort_order:i }));
+    setAuditMsg(`${S.gaps.length} gaps found — review and save.`);
+  }catch(e){
+    setAuditMsg("Could not analyze — try again.");
+  }
+  S.audit.analyzing = false; renderAudit();
+}
+
+async function saveAudit(){
+  if(!S.gaps.length){ setAuditMsg("Analyze first — nothing to save."); return; }
+  const op = S.user.id, cid = S.activeClientId;
+  const sessionRow = { operator_id:op, client_id:cid, transcript:getAuditText(), audit_summary:S.audit.summary||null, status:"analyzed" };
+  let sid = S.audit.sessionId;
+  if(sid){
+    await sb.from("audit_sessions").update(sessionRow).eq("id", sid);
+    await sb.from("gaps").delete().eq("audit_session_id", sid);
+  }else{
+    const { data, error } = await sb.from("audit_sessions").insert(sessionRow).select().single();
+    if(error){ setAuditMsg("Save failed: " + error.message); return; }
+    sid = data.id; S.audit.sessionId = sid;
+  }
+  const rows = S.gaps.map((g,i) => ({ operator_id:op, client_id:cid, audit_session_id:sid, title:g.title, problem:g.problem||null, cost:g.cost||null, severity:g.severity||"medium", category:g.category||"gap", validation_status:"pending", sort_order:i }));
+  const { error:gErr } = await sb.from("gaps").insert(rows);
+  if(gErr){ setAuditMsg("Gaps save failed: " + gErr.message); return; }
+  setAuditMsg("Saved ✓ — gaps are pending the Automation Agent's feasibility check.");
+}
+
+async function loadAuditData(clientId){
+  const { data: sessions } = await sb.from("audit_sessions").select("*").eq("client_id", clientId).order("created_at", { ascending:false }).limit(1);
+  if(sessions && sessions.length){
+    const s = sessions[0];
+    S.audit.sessionId = s.id;
+    S.audit.summary = s.audit_summary;
+    if(s.transcript && !S.audit.captureText) S.audit.captureText = s.transcript;
+    const { data: gaps } = await sb.from("gaps").select("*").eq("audit_session_id", s.id).order("sort_order");
+    S.gaps = gaps || [];
+  }
+  S.audit.loaded = true;
+  renderAudit();
+}
 
 /* ============================================================
    BOOT
