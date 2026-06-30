@@ -197,7 +197,7 @@ async function ai({ system, messages, model = "claude-sonnet-4-6", max_tokens = 
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ system, messages, model, max_tokens }),
   });
-  if(!res.ok) throw new Error("AI request failed: " + res.status);
+  if(!res.ok){ const body = await res.json().catch(()=>null); throw new Error("AI request failed: " + res.status + (body ? " — " + JSON.stringify(body) : "")); }
   const data = await res.json();
   return (data.content || []).filter(b => b.type === "text").map(b => b.text).join("");
 }
@@ -494,7 +494,8 @@ async function analyzeGaps(){
     S.gaps = (parsed.gaps || []).map((g,i) => ({ title:g.title||"Untitled gap", problem:g.problem||"", cost:g.cost||"", severity:g.severity||"medium", category:g.category||"gap", sort_order:i }));
     setAuditMsg(`${S.gaps.length} gaps found — review and save.`);
   }catch(e){
-    setAuditMsg("Could not analyze — try again.");
+    console.error("analyzeGaps error:", e);
+    setAuditMsg("Could not analyze: " + e.message);
   }
   S.audit.analyzing = false; renderAudit();
 }
