@@ -1,0 +1,30 @@
+# Secrets — never commit keys.
+.env
+.env.*
+!.env.example
+
+# Node / tooling
+node_modules/
+npm-debug.log*
+
+# Vercel
+.vercel
+
+# Supabase CLI (local)
+supabase/.temp
+supabase/.branches
+
+# Build / cache
+dist/
+.cache/
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+
+# Logs
+*.log
