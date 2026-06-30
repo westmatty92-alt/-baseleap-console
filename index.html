@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Baseleap Console</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --midnight:#0D1F2D; --depth:#1A1A2E; --volt:#00D4A0; --run:#00A878; --canvas:#F4F5F0;
+    --ink:#0D1F2D; --muted:#5B6B73; --line:#E2E6E3; --surface:#FFFFFF; --bg:#F4F5F0;
+    --radius:10px; --font:"Garet","Segoe UI",system-ui,-apple-system,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:var(--font);background:var(--bg);color:var(--ink);font-size:14px;line-height:1.5}
+  button{font-family:inherit;cursor:pointer}
+  input,select,textarea{font-family:inherit}
+
+  /* Auth gate */
+  #auth{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:var(--midnight)}
+  .auth-card{background:var(--surface);border-radius:16px;padding:2rem;width:340px;max-width:90vw}
+  .auth-card h1{font-size:20px;color:var(--midnight);margin-bottom:4px}
+  .auth-card p{color:var(--muted);font-size:13px;margin-bottom:1.25rem}
+  .auth-card input{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:var(--radius);margin-bottom:10px;font-size:14px}
+  .auth-card input:focus{outline:none;border-color:var(--volt)}
+  .auth-card .err{color:#C0392B;font-size:12px;margin-bottom:8px;display:none}
+  .btn-primary{background:var(--volt);color:var(--midnight);border:none;padding:11px 16px;border-radius:var(--radius);font-weight:600;font-size:14px;width:100%}
+  .btn-primary:hover{background:var(--run);color:#fff}
+
+  /* App layout */
+  #app{display:none;grid-template-columns:240px 1fr;height:100vh}
+  .sidebar{background:var(--midnight);color:#fff;display:flex;flex-direction:column;padding:16px 12px;gap:4px}
+  .brand{font-size:17px;font-weight:700;color:#fff;padding:8px 10px 16px;letter-spacing:.3px}
+  .brand span{color:var(--volt)}
+  .nav-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--radius);color:#B9C4CA;font-size:13px;border:none;background:none;text-align:left;width:100%}
+  .nav-item:hover{background:rgba(255,255,255,.06);color:#fff}
+  .nav-item.active{background:var(--volt);color:var(--midnight);font-weight:600}
+  .nav-spacer{flex:1}
+  .signout{color:#7C8B92;font-size:12px;background:none;border:none;text-align:left;padding:10px 12px}
+  .signout:hover{color:#fff}
+
+  .main{display:flex;flex-direction:column;overflow:hidden}
+  .topbar{display:flex;align-items:center;gap:12px;padding:14px 20px;background:var(--surface);border-bottom:1px solid var(--line)}
+  .client-switch{display:flex;align-items:center;gap:8px}
+  .client-switch label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+  .client-switch select{padding:8px 10px;border:1px solid var(--line);border-radius:var(--radius);font-size:13px;min-width:200px;background:var(--surface)}
+  .btn-ghost{background:var(--surface);border:1px solid var(--line);color:var(--ink);padding:8px 12px;border-radius:var(--radius);font-size:13px}
+  .btn-ghost:hover{border-color:var(--volt)}
+  .topbar-status{margin-left:auto;font-size:12px;color:var(--muted)}
+
+  .content{flex:1;overflow-y:auto;padding:24px}
+  .panel-title{font-size:18px;font-weight:600;margin-bottom:4px}
+  .panel-sub{color:var(--muted);font-size:13px;margin-bottom:20px}
+  .placeholder{background:var(--surface);border:1px dashed var(--line);border-radius:12px;padding:48px;text-align:center;color:var(--muted)}
+  .placeholder strong{color:var(--ink);display:block;margin-bottom:6px;font-size:15px}
+  .empty-client{text-align:center;color:var(--muted);padding:64px 24px}
+
+  /* Modal — hardcoded hex backgrounds (never CSS vars, per build rules) */
+  .modal-overlay{position:fixed;inset:0;background:rgba(13,31,45,.55);display:none;align-items:center;justify-content:center;z-index:50}
+  .modal{background:#FFFFFF;border-radius:14px;padding:1.5rem;width:380px;max-width:90vw}
+  .modal h3{font-size:16px;margin-bottom:14px;color:#0D1F2D}
+  .modal input,.modal select{width:100%;padding:10px 12px;border:1px solid #E2E6E3;border-radius:10px;margin-bottom:10px;font-size:14px}
+  .modal .row{display:flex;gap:8px;justify-content:flex-end;margin-top:8px}
+</style>
+</head>
+<body>
+
+<!-- ================= AUTH GATE ================= -->
+<div id="auth">
+  <div class="auth-card">
+    <h1>Baseleap <span style="color:var(--volt)">Console</span></h1>
+    <p>Internal agency console — sign in to continue.</p>
+    <div class="err" id="auth-err"></div>
+    <input type="email" id="auth-email" placeholder="Email" autocomplete="username">
+    <input type="password" id="auth-pass" placeholder="Password" autocomplete="current-password">
+    <button class="btn-primary" onclick="signIn()">Sign in</button>
+  </div>
+</div>
+
+<!-- ================= APP ================= -->
+<div id="app">
+  <nav class="sidebar">
+    <div class="brand">Baseleap<span>.</span></div>
+    <button class="nav-item" data-mod="research" onclick="switchModule('research')">Client research</button>
+    <button class="nav-item active" data-mod="audit" onclick="switchModule('audit')">Audit assistant</button>
+    <button class="nav-item" data-mod="automation" onclick="switchModule('automation')">Automation agent</button>
+    <button class="nav-item" data-mod="report" onclick="switchModule('report')">Gap report</button>
+    <button class="nav-item" data-mod="proposal" onclick="switchModule('proposal')">Proposal</button>
+    <div class="nav-spacer"></div>
+    <button class="signout" onclick="signOut()">Sign out</button>
+  </nav>
+
+  <div class="main">
+    <div class="topbar">
+      <div class="client-switch">
+        <label>Client</label>
+        <select id="client-select" onchange="loadClient(this.value)"></select>
+      </div>
+      <button class="btn-ghost" onclick="openNewClient()">+ New client</button>
+      <div class="topbar-status" id="status"></div>
+    </div>
+    <div class="content" id="content"></div>
+  </div>
+</div>
+
+<!-- ================= NEW CLIENT MODAL ================= -->
+<div class="modal-overlay" id="nc-modal">
+  <div class="modal">
+    <h3>New client</h3>
+    <input id="nc-name" placeholder="Business name *">
+    <input id="nc-industry" placeholder="Industry / vertical">
+    <input id="nc-website" placeholder="Website">
+    <input id="nc-location" placeholder="Location (city, province)">
+    <div class="row">
+      <button class="btn-ghost" onclick="closeNewClient()">Cancel</button>
+      <button class="btn-primary" style="width:auto" onclick="createClient()">Create</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   CONFIG
+============================================================ */
+const SUPABASE_URL = "https://qqgdzwkbuzciocnyimje.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFxZ2R6d2tidXpjaW9jbnlpbWplIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI4MzQzMDQsImV4cCI6MjA5ODQxMDMwNH0.Nb4jnTwJDvKFgM2RV1cSsuPNaNJJh7PqpB1Ga-8Yss4";
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+/* ============================================================
+   GLOBAL STATE  (S.* is reset on every client switch)
+============================================================ */
+const S = {
+  user: null,
+  clients: [],
+  activeClientId: null,
+  activeClient: null,
+  module: 'audit',
+  // per-client module state — cleared by resetClientState()
+  audit: null,
+  gaps: [],
+  buildPlan: null,
+  report: null,
+  proposal: null,
+};
+
+function resetClientState(){
+  // CRITICAL: clears all loaded module data before a new client loads,
+  // so client B never sees client A's audit/report. (switchBusiness discipline)
+  S.audit = null;
+  S.gaps = [];
+  S.buildPlan = null;
+  S.report = null;
+  S.proposal = null;
+}
+
+/* ============================================================
+   AI WRAPPER  — always via backend proxy, never raw to Anthropic
+============================================================ */
+async function ai({ system, messages, model = "claude-sonnet-4-6", max_tokens = 1500 }){
+  const res = await fetch("/api/ai", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ system, messages, model, max_tokens }),
+  });
+  if(!res.ok) throw new Error("AI request failed: " + res.status);
+  const data = await res.json();
+  return (data.content || []).filter(b => b.type === "text").map(b => b.text).join("");
+}
+
+/* ============================================================
+   AUTH
+============================================================ */
+async function signIn(){
+  const email = document.getElementById("auth-email").value.trim();
+  const pass = document.getElementById("auth-pass").value;
+  const err = document.getElementById("auth-err");
+  err.style.display = "none";
+  const { error } = await sb.auth.signInWithPassword({ email, password: pass });
+  if(error){ err.textContent = error.message; err.style.display = "block"; return; }
+  initApp();
+}
+
+async function signOut(){
+  await sb.auth.signOut();
+  document.getElementById("app").style.display = "none";
+  document.getElementById("auth").style.display = "flex";
+}
+
+/* ============================================================
+   APP INIT
+============================================================ */
+async function initApp(){
+  const { data: { session } } = await sb.auth.getSession();
+  if(!session){ document.getElementById("auth").style.display = "flex"; return; }
+  S.user = session.user;
+  document.getElementById("auth").style.display = "none";
+  document.getElementById("app").style.display = "grid";
+  await loadClients();
+  render();
+}
+
+/* ============================================================
+   CLIENTS  (the business-switcher dropdown)
+============================================================ */
+async function loadClients(){
+  const { data, error } = await sb
+    .from("clients")
+    .select("id,business_name,industry,website,location,status")
+    .eq("archived", false)
+    .order("business_name");
+  if(error){ setStatus("Error loading clients"); return; }
+  S.clients = data || [];
+  const sel = document.getElementById("client-select");
+  if(!S.clients.length){
+    sel.innerHTML = `<option value="">No clients yet</option>`;
+    S.activeClientId = null; S.activeClient = null;
+    return;
+  }
+  sel.innerHTML = S.clients.map(c => `<option value="${c.id}">${c.business_name}</option>`).join("");
+  if(!S.activeClientId) await loadClient(S.clients[0].id);
+}
+
+async function loadClient(id){
+  if(!id){ S.activeClientId = null; S.activeClient = null; resetClientState(); render(); return; }
+  resetClientState();                 // wipe previous client's loaded data first
+  S.activeClientId = id;
+  document.getElementById("client-select").value = id;
+  const { data } = await sb.from("clients").select("*").eq("id", id).single();
+  S.activeClient = data || null;
+  // module data loads lazily inside each module when it's built
+  render();
+}
+
+function openNewClient(){ document.getElementById("nc-modal").style.display = "flex"; }
+function closeNewClient(){ document.getElementById("nc-modal").style.display = "none"; }
+
+async function createClient(){
+  const name = document.getElementById("nc-name").value.trim();
+  if(!name){ return; }
+  const row = {
+    operator_id: S.user.id,            // RLS: every insert must stamp operator_id
+    business_name: name,
+    industry: document.getElementById("nc-industry").value.trim() || null,
+    website: document.getElementById("nc-website").value.trim() || null,
+    location: document.getElementById("nc-location").value.trim() || null,
+  };
+  const { data, error } = await sb.from("clients").insert(row).select().single();
+  if(error){ setStatus("Could not create client: " + error.message); return; }
+  ["nc-name","nc-industry","nc-website","nc-location"].forEach(i => document.getElementById(i).value = "");
+  closeNewClient();
+  await loadClients();
+  await loadClient(data.id);
+}
+
+/* ============================================================
+   MODULE ROUTING  (modules filled in subsequent sessions)
+============================================================ */
+function switchModule(mod){
+  S.module = mod;
+  document.querySelectorAll(".nav-item").forEach(n => n.classList.toggle("active", n.dataset.mod === mod));
+  render();
+}
+
+const MODULES = {
+  research:  { title: "Client research",  sub: "Pre-call brief, auto-built from the lead form." },
+  audit:     { title: "Audit assistant",  sub: "Capture the call, surface gaps, draft the diagnosis." },
+  automation:{ title: "Automation agent", sub: "Feasibility gate — confirm each gap is buildable." },
+  report:    { title: "Gap report",       sub: "The client-facing report, built from validated gaps." },
+  proposal:  { title: "Proposal",         sub: "Scoped proposal from the gap report and a package." },
+};
+
+function render(){
+  const content = document.getElementById("content");
+  const m = MODULES[S.module];
+  if(!S.activeClient){
+    content.innerHTML = `<div class="empty-client">No client selected. Create one with <strong>+ New client</strong> to begin.</div>`;
+    setStatus("");
+    return;
+  }
+  setStatus(S.activeClient.business_name + (S.activeClient.industry ? " · " + S.activeClient.industry : ""));
+  content.innerHTML = `
+    <div class="panel-title">${m.title}</div>
+    <div class="panel-sub">${m.sub}</div>
+    <div class="placeholder">
+      <strong>${m.title} module — slot ready</strong>
+      This module will be built next. The shell, client record, and AI wrapper are wired and ready for it.
+    </div>`;
+}
+
+function setStatus(t){ document.getElementById("status").textContent = t; }
+
+/* ============================================================
+   BOOT
+============================================================ */
+sb.auth.onAuthStateChange((_e, session) => { if(session && document.getElementById("app").style.display === "none") initApp(); });
+initApp();
+</script>
+</body>
+</html>
