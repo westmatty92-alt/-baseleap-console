@@ -167,6 +167,7 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
    GLOBAL STATE  (S.* is reset on every client switch)
 ============================================================ */
 function freshAudit(){ return { tab:"guide", guideNotes:{}, captureText:"", summary:null, sessionId:null, loaded:false, analyzing:false, msg:"", stackForm:null, stackOtherFlags:{}, extracting:false }; }
+function freshAutomation(){ return { loaded:false, msg:"", gaps:[], drafts:{}, assessing:{} }; }
 
 const S = {
   user: null,
@@ -177,6 +178,7 @@ const S = {
   // per-client module state — cleared by resetClientState()
   audit: freshAudit(),
   gaps: [],
+  automation: freshAutomation(),
   buildPlan: null,
   report: null,
   proposal: null,
@@ -187,6 +189,7 @@ function resetClientState(){
   // so client B never sees client A's audit/report. (switchBusiness discipline)
   S.audit = freshAudit();
   S.gaps = [];
+  S.automation = freshAutomation();
   S.buildPlan = null;
   S.report = null;
   S.proposal = null;
@@ -318,6 +321,7 @@ function render(){
   }
   setStatus(S.activeClient.business_name + (S.activeClient.industry ? " · " + S.activeClient.industry : ""));
   if(S.module === "audit"){ renderAudit(); return; }
+  if(S.module === "automation"){ renderAutomation(); return; }
   content.innerHTML = `
     <div class="panel-title">${m.title}</div>
     <div class="panel-sub">${m.sub}</div>
@@ -706,6 +710,213 @@ async function saveStack(){
   const idx = S.clients.findIndex(c => c.id === cid);
   if(idx > -1) S.clients[idx].current_stack = stack;
   setAuditMsg("Stack saved ✓");
+}
+
+/* ============================================================
+   MODULE 2 — AUTOMATION AGENT (feasibility gate)
+   Reads PENDING gaps + current_stack for the active client. The Audit
+   Assistant identifies gaps; this module only qualifies existing ones —
+   it never creates new gap rows.
+============================================================ */
+const AUTOMATION_CATALOG_PROMPT = `AUTOMATION ENGINE CATALOG (Baseleap):
+Two-number snapshot model: GHL automations, once built, are cloned (snapshot) into a new client's sub-account with only client-specific bits wired up. Cost-to-deliver has two numbers: first-build hours (build from scratch, one-time, higher) and deploy hours (snapshot + parameterize, repeats, much lower). For a TEMPLATED engine match, estimate DEPLOY hours — UNLESS approach is integrate/replace with genuine per-client wiring, then use the higher end. For a gap with no matching engine, estimate FIRST-BUILD hours and set is_new_template:true.
+
+Approach rule (read current_stack first): build = nothing exists, net-new in GHL (or n8n if GHL can't do it). integrate = client already runs a capable tool, connect it rather than replace. replace = client runs fragmented/manual tools doing the job badly, consolidate into GHL.
+
+Known engines (name | approach | templated | deploy hrs | band):
+- Meta Lead Follow-Up Drip | build | yes | <1 day | standard
+- Booking Lifecycle (confirm/cancel/complete) | build | yes | <1 day | standard
+- Payment Processor Foundation (Stripe) | integrate | yes | <1 day | standard — foundational, build first; non-Stripe processors are net-new
+- Referral & Loyalty | build | yes | 1-3 days | complex
+- Review Engine (request + credit) | build | yes | <1 day | simple
+- Session Decrement | build | yes | <1 day | standard
+- Membership Booking-Lock | build | yes | <1 day | standard
+- Reactivation Gate (membership) | build | yes | <1 day | standard — state cleanup on re-pay, NOT a marketing win-back
+
+Not-yet-templated: a marketing win-back drip for lapsed customers is a common gap with no engine yet — model on the Meta timeline pattern, standard band, first-build. Any gap with no matching engine: matched_engine=null, is_new_template=true, first-build hours.
+
+Bands (client price anchor): simple $500-1000, standard $1500-3000, complex $3500-6000+, referral full program $2500-6000. Band sets client price regardless of your internal hour estimate — hours are cost-to-deliver only, used to select/confirm the band.`;
+
+function automationSystemPrompt(){
+  return "You are the Automation Agent — the feasibility gate for a GHL automation agency (Baseleap). "
+    + "You qualify one gap the Audit Assistant already identified; you never invent new gaps. "
+    + "Given the gap and the client's current tool stack, assess feasibility, name the mechanism, estimate cost-to-deliver, and tag an approach.\n\n"
+    + AUTOMATION_CATALOG_PROMPT
+    + "\n\nMatch the gap to a known engine where possible. The approach MUST be informed by current_stack: if the client already runs a capable tool for this job, prefer integrate; if they run fragmented tools doing the same job badly, consider replace; if nothing exists, build.\n\n"
+    + "Respond ONLY with valid JSON, no markdown, in exactly this shape:\n"
+    + '{"feasible":true,"approach":"build|integrate|replace","mechanism":"one-line how","estimated_hours":0,"band":"simple|standard|complex","templated":true,"is_new_template":false,"matched_engine":"engine name or null","rationale":"1-2 sentences"}';
+}
+
+function parseAssessResponse(raw){
+  let parsed;
+  try{ parsed = JSON.parse(raw.replace(/```json|```/g,"").trim()); }
+  catch(e){ throw new Error("AI returned invalid JSON"); }
+  const shapeOk = typeof parsed.feasible === "boolean"
+    && ["build","integrate","replace"].includes(parsed.approach)
+    && typeof parsed.mechanism === "string" && parsed.mechanism.trim()
+    && typeof parsed.estimated_hours === "number" && parsed.estimated_hours >= 0
+    && ["simple","standard","complex"].includes(parsed.band)
+    && typeof parsed.templated === "boolean"
+    && typeof parsed.is_new_template === "boolean"
+    && (parsed.matched_engine === null || typeof parsed.matched_engine === "string")
+    && typeof parsed.rationale === "string";
+  if(!shapeOk) throw new Error("AI response did not match the expected shape — try again.");
+  return parsed;
+}
+
+function initDraft(g){
+  return {
+    feasible: g.feasible, approach: g.approach || "", mechanism: g.mechanism || "",
+    estimated_hours: g.estimated_hours, band: "", templated: null, is_new_template: null,
+    matched_engine: "", rationale: "",
+  };
+}
+function getDraft(g){
+  if(!S.automation.drafts[g.id]) S.automation.drafts[g.id] = initDraft(g);
+  return S.automation.drafts[g.id];
+}
+function setDraftField(gapId, field, val){ const d = S.automation.drafts[gapId]; if(d) d[field] = val; }
+function setAutomationMsg(t){ S.automation.msg = t; const el = document.getElementById("automation-msg"); if(el) el.textContent = t; }
+
+async function loadAutomationData(clientId){
+  const { data } = await sb.from("gaps").select("*").eq("client_id", clientId).order("sort_order");
+  S.automation.gaps = data || [];
+  S.automation.drafts = {};
+  S.automation.loaded = true;
+  renderAutomation();
+}
+
+async function assessGap(gapId){
+  const g = S.automation.gaps.find(x => x.id === gapId);
+  if(!g) return;
+  S.automation.assessing[gapId] = true; renderAutomation();
+  try{
+    const stackSummary = summarizeStack(S.activeClient.current_stack) || "No current stack captured.";
+    const out = await ai({
+      system: automationSystemPrompt(),
+      messages: [{ role:"user", content:
+        `Client: ${S.activeClient.business_name} (${S.activeClient.industry||"industry n/a"})\n`
+        + `Current stack: ${stackSummary}\n\n`
+        + `Gap to assess:\nTitle: ${g.title}\nProblem: ${g.problem||""}\nCost: ${g.cost||""}\nSeverity: ${g.severity||""}\nCategory: ${g.category||""}` }],
+      max_tokens: 700,
+    });
+    const parsed = parseAssessResponse(out);
+    S.automation.drafts[gapId] = {
+      ...getDraft(g),
+      feasible: parsed.feasible, approach: parsed.approach, mechanism: parsed.mechanism.trim(),
+      estimated_hours: parsed.estimated_hours, band: parsed.band, templated: parsed.templated,
+      is_new_template: parsed.is_new_template, matched_engine: parsed.matched_engine || "",
+      rationale: parsed.rationale.trim(),
+    };
+    setAutomationMsg("Assessed — review before validating.");
+  }catch(e){
+    console.error("assessGap error:", e);
+    setAutomationMsg("Assessment failed: " + e.message);
+  }
+  S.automation.assessing[gapId] = false; renderAutomation();
+}
+
+async function validateGap(gapId){
+  const g = S.automation.gaps.find(x => x.id === gapId);
+  const d = S.automation.drafts[gapId];
+  if(!g || !d) return;
+  if(!d.approach || !d.mechanism.trim() || typeof d.estimated_hours !== "number"){
+    setAutomationMsg("Assess, or fill in approach, mechanism, and hours, before validating.");
+    return;
+  }
+  const patch = { feasible: !!d.feasible, approach: d.approach, mechanism: d.mechanism.trim(), estimated_hours: d.estimated_hours, validation_status: "validated" };
+  const { error } = await sb.from("gaps").update(patch).eq("id", gapId);
+  if(error){ setAutomationMsg("Validate failed: " + error.message); return; }
+  Object.assign(g, patch);
+  setAutomationMsg("Validated ✓ — will appear in the Gap Report.");
+  renderAutomation();
+}
+
+async function unvalidateGap(gapId){
+  const g = S.automation.gaps.find(x => x.id === gapId);
+  if(!g) return;
+  const { error } = await sb.from("gaps").update({ validation_status: "pending" }).eq("id", gapId);
+  if(error){ setAutomationMsg("Un-validate failed: " + error.message); return; }
+  g.validation_status = "pending";
+  setAutomationMsg("Back to pending.");
+  renderAutomation();
+}
+
+function renderAssessmentFields(g, d, isValidated){
+  const dis = isValidated ? "disabled" : "";
+  const approachOpts = ["","build","integrate","replace"].map(a =>
+    `<option value="${a}" ${d.approach===a?"selected":""}>${a||"— select —"}</option>`).join("");
+  const feasibleVal = d.feasible === true ? "true" : d.feasible === false ? "false" : "";
+  const badges = [
+    d.band ? "Band: " + d.band : "",
+    d.templated === true ? "Templated" : d.templated === false ? "Not templated" : "",
+    d.is_new_template ? "New template candidate" : "",
+    d.matched_engine ? "Engine: " + d.matched_engine : "",
+  ].filter(Boolean).join(" · ");
+  return `
+    <div class="stack-row">
+      <label>Feasible</label>
+      <select onchange="setDraftField('${g.id}','feasible', this.value==='true')" ${dis}>
+        <option value="" ${feasibleVal===""?"selected":""}>— select —</option>
+        <option value="true" ${feasibleVal==="true"?"selected":""}>Yes</option>
+        <option value="false" ${feasibleVal==="false"?"selected":""}>No</option>
+      </select>
+    </div>
+    <div class="stack-row">
+      <label>Approach</label>
+      <select onchange="setDraftField('${g.id}','approach', this.value)" ${dis}>${approachOpts}</select>
+    </div>
+    <label>Mechanism</label>
+    <textarea onchange="setDraftField('${g.id}','mechanism', this.value)" ${dis}>${esc(d.mechanism)}</textarea>
+    <div class="stack-row">
+      <label>Est. hours</label>
+      <input type="number" min="0" step="0.5" value="${d.estimated_hours==null?"":d.estimated_hours}" oninput="setDraftField('${g.id}','estimated_hours', this.value===''?null:Number(this.value))" ${dis}>
+    </div>
+    ${badges ? `<div class="msg">${esc(badges)}</div>` : ""}
+    ${d.rationale ? `<div class="msg">${esc(d.rationale)}</div>` : ""}
+    <div class="btn-row">
+      ${isValidated
+        ? `<button class="btn-ghost" onclick="unvalidateGap('${g.id}')">Un-validate</button>`
+        : `<button class="btn-primary" style="width:auto" onclick="validateGap('${g.id}')">Validate</button>`}
+    </div>`;
+}
+
+function renderAutomationCard(g){
+  const d = getDraft(g);
+  const isValidated = g.validation_status === "validated";
+  const assessing = !!S.automation.assessing[g.id];
+  return `
+    <div class="gap-card sev-${esc(g.severity||"medium")}">
+      <div class="gap-top">
+        <div style="flex:1;font-size:14px;font-weight:600">${esc(g.title)}</div>
+        <button class="btn-ghost" onclick="assessGap('${g.id}')" ${assessing?"disabled":""}>${assessing?"Assessing…":"Assess"}</button>
+      </div>
+      <div class="gap-body">
+        <label>Problem</label>
+        <div class="msg" style="margin-bottom:8px">${esc(g.problem||"—")}</div>
+        ${renderAssessmentFields(g, d, isValidated)}
+      </div>
+    </div>`;
+}
+
+function renderAutomation(){
+  const content = document.getElementById("content");
+  if(!S.automation.loaded){ content.innerHTML = `<div class="audit-empty">Loading gaps…</div>`; loadAutomationData(S.activeClientId); return; }
+  const pending = S.automation.gaps.filter(g => g.validation_status === "pending");
+  const validated = S.automation.gaps.filter(g => g.validation_status === "validated");
+  const stackText = summarizeStack(S.activeClient.current_stack);
+  content.innerHTML = `
+    <div class="panel-title">Automation agent</div>
+    <div class="panel-sub">${esc(S.activeClient.business_name)} — feasibility gate. Assess pending gaps against current stack, then validate.</div>
+    <div class="card">
+      <div class="phase-h">Current stack</div>
+      <div class="msg">${stackText ? esc(stackText) : "No stack captured — run Stack extraction in Audit Assistant first."}</div>
+    </div>
+    <div class="phase-t" style="margin:18px 0 6px">Pending (${pending.length})</div>
+    ${pending.length ? pending.map(renderAutomationCard).join("") : `<div class="audit-empty">No pending gaps. Run the Audit Assistant to surface some.</div>`}
+    <div class="phase-t" style="margin:24px 0 6px">Validated (${validated.length})</div>
+    ${validated.length ? validated.map(renderAutomationCard).join("") : `<div class="audit-empty">None validated yet.</div>`}
+    <div class="msg" id="automation-msg">${esc(S.automation.msg)}</div>`;
 }
 
 /* ============================================================
