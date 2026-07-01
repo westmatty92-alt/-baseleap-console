@@ -776,6 +776,13 @@ function getDraft(g){
   return S.automation.drafts[g.id];
 }
 function setDraftField(gapId, field, val){ const d = S.automation.drafts[gapId]; if(d) d[field] = val; }
+// After a validate/un-validate round trip, resync the draft's persisted-column fields
+// from the authoritative DB row so the card reflects what's actually saved, not stale local state.
+function syncDraftFromGap(gapId, g){
+  const d = S.automation.drafts[gapId] || initDraft(g);
+  d.feasible = g.feasible; d.approach = g.approach || ""; d.mechanism = g.mechanism || ""; d.estimated_hours = g.estimated_hours;
+  S.automation.drafts[gapId] = d;
+}
 function setAutomationMsg(t){ S.automation.msg = t; const el = document.getElementById("automation-msg"); if(el) el.textContent = t; }
 
 async function loadAutomationData(clientId){
@@ -843,9 +850,12 @@ async function validateGap(gapId){
     return;
   }
   const patch = { feasible: !!d.feasible, approach: d.approach, mechanism: d.mechanism.trim(), estimated_hours: d.estimated_hours, validation_status: "validated" };
-  const { error } = await sb.from("gaps").update(patch).eq("id", gapId);
+  // .select().single() forces verification: an RLS-filtered or otherwise no-op update
+  // throws here instead of silently leaving the row unchanged while the UI reports success.
+  const { data, error } = await sb.from("gaps").update(patch).eq("id", gapId).select().single();
   if(error){ setAutomationMsg("Validate failed: " + error.message); return; }
-  Object.assign(g, patch);
+  Object.assign(g, data);                    // trust the persisted row, not the local patch
+  syncDraftFromGap(gapId, data);              // keep the card showing what's actually saved
   setAutomationMsg("Validated ✓ — will appear in the Gap Report.");
   renderAutomation();
 }
@@ -853,9 +863,10 @@ async function validateGap(gapId){
 async function unvalidateGap(gapId){
   const g = S.automation.gaps.find(x => x.id === gapId);
   if(!g) return;
-  const { error } = await sb.from("gaps").update({ validation_status: "pending" }).eq("id", gapId);
+  const { data, error } = await sb.from("gaps").update({ validation_status: "pending" }).eq("id", gapId).select().single();
   if(error){ setAutomationMsg("Un-validate failed: " + error.message); return; }
-  g.validation_status = "pending";
+  Object.assign(g, data);
+  syncDraftFromGap(gapId, data);
   setAutomationMsg("Back to pending.");
   renderAutomation();
 }
