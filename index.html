@@ -679,11 +679,14 @@ async function extractStack(){
   S.audit.extracting = true; renderAuditBody();
   try{
     const out = await ai({
-      system: "Read the transcript, return ONLY valid JSON in this exact shape {\"website\":{\"platform\":\"\",\"url\":\"\"},\"crm\":\"\",\"booking\":\"\",\"invoicing\":\"\",\"comms\":\"\",\"automations\":{\"tool\":\"\",\"description\":\"\"},\"monthly_tool_spend\":null,\"notes\":\"\"}; use empty string / null when a tool isn't mentioned; put anything that doesn't fit a field into notes.",
+      system: "Extract ONLY the client's existing tools, software, and vendors mentioned in the transcript below. This is stack/infrastructure capture, NOT gap or workflow analysis — do not identify problems, pain points, costs, or missing processes; a separate process already does that. Return ONLY valid JSON in this exact shape, no markdown: {\"website\":{\"platform\":\"\",\"url\":\"\"},\"crm\":\"\",\"booking\":\"\",\"invoicing\":\"\",\"comms\":\"\",\"automations\":{\"tool\":\"\",\"description\":\"\"},\"monthly_tool_spend\":null,\"notes\":\"\"}. Use empty string / null for any field where no tool is named — do not guess or infer from context. The notes field is ONLY for a short mention of an existing tool/system that doesn't fit one of the other fields (e.g. \"paper calendar in the shop\") — it must NEVER contain workflow gaps, pain points, problem descriptions, or a gap/opportunity list.",
       messages: [{ role:"user", content:`Client: ${S.activeClient.business_name} (${S.activeClient.industry||"industry n/a"})\n\nTranscript / notes:\n${text}` }],
       max_tokens: 800,
     });
     const parsed = JSON.parse(out.replace(/```json|```/g,"").trim());
+    if(Array.isArray(parsed.gaps) || parsed.summary){
+      throw new Error("Model returned gap analysis instead of stack info — try again.");
+    }
     S.audit.stackForm = hydrateStack(parsed);
     S.audit.stackOtherFlags = {};
     setAuditMsg("Extracted — review before saving.");
