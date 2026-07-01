@@ -167,7 +167,7 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
    GLOBAL STATE  (S.* is reset on every client switch)
 ============================================================ */
 function freshAudit(){ return { tab:"guide", guideNotes:{}, captureText:"", summary:null, sessionId:null, loaded:false, analyzing:false, msg:"", stackForm:null, stackOtherFlags:{}, extracting:false }; }
-function freshAutomation(){ return { loaded:false, msg:"", gaps:[], drafts:{}, assessing:{} }; }
+function freshAutomation(){ return { loaded:false, msg:"", gaps:[], drafts:{}, assessing:{}, errors:{}, assessingAll:false, progress:"" }; }
 
 const S = {
   user: null,
@@ -786,9 +786,10 @@ async function loadAutomationData(clientId){
   renderAutomation();
 }
 
-async function assessGap(gapId){
+async function assessGap(gapId, silent){
   const g = S.automation.gaps.find(x => x.id === gapId);
   if(!g) return;
+  delete S.automation.errors[gapId];
   S.automation.assessing[gapId] = true; renderAutomation();
   try{
     const stackSummary = summarizeStack(S.activeClient.current_stack) || "No current stack captured.";
@@ -808,12 +809,29 @@ async function assessGap(gapId){
       is_new_template: parsed.is_new_template, matched_engine: parsed.matched_engine || "",
       rationale: parsed.rationale.trim(),
     };
-    setAutomationMsg("Assessed — review before validating.");
+    if(!silent) setAutomationMsg("Assessed — review before validating.");
   }catch(e){
     console.error("assessGap error:", e);
-    setAutomationMsg("Assessment failed: " + e.message);
+    S.automation.errors[gapId] = e.message;
+    if(!silent) setAutomationMsg("Assessment failed: " + e.message);
   }
   S.automation.assessing[gapId] = false; renderAutomation();
+}
+
+async function assessAllPending(){
+  const pending = S.automation.gaps.filter(g => g.validation_status === "pending");
+  if(!pending.length || S.automation.assessingAll) return;
+  S.automation.assessingAll = true;
+  for(let i = 0; i < pending.length; i++){
+    S.automation.progress = `Assessing ${i+1} of ${pending.length}…`;
+    renderAutomation();
+    await assessGap(pending[i].id, true); // silent — batch reports its own progress/errors
+  }
+  S.automation.assessingAll = false;
+  S.automation.progress = "";
+  const failed = pending.filter(g => S.automation.errors[g.id]).length;
+  setAutomationMsg(failed ? `Assessed ${pending.length - failed} of ${pending.length} — ${failed} failed, see card${failed===1?"":"s"} below.` : `Assessed ${pending.length} gap${pending.length===1?"":"s"}.`);
+  renderAutomation();
 }
 
 async function validateGap(gapId){
@@ -885,15 +903,18 @@ function renderAutomationCard(g){
   const d = getDraft(g);
   const isValidated = g.validation_status === "validated";
   const assessing = !!S.automation.assessing[g.id];
+  const assessDisabled = assessing || S.automation.assessingAll;
+  const err = S.automation.errors[g.id];
   return `
     <div class="gap-card sev-${esc(g.severity||"medium")}">
       <div class="gap-top">
         <div style="flex:1;font-size:14px;font-weight:600">${esc(g.title)}</div>
-        <button class="btn-ghost" onclick="assessGap('${g.id}')" ${assessing?"disabled":""}>${assessing?"Assessing…":"Assess"}</button>
+        <button class="btn-ghost" onclick="assessGap('${g.id}')" ${assessDisabled?"disabled":""}>${assessing?"Assessing…":"Assess"}</button>
       </div>
       <div class="gap-body">
         <label>Problem</label>
         <div class="msg" style="margin-bottom:8px">${esc(g.problem||"—")}</div>
+        ${err ? `<div class="msg" style="color:#C0392B;margin-bottom:8px">Assessment failed: ${esc(err)}</div>` : ""}
         ${renderAssessmentFields(g, d, isValidated)}
       </div>
     </div>`;
@@ -911,6 +932,9 @@ function renderAutomation(){
     <div class="card">
       <div class="phase-h">Current stack</div>
       <div class="msg">${stackText ? esc(stackText) : "No stack captured — run Stack extraction in Audit Assistant first."}</div>
+    </div>
+    <div class="btn-row" style="margin:14px 0">
+      <button class="btn-primary" style="width:auto" onclick="assessAllPending()" ${(S.automation.assessingAll || !pending.length)?"disabled":""}>${S.automation.assessingAll ? (S.automation.progress || "Assessing…") : "Assess all pending"}</button>
     </div>
     <div class="phase-t" style="margin:18px 0 6px">Pending (${pending.length})</div>
     ${pending.length ? pending.map(renderAutomationCard).join("") : `<div class="audit-empty">No pending gaps. Run the Audit Assistant to surface some.</div>`}
