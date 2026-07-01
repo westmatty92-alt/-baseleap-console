@@ -721,7 +721,11 @@ async function saveStack(){
 const AUTOMATION_CATALOG_PROMPT = `AUTOMATION ENGINE CATALOG (Baseleap):
 Two-number snapshot model: GHL automations, once built, are cloned (snapshot) into a new client's sub-account with only client-specific bits wired up. Cost-to-deliver has two numbers: first-build hours (build from scratch, one-time, higher) and deploy hours (snapshot + parameterize, repeats, much lower). For a TEMPLATED engine match, estimate DEPLOY hours — UNLESS approach is integrate/replace with genuine per-client wiring, then use the higher end. For a gap with no matching engine, estimate FIRST-BUILD hours and set is_new_template:true.
 
-Approach rule (read current_stack first): build = nothing exists, net-new in GHL (or n8n if GHL can't do it). integrate = client already runs a capable tool, connect it rather than replace. replace = client runs fragmented/manual tools doing the job badly, consolidate into GHL.
+Approach rule (read current_stack first) — the build/replace boundary is about whether a real TOOL exists, not whether the client is disorganized:
+- build = NO automated system exists for this job. This INCLUDES the client doing it manually by hand, forwarding emails, texting themselves, or "just remembering" — manual effort is not a tool to replace, it's the absence of one. Net-new in GHL (or n8n if GHL can't do it).
+- replace = an actual existing TOOL or ARTIFACT does this job poorly and gets consolidated/swapped — e.g. a paper calendar, a spreadsheet used as a CRM, two disconnected apps duct-taped together. Requires a real artifact to point to, not just "they're behind on this."
+- integrate = a capable third-party tool already exists for this job (e.g. QuickBooks, Calendly) — connect/automate it rather than replace it.
+Rule of thumb: "they do it manually / nothing exists" → build. "they use a bad or fragmented tool" → replace. "they have a good tool, just wire it in" → integrate. Do NOT default to replace just because the client's process is informal — check current_stack for an actual named tool before choosing replace.
 
 Known engines (name | approach | templated | deploy hrs | band):
 - Meta Lead Follow-Up Drip | build | yes | <1 day | standard
@@ -742,7 +746,7 @@ function automationSystemPrompt(){
     + "You qualify one gap the Audit Assistant already identified; you never invent new gaps. "
     + "Given the gap and the client's current tool stack, assess feasibility, name the mechanism, estimate cost-to-deliver, and tag an approach.\n\n"
     + AUTOMATION_CATALOG_PROMPT
-    + "\n\nMatch the gap to a known engine where possible. The approach MUST be informed by current_stack: if the client already runs a capable tool for this job, prefer integrate; if they run fragmented tools doing the same job badly, consider replace; if nothing exists, build.\n\n"
+    + "\n\nMatch the gap to a known engine where possible. The approach MUST be informed by current_stack: if the client already runs a capable tool for this job, prefer integrate; if current_stack names an actual bad/fragmented tool or artifact doing this job, consider replace; if current_stack shows nothing for this job — including purely manual handling — that is build, never replace.\n\n"
     + "Respond ONLY with valid JSON, no markdown, in exactly this shape:\n"
     + '{"feasible":true,"approach":"build|integrate|replace","mechanism":"one-line how","estimated_hours":0,"band":"simple|standard|complex","templated":true,"is_new_template":false,"matched_engine":"engine name or null","rationale":"1-2 sentences"}';
 }
