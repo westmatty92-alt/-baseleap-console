@@ -94,6 +94,10 @@
   .sev-medium{border-left:3px solid #EF9F27}
   .sev-low{border-left:3px solid #639922}
   .audit-empty{color:var(--muted);font-size:13px;padding:24px 0}
+  .stack-row{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+  .stack-row label{width:150px;flex-shrink:0;font-size:12px;color:var(--muted)}
+  .stack-row select,.stack-row input{flex:1;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px;background:var(--surface)}
+  .stack-row select:focus,.stack-row input:focus{outline:none;border-color:var(--volt)}
 </style>
 </head>
 <body>
@@ -162,7 +166,7 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 /* ============================================================
    GLOBAL STATE  (S.* is reset on every client switch)
 ============================================================ */
-function freshAudit(){ return { tab:"guide", guideNotes:{}, captureText:"", summary:null, sessionId:null, loaded:false, analyzing:false, msg:"" }; }
+function freshAudit(){ return { tab:"guide", guideNotes:{}, captureText:"", summary:null, sessionId:null, loaded:false, analyzing:false, msg:"", stackForm:null, stackOtherFlags:{}, extracting:false }; }
 
 const S = {
   user: null,
@@ -401,7 +405,7 @@ function setAuditMsg(t){ S.audit.msg = t; const el = document.getElementById("au
 function renderAudit(){
   const content = document.getElementById("content");
   if(!S.audit.loaded){ content.innerHTML = `<div class="audit-empty">Loading audit…</div>`; loadAuditData(S.activeClientId); return; }
-  const tabs = [["guide","Guide"],["capture","Capture"],["gaps","Gaps"]];
+  const tabs = [["guide","Guide"],["capture","Capture"],["gaps","Gaps"],["stack","Stack"]];
   content.innerHTML = `
     <div class="panel-title">Audit assistant</div>
     <div class="panel-sub">${esc(S.activeClient.business_name)}${S.activeClient.industry ? " · " + esc(S.activeClient.industry) : ""}</div>
@@ -418,7 +422,11 @@ function renderAuditBody(){
   const body = document.getElementById("audit-body");
   if(S.audit.tab === "guide") body.innerHTML = renderGuide();
   else if(S.audit.tab === "capture") body.innerHTML = renderCapture();
-  else body.innerHTML = renderGaps();
+  else if(S.audit.tab === "gaps") body.innerHTML = renderGaps();
+  else{
+    if(!S.audit.stackForm) S.audit.stackForm = hydrateStack(S.activeClient.current_stack);
+    body.innerHTML = renderStack();
+  }
 }
 
 function renderGuide(){
@@ -484,9 +492,11 @@ async function analyzeGaps(){
   if(text.length < 40){ setAuditMsg("Add Guide notes or a transcript first."); return; }
   S.audit.analyzing = true; renderAudit();
   try{
+    const stackSummary = summarizeStack(S.activeClient.current_stack);
     const out = await ai({
       system: "You are an expert business-systems analyst on a GHL automation agency's audit call. From the notes, identify every distinct, separately-solvable workflow gap as its own item — each gap should map ~1:1 to one automation that could be built and priced independently. Never collapse related but distinct gaps into a single item. Scale gap count to transcript richness: a brief call yields 3–5 gaps, a rich transcript yields 6–9 or more — do NOT cap at three. Separation rules: lead-capture is separate from lead-response; reminders are separate from calendar management; review requests are separate from retention follow-up; manual invoicing and payment-chasing are always their own gap. Use the client's own words in problem and cost fields. Respond ONLY with valid JSON, no markdown:\n{\"summary\":\"2-3 sentence plain-language summary of their current workflow\",\"gaps\":[{\"title\":\"short gap name\",\"problem\":\"what's happening, in their words\",\"cost\":\"the time or money cost of leaving it\",\"severity\":\"high|medium|low\",\"category\":\"gap|tool|pain|win\"}]}",
-      messages: [{ role:"user", content:`Client: ${S.activeClient.business_name} (${S.activeClient.industry||"industry n/a"})\n\nAudit notes:\n${text}` }],
+      messages: [{ role:"user", content:`Client: ${S.activeClient.business_name} (${S.activeClient.industry||"industry n/a"})\n\nAudit notes:\n${text}`
+        + (stackSummary ? `\n\nCurrent stack (context only — what they already run, not a gap): ${stackSummary}` : "") }],
       max_tokens: 1500,
     });
     const parsed = JSON.parse(out.replace(/```json|```/g,"").trim());
@@ -531,6 +541,168 @@ async function loadAuditData(clientId){
   }
   S.audit.loaded = true;
   renderAudit();
+}
+
+/* ============================================================
+   CURRENT STACK  (client-level context, not a gap — read by the
+   future Automation Agent to decide build vs integrate vs replace)
+============================================================ */
+const STACK_OPTIONS = {
+  "website.platform": ["None","Wix","WordPress","Squarespace","Shopify","Webflow","Custom"],
+  "crm": ["None or spreadsheet","HubSpot"],
+  "booking": ["Manual","Google Calendar","Calendly","Acuity"],
+  "invoicing": ["Manual","QuickBooks","Stripe","Square"],
+  "comms": ["None","Email only","SMS","Mailchimp"],
+  "automations.tool": ["None","Zapier","Make","n8n"],
+};
+
+function emptyStack(){
+  return { website:{platform:"",url:""}, crm:"", booking:"", invoicing:"", comms:"", automations:{tool:"",description:""}, monthly_tool_spend:null, notes:"" };
+}
+
+function hydrateStack(raw){
+  const d = emptyStack();
+  if(!raw || typeof raw !== "object") return d;
+  return {
+    website: { platform:(raw.website && raw.website.platform) || "", url:(raw.website && raw.website.url) || "" },
+    crm: raw.crm || "",
+    booking: raw.booking || "",
+    invoicing: raw.invoicing || "",
+    comms: raw.comms || "",
+    automations: { tool:(raw.automations && raw.automations.tool) || "", description:(raw.automations && raw.automations.description) || "" },
+    monthly_tool_spend: (typeof raw.monthly_tool_spend === "number") ? raw.monthly_tool_spend : null,
+    notes: raw.notes || "",
+  };
+}
+
+function summarizeStack(stack){
+  if(!stack) return "";
+  const parts = [];
+  if(stack.website && (stack.website.platform || stack.website.url)) parts.push(`website: ${[stack.website.platform, stack.website.url].filter(Boolean).join(" — ")}`);
+  if(stack.crm) parts.push(`CRM: ${stack.crm}`);
+  if(stack.booking) parts.push(`booking: ${stack.booking}`);
+  if(stack.invoicing) parts.push(`invoicing: ${stack.invoicing}`);
+  if(stack.comms) parts.push(`comms: ${stack.comms}`);
+  if(stack.automations && (stack.automations.tool || stack.automations.description)) parts.push(`automations: ${[stack.automations.tool, stack.automations.description].filter(Boolean).join(" — ")}`);
+  if(stack.monthly_tool_spend != null) parts.push(`monthly tool spend: $${stack.monthly_tool_spend} CAD`);
+  if(stack.notes) parts.push(`notes: ${stack.notes}`);
+  return parts.join("; ");
+}
+
+function stackGet(path){
+  const parts = path.split(".");
+  let o = S.audit.stackForm;
+  for(const p of parts){ if(o == null) return undefined; o = o[p]; }
+  return o;
+}
+
+function stackSet(path, val){
+  const parts = path.split(".");
+  let o = S.audit.stackForm;
+  for(let i=0;i<parts.length-1;i++) o = o[parts[i]];
+  o[parts[parts.length-1]] = val;
+}
+
+function stackSelectChange(path, val){
+  if(val === "__other__"){ S.audit.stackOtherFlags[path] = true; }
+  else{ S.audit.stackOtherFlags[path] = false; stackSet(path, val); }
+  renderAuditBody();
+}
+
+function stackDropdown(path, label){
+  const opts = STACK_OPTIONS[path];
+  const value = stackGet(path) || "";
+  const presetValues = opts.slice(1);
+  const isOther = !!S.audit.stackOtherFlags[path] || (value !== "" && !presetValues.includes(value));
+  const selectVal = isOther ? "__other__" : value;
+  const optionsHtml = [
+    `<option value="" ${selectVal===""?"selected":""}>${esc(opts[0])}</option>`,
+    ...presetValues.map(o => `<option value="${escAttr(o)}" ${selectVal===o?"selected":""}>${esc(o)}</option>`),
+    `<option value="__other__" ${isOther?"selected":""}>Other</option>`,
+  ].join("");
+  return `
+    <div class="stack-row">
+      <label>${esc(label)}</label>
+      <select onchange="stackSelectChange('${path}', this.value)">${optionsHtml}</select>
+      ${isOther ? `<input type="text" placeholder="Specify…" value="${escAttr(value)}" oninput="stackSet('${path}', this.value)">` : ""}
+    </div>`;
+}
+
+function renderStack(){
+  const st = S.audit.stackForm;
+  return `
+    <div class="card">
+      <div class="phase-t">Current stack</div>
+      <p class="panel-sub">What the client already runs — context for the Automation Agent to decide build vs integrate vs replace. Not a gap.</p>
+      <div class="btn-row">
+        <button class="btn-ghost" onclick="extractStack()" ${S.audit.extracting?"disabled":""}>${S.audit.extracting?"Extracting…":"Extract from transcript"}</button>
+        <button class="btn-primary" style="width:auto" onclick="saveStack()">Save stack</button>
+        <span class="msg" id="audit-msg">${esc(S.audit.msg)}</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="phase-h">Website</div>
+      ${stackDropdown("website.platform","Platform")}
+      <div class="stack-row">
+        <label>URL</label>
+        <input type="text" value="${escAttr(st.website.url)}" oninput="stackSet('website.url', this.value)">
+      </div>
+    </div>
+    <div class="card">
+      <div class="phase-h">Systems</div>
+      ${stackDropdown("crm","CRM")}
+      ${stackDropdown("booking","Booking")}
+      ${stackDropdown("invoicing","Invoicing")}
+      ${stackDropdown("comms","Comms")}
+    </div>
+    <div class="card">
+      <div class="phase-h">Automations</div>
+      ${stackDropdown("automations.tool","Tool")}
+      <div class="stack-row">
+        <label>Description</label>
+        <input type="text" value="${escAttr(st.automations.description)}" oninput="stackSet('automations.description', this.value)">
+      </div>
+    </div>
+    <div class="card">
+      <div class="stack-row">
+        <label>Monthly tool spend (CAD)</label>
+        <input type="number" min="0" step="1" value="${st.monthly_tool_spend==null?"":st.monthly_tool_spend}" oninput="stackSet('monthly_tool_spend', this.value===''?null:Number(this.value))">
+      </div>
+      <label style="font-size:11px;color:var(--muted);display:block;margin:10px 0 4px">Notes</label>
+      <textarea class="notes" placeholder="Anything that doesn't fit a field — e.g. 'paper calendar in the shop'" oninput="stackSet('notes', this.value)">${esc(st.notes)}</textarea>
+    </div>`;
+}
+
+async function extractStack(){
+  const text = getAuditText();
+  if(text.trim().length < 40){ setAuditMsg("Add Guide notes or a transcript first."); return; }
+  S.audit.extracting = true; renderAuditBody();
+  try{
+    const out = await ai({
+      system: "Read the transcript, return ONLY valid JSON in this exact shape {\"website\":{\"platform\":\"\",\"url\":\"\"},\"crm\":\"\",\"booking\":\"\",\"invoicing\":\"\",\"comms\":\"\",\"automations\":{\"tool\":\"\",\"description\":\"\"},\"monthly_tool_spend\":null,\"notes\":\"\"}; use empty string / null when a tool isn't mentioned; put anything that doesn't fit a field into notes.",
+      messages: [{ role:"user", content:`Client: ${S.activeClient.business_name} (${S.activeClient.industry||"industry n/a"})\n\nTranscript / notes:\n${text}` }],
+      max_tokens: 800,
+    });
+    const parsed = JSON.parse(out.replace(/```json|```/g,"").trim());
+    S.audit.stackForm = hydrateStack(parsed);
+    S.audit.stackOtherFlags = {};
+    setAuditMsg("Extracted — review before saving.");
+  }catch(e){
+    console.error("extractStack error:", e);
+    setAuditMsg("Could not extract: " + e.message);
+  }
+  S.audit.extracting = false; renderAuditBody();
+}
+
+async function saveStack(){
+  const cid = S.activeClientId;
+  const stack = S.audit.stackForm || emptyStack();
+  const { error } = await sb.from("clients").update({ current_stack: stack }).eq("id", cid);
+  if(error){ setAuditMsg("Stack save failed: " + error.message); return; }
+  S.activeClient.current_stack = stack;
+  const idx = S.clients.findIndex(c => c.id === cid);
+  if(idx > -1) S.clients[idx].current_stack = stack;
+  setAuditMsg("Stack saved ✓");
 }
 
 /* ============================================================
