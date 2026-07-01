@@ -767,7 +767,7 @@ function parseAssessResponse(raw){
 function initDraft(g){
   return {
     feasible: g.feasible, approach: g.approach || "", mechanism: g.mechanism || "",
-    estimated_hours: g.estimated_hours, band: "", templated: null, is_new_template: null,
+    estimated_hours: g.estimated_hours, band: g.band || "", templated: null, is_new_template: null,
     matched_engine: "", rationale: "",
   };
 }
@@ -780,7 +780,8 @@ function setDraftField(gapId, field, val){ const d = S.automation.drafts[gapId];
 // from the authoritative DB row so the card reflects what's actually saved, not stale local state.
 function syncDraftFromGap(gapId, g){
   const d = S.automation.drafts[gapId] || initDraft(g);
-  d.feasible = g.feasible; d.approach = g.approach || ""; d.mechanism = g.mechanism || ""; d.estimated_hours = g.estimated_hours;
+  d.feasible = g.feasible; d.approach = g.approach || ""; d.mechanism = g.mechanism || "";
+  d.estimated_hours = g.estimated_hours; d.band = g.band || "";
   S.automation.drafts[gapId] = d;
 }
 function setAutomationMsg(t){ S.automation.msg = t; const el = document.getElementById("automation-msg"); if(el) el.textContent = t; }
@@ -849,7 +850,7 @@ async function validateGap(gapId){
     setAutomationMsg("Assess, or fill in approach, mechanism, and hours, before validating.");
     return;
   }
-  const patch = { feasible: !!d.feasible, approach: d.approach, mechanism: d.mechanism.trim(), estimated_hours: d.estimated_hours, validation_status: "validated" };
+  const patch = { feasible: !!d.feasible, approach: d.approach, mechanism: d.mechanism.trim(), estimated_hours: d.estimated_hours, band: d.band || null, validation_status: "validated" };
   // .select().single() forces verification: an RLS-filtered or otherwise no-op update
   // throws here instead of silently leaving the row unchanged while the UI reports success.
   const { data, error } = await sb.from("gaps").update(patch).eq("id", gapId).select().single();
