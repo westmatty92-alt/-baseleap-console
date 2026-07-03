@@ -13,7 +13,7 @@ The Baseleap Console — an internal agency tool Baseleap uses to win and onboar
 
 ## CURRENT BUILD TARGET
 - Built: Console shell (auth + business-switcher + state-reset), AI proxy, Module 1 Audit Assistant, Module 2 Automation Agent Phase A (feasibility gate).
-- Next: the GHL Capabilities reference distilled into two agent skills (automation + setup) + the native-vs-external boundary map → then build-planner (Phase C) + Setup Agent → Proposal Generator + scope gate.
+- Next: build-planner (Phase C) + Setup Agent → Proposal Generator + scope gate. (GHL capabilities reference + boundary map done → .claude/skills/ghl-automation + ghl-setup.)
 
 ---
 
