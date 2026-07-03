@@ -1,18 +1,20 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git add:*)",
-      "Bash(git commit:*)",
-      "Bash(git config:*)",
-      "Bash(git status:*)",
+      "Bash(grep:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(find:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(pwd)",
       "Bash(git log:*)",
-      "Bash(git diff:*)",
-      "Bash(curl:*)",
-      "Bash(python3:*)",
-      "Edit(*)"
+      "Bash(git status:*)",
+      "Bash(git diff:*)"
     ],
     "ask": [
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(git commit:*)"
     ]
   }
 }
