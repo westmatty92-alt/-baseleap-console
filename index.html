@@ -1476,9 +1476,15 @@ async function aiJsonWithRetry({ system, userMsg, max_tokens, validate, what }){
   };
   try{ return await attempt(userMsg); }
   catch(e1){
-    if(/AI request failed/.test(e1.message)) throw e1;
+    if(/AI request failed/.test(e1.message)) throw e1;                 // transport — retrying blind doubles cost
+    if(/output truncated/.test(e1.message))                            // truncation — the SAME call can only truncate again
+      throw new Error(`${what}: output exceeded the ${max_tokens}-token budget — not retried. Raise the limit or split the call.`);
     try{ return await attempt(userMsg + `\n\nYour previous attempt violated the output contract — ${e1.message}. Respond with the complete corrected JSON only.`); }
-    catch(e2){ throw new Error(`${what} failed validation twice (first: ${e1.message}; then: ${e2.message})`); }
+    catch(e2){
+      if(/output truncated/.test(e2.message))
+        throw new Error(`${what}: retry exceeded the ${max_tokens}-token budget after a contract violation (${e1.message})`);
+      throw new Error(`${what} failed validation twice (first: ${e1.message}; then: ${e2.message})`);
+    }
   }
 }
 
@@ -1512,7 +1518,7 @@ async function adaptEngineToClient(engine, gap){
     + `\nDeclared client_parameters (adapt EVERY key):\n${JSON.stringify(engine.client_parameters, null, 1)}`
     + (dep ? `\nDeployment business_rules to adapt the VALUES of:\n${JSON.stringify(dep.business_rules || {}, null, 1)}` : "\n(No deployment guide on this engine yet — adapt the declared parameters only.)")
     + `\n\nAdapt this engine to the client now.`;
-  return aiJsonWithRetry({ system, userMsg, max_tokens: 2000,
+  return aiJsonWithRetry({ system, userMsg, max_tokens: 8000,
     validate: a => validateAdaptation(a, engine), what: `parameterize (${engine.engine_key})` });
 }
 
@@ -1543,7 +1549,7 @@ async function formulateEngine(gap){
     + `\n\nGap to deliver:\nTitle: ${gap.title}\nProblem: ${gap.problem || "—"}`
     + `\nValidated mechanism: ${gap.mechanism || "?"} | approach: ${gap.approach || "?"} | severity: ${gap.severity || "medium"}`
     + `\n\nDesign the engine now.`;
-  return aiJsonWithRetry({ system, userMsg, max_tokens: 4000,
+  return aiJsonWithRetry({ system, userMsg, max_tokens: 32000,   // full spec + deployment guide — match generatePlanDraft's budget
     validate: validateFormulation, what: `formulate (${gap.title})` });
 }
 
