@@ -42,15 +42,26 @@ step that cleans it). Edges are step-id references — agent is an attribute,
 not a partition.
 
 ## The step contract (what generation must emit)
-JSON: { steps: [ { ref, agent: "setup"|"automation", mode: "deploy"|"design"|null,
-gap_ref: <index into supplied gaps or null>, title, detail, checklist: [strings],
-estimated_hours, depends_on: [refs] } ] }
+JSON: { title, summary, scope_flags: [strings], steps: [ { ref,
+agent: "setup"|"automation", mode: "deploy"|"design"|null,
+gap_ref: <index into supplied gaps or null>, long_lead: bool, title, detail,
+checklist: [strings], estimated_hours, depends_on: [refs] } ] }
+- Plan-level `title`/`summary` are CLIENT-SAFE (they populate
+  build_plans.title/summary). `scope_flags` carries rule-3 scope holes (an
+  accepted gap needing a not-accepted prerequisite engine, naming both) —
+  surfaced to the operator, never silently absorbed.
 - `ref` is a local string id; resolved to real UUIDs on save.
+- `long_lead` is true ONLY on external-clock steps (A2P registration;
+  domain/email-auth + warm-up). It feeds the ordering tiebreak below;
+  draft-side only — no DB column.
 - `title` is CLIENT-SAFE plain language ("Automated review requests go live") —
   all mechanics, tool names, and wiring go in `detail`. Never hours/price in title.
 - Validation before save (defensive, client-side): shape-check every field,
   every depends_on ref must exist, graph must be acyclic. Reject and retry once
-  on failure; never save an invalid graph.
+  on failure; never save an invalid graph. An accepted gap with NO delivering
+  step is a prominent draft-review WARNING, not a rejection — the operator
+  decides (regenerate, or knowingly accept a partial plan; some gaps are a
+  manual conversation, not an automation).
 
 ## Deterministic ordering (code, not AI)
 Topological sort of the validated graph assigns `position`. Tiebreak within
