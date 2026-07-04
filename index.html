@@ -855,6 +855,263 @@ async function loadAutomationData(clientId){
   renderAutomation();
 }
 
+/* ============================================================
+   ENGINE CATALOG  (engine_catalog table)
+   client_parameters is the drop-in vs parameterize signal:
+   {} = drop-in (deploy as-is) · populated = the build-planner
+   sweep must adapt those knobs to the client.
+   Seeded once via seedEngineCatalog() from the browser console;
+   full-depth specs from the Stay Radiant SOP (Notion Engine
+   Catalog is the human-facing master).
+============================================================ */
+const ENGINE_SEED = [
+  {
+    engine_key: "payments_stripe",
+    name: "Payments Engine (Stripe ↔ GHL)",
+    status: "proven", category: "automation",
+    summary: "Payment success/failure/refund/coupon/revenue-logging between Stripe and GHL. Service-agnostic (never identifies the service — that's the Booking Engine). The foundation: payment-triggered engines build on the Paid tag + payment fields it owns. Drop-in: deploys as-is.",
+    spec: {
+      priority_ladder: ["payment_success","payment_failure","refund_cleanup","coupon_review_credit","revenue_logging"],
+      core_rule: "Booking confirmation and payment confirmation are SEPARATE workflows. Payment workflows own the Paid tag, payment fields, and opportunity revenue state. Paid must NOT block booking confirmation emails.",
+      automations: [
+        {
+          name: "Stripe Payment Successful (Core)",
+          trigger: { type: "Payment Received", filters: { payment_status: "Success", source: "Calendar" } },
+          tags_added: ["Paid","Stripe-Payment-Confirmed"],
+          fields_written: ["Last Payment Amount","Last Payment Date","Stripe Transaction ID"],
+          steps: [
+            "Duplicate guard: If/Else on tag Paid — YES → end workflow (prevents double-fire on retries/duplicate sends/duplicate revenue)",
+            "Add tags: Paid, Stripe-Payment-Confirmed",
+            "Update custom fields: Last Payment Amount, Last Payment Date, Stripe Transaction ID (audit trail independent of Stripe payload timing)",
+            "Wait 1 minute (race protection — lets booking workflows create the opportunity first)",
+            "Find Opportunity (pipeline, status Open) → Found / Not-Found paths",
+            "Found → Update: stage Paid/Booked, status Won, value = Last Payment Amount",
+            "Not found → wait 1 min → Find again → update if found, else Create Opportunity (Paid-Booked / Won / value = amount)",
+            "Client payment confirmation email (payment template only — no booking/service details)",
+            "Client payment confirmation SMS (short, no upsell/links)",
+            "Internal payment alert: client name, amount, date, transaction ID"
+          ],
+          must_not: ["identify the service","apply service tags","send booking details"],
+          tests: ["payment after booking (normal path)","payment before booking (exercises retry + create fallback)","verify tags, fields, opportunity, email, SMS, alert — and that it fired ONCE"]
+        },
+        {
+          name: "Stripe Payment Failed (Core)",
+          trigger: { type: "Payment Received", filters: { payment_status: "Failed" } },
+          tags_added: ["Payment-Failed"],
+          steps: [
+            "Placeholder action (GHL can't start with If/Else): add temporary tag SYS – Guard Check",
+            "Membership exclusion guard (critical): membership-related contact? YES → remove guard tag, end — Stripe subscription checkouts emit transient failed events; memberships belong to the Membership Engine",
+            "Add tag Payment-Failed",
+            "Client notification: payment unsuccessful, update card, next steps (calm tone)",
+            "Booking workflows must gate on the Paid tag (no Paid → no confirmation)",
+            "Optional internal alert",
+            "Cleanup: remove SYS – Guard Check"
+          ],
+          must_not: ["process membership payments, renewals, or cancellations"],
+          tests: ["failed one-time service payment","successful membership purchase (guard exits, not marked failed)","failed membership renewal (guard exits, Membership Engine handles)"]
+        },
+        {
+          name: "Stripe Refund Issued (Core)",
+          trigger: { type: "Refund Issued (charge.refunded)" },
+          tags_added: ["Refunded"], tags_removed: ["Paid","Stripe-Payment-Confirmed"],
+          fields_written: ["Last Refund Amount","Last Refund Date","Stripe Refund Transaction ID"],
+          steps: [
+            "Add tag Refunded; remove Paid + Stripe-Payment-Confirmed",
+            "Log refund fields (use Current Date — Stripe refund date isn't a GHL token)",
+            "Find the paid opportunity → update to refunded state (not found → end)",
+            "Optional: revoke transaction-linked referral/credit eligibility (never claw back already-issued rewards unless policy requires)",
+            "Optional internal alert"
+          ],
+          tests: ["full refund (entitlement removed, logged, opportunity corrected)","refund after service completion (overrides completed lifecycle)"]
+        },
+        { name: "Coupon / Review-Credit Redemption",
+          trigger: { type: "checkout.session.completed with coupon applied" },
+          steps: ["confirm coupon code (REVIEW15/REVIEW30 pattern)","remove Review Credit Eligible tag","decrement review-credit balance if tracked","prevent reuse","log redemption"],
+          note: "Stripe enforces the coupon; GHL enforces eligibility — they must talk. Coupon must exist in Stripe before the workflow." },
+        { name: "Internal Revenue Logging",
+          trigger: { type: "any successful payment" },
+          steps: ["write Gross, Net, Service, Source (booking/referral/review) to the internal log, tied to the client record"] }
+      ]
+    },
+    client_parameters: {},   // drop-in
+    depends_on: []
+  },
+  {
+    engine_key: "lead_response",
+    name: "Lead Response Engine (Meta timeline drip)",
+    status: "proven", category: "automation",
+    summary: "Meta (FB/IG) lead-form capture → campaign tracking → ONE open lead opportunity → timeline-based follow-up drip that stops the moment the lead books. Lead logic only: never applies Paid, never marks Won, no service tags before a real booking. Parameterize per client/campaign.",
+    spec: {
+      naming: "[PREFIX] — Meta Lead Form Follow-Up — [PROMO CODE] — Timeline Based",
+      automations: [
+        {
+          name: "Meta Lead Form Follow-Up (Timeline-Based Drip)",
+          trigger: { type: "Facebook Lead Form Submitted", filters: { form: "the client's specific Instant Form" } },
+          preconditions: [
+            "Instant Form must include 'How soon are you looking to book?' (This week / Within two weeks / This month / Just browsing) — this field controls the branch",
+            "Custom fields as SINGLE LINE TEXT at launch, not dropdowns (Facebook capitalization/wording mismatches break dropdown mapping): Interested Service, Booking Timeline, Launch Location Qualified — convert later once stable",
+            "Facebook Form Mapping completed (Settings → Integrations → Facebook) and saved"
+          ],
+          tags: { source: ["Lead-Facebook","Lead-InstantForm"], campaign_promo: "campaign-specific", control: ["Lead-NeedsBooking (drip-stop tag the Booking Engine removes)","appt_booked (stop signal)"] },
+          steps: [
+            "Add base campaign tags (source / campaign / promo)",
+            "Update campaign contact fields (Interested Service, Booking Timeline, Launch Location Qualified)",
+            "Find existing opportunity — found → use it (duplicate-opportunity guard); not found → create ONE open lead opportunity",
+            "Send immediate SMS + immediate email",
+            "Branch on Booking Timeline: This Week (tightest cadence) · Within Two Weeks (medium) · This Month (slower) · Just Browsing (lightest nurture) · Else/blank fallback"
+          ],
+          stop_condition: "All reminders stop once the lead books: the Booking Engine removes Lead-NeedsBooking and sets appt_booked, which exits the drip.",
+          tests: "A form mapping · B This Week · C Within Two Weeks · D This Month · E Just Browsing · F else/blank · G opportunity creation · H duplicate guard · I booking stop · J no-booking completion"
+        },
+        { name: "Booking Cancellation Follow-Up",
+          trigger: { type: "Appointment Status Changed → Cancelled" },
+          steps: ["apply Service-Cancelled-NeedsReschedule tag","send re-engagement messaging with the calendar link"],
+          note: "Booking Engine removes the tag on rebook." }
+      ]
+    },
+    client_parameters: {
+      campaign_name:  "campaign label used in the workflow name and campaign tag",
+      promo_code:     "promo code used in the workflow name, promo tag, and copy",
+      offer:          "the offer the drip sells",
+      booking_link:   "calendar/booking URL used in every message",
+      facebook_form:  "the specific FB Instant Form the trigger listens to (must include the booking-timeline question)",
+      drip_timing:    "reminder cadence per timeline branch",
+      sms_copy:       "SMS copy per branch",
+      email_copy:     "email copy per branch"
+    },
+    depends_on: ["booking"]   // the drip-stop mechanism is wired by the Booking Engine
+  },
+  {
+    engine_key: "booking",
+    name: "Booking Engine",
+    status: "documented", category: "automation",
+    summary: "Service booking confirmation + reminders, manual booking and manual-payment handling, add-on tagging. Owns service identification; removes Lead-NeedsBooking / sets appt_booked to stop lead drips. Deepen to full spec at first client build.",
+    spec: { level: "summary", source: "Stay Radiant Systems SOP — Engine Catalog", interacts_with: ["payments_stripe (Paid gate on confirmations)","lead_response (drip stop)","membership (booking lock)","referral (Showed triggers invite)"] },
+    client_parameters: {
+      service_list: "the client's bookable services (must match GHL calendars exactly)",
+      service_tags: "per-service tag scheme applied on booking"
+    },
+    depends_on: ["payments_stripe"]
+  },
+  {
+    engine_key: "membership",
+    name: "Membership Engine",
+    status: "documented", category: "automation",
+    summary: "Recurring membership lifecycle on Stripe subscriptions: past-due/failed-renewal access enforcement, session decrement (Math Operation on Sessions Remaining/Used), cancellation cleanup, booking lock. Listens to subscription STATE — never Payment Received. Deepen at first client build.",
+    spec: { level: "summary", source: "Stay Radiant Systems SOP — Engine Catalog",
+      automations: ["Past Due / Failed Renewal (per membership, Overdue + Unpaid)","Session Decrement System","Membership Cancellation","Booking Lock (access gate when status ≠ Active or sessions = 0)"],
+      core_rule: "Trigger type is Stripe → Subscription, never Payment Received. The Payments Engine's failure workflow excludes memberships and hands off here." },
+    client_parameters: {
+      membership_products: "the client's subscription products",
+      prices:              "price per product (drives Stripe trigger filters)",
+      session_counts:      "sessions included per membership period",
+      tier_names:          "membership tier names used in state tags and copy"
+    },
+    depends_on: ["payments_stripe","booking"]
+  },
+  {
+    engine_key: "referral",
+    name: "Referral & Rewards Engine",
+    status: "documented", category: "mixed",
+    summary: "Word-of-mouth growth: post-Showed referral invite with attribution-prefilled booking link (proven piece), points-based loyalty, ambassador tier with commission + payouts, member→member referrals, optional external rewards portal (Softr — external build, not native GHL). Deepen at first client build.",
+    spec: { level: "summary", source: "Stay Radiant Systems SOP — Engine Catalog",
+      automations: ["Referral Invite After Appointment Showed (one-time-send lock + referral-code backfill)","Points Engine (balances current/YTD/lifetime)","Ambassador tier (unlock, commission award, annual activity check, quarterly payout)","Member→Member Referral (tier-aware, fraud guards)","Rewards Portal (Softr, external; record-level security critical)"],
+      interacts_with: ["booking (Showed = invite trigger)","membership (tier drives member→member rewards)","payments_stripe (refund revokes transaction-linked eligibility)"] },
+    client_parameters: {
+      discount_amounts:     "credit/discount values per reward",
+      tier_names:           "loyalty/ambassador tier names",
+      point_values:         "points per qualifying action (keep tied to real revenue)",
+      commission_rates:     "ambassador commission structure",
+      field_name_overrides: "client-specific names for the referral/points custom fields",
+      tags:                 "client tag scheme for eligibility/state",
+      products:             "qualifying services/products per trigger"
+    },
+    depends_on: ["payments_stripe","booking"]
+  },
+  {
+    engine_key: "missed_call_textback",
+    name: "Missed Call Text-Back",
+    status: "documented", category: "automation",
+    summary: "Missed inbound call → instant SMS back to the caller so the lead isn't lost, with optional internal alert. Runbase seed recipe — deepen at first client build.",
+    spec: { level: "summary", source: "Runbase Automation Agent v1 recipe library",
+      pattern: "Call Status trigger (missed/no-answer) → send SMS to caller → optional Internal Notification" },
+    client_parameters: {
+      business_name:            "name used in the text-back copy",
+      sms_copy:                 "the text-back message",
+      office_hours:             "when the text-back fires vs an after-hours variant",
+      internal_alert_recipient: "who gets the missed-call notification"
+    },
+    depends_on: []
+  },
+  {
+    engine_key: "no_show_reengagement",
+    name: "No-Show Re-Engagement",
+    status: "documented", category: "automation",
+    summary: "Appointment marked no-show → re-engagement sequence with a rebook link. Runbase seed recipe — deepen at first client build.",
+    spec: { level: "summary", source: "Runbase Automation Agent v1 recipe library",
+      pattern: "Appointment Status trigger (no-showed, exact calendar) → wait → SMS/email rebook sequence with stop-on-rebook" },
+    client_parameters: {
+      booking_link: "rebook calendar URL",
+      sms_copy:     "re-engagement SMS copy",
+      email_copy:   "re-engagement email copy",
+      drip_timing:  "delay + cadence of the sequence"
+    },
+    depends_on: []
+  },
+  {
+    engine_key: "review_request",
+    name: "Review Request",
+    status: "documented", category: "automation",
+    summary: "Post-service review request via the GHL Review Request primitive / Google Business Profile, optionally paired with a review-credit incentive redeemed through the Payments Engine coupon flow. Runbase seed recipe — deepen at first client build.",
+    spec: { level: "summary", source: "Runbase Automation Agent v1 recipe library",
+      pattern: "Appointment Status trigger (showed/completed, qualifying services) → wait → Review Request send → optional incentive tagging" },
+    client_parameters: {
+      review_link:         "Google/Facebook review destination",
+      qualifying_services: "which services trigger a request",
+      request_delay:       "wait between service and ask",
+      sms_copy:            "request SMS copy",
+      email_copy:          "request email copy",
+      incentive:           "optional review-credit offer (pairs with payments_stripe coupon redemption)"
+    },
+    depends_on: []
+  }
+];
+
+// Insert-only seed: existing engine_keys are skipped (an UPDATE would re-stamp
+// operator_id and clobber operator edits — the catalog is also the price sheet).
+// Run once from the browser console: seedEngineCatalog()
+async function seedEngineCatalog(){
+  const { data: existing, error: exErr } = await sb.from("engine_catalog").select("engine_key");
+  if(exErr){ console.error("engine_catalog read failed:", exErr.message); return; }
+  const have = new Set((existing || []).map(r => r.engine_key));
+  const rows = ENGINE_SEED.filter(e => !have.has(e.engine_key)).map(e => ({ ...e, operator_id: S.user.id }));
+  if(rows.length){
+    const { data, error } = await sb.from("engine_catalog").insert(rows).select();
+    if(error){ console.error("engine_catalog seed failed:", error.message); return; }
+    if(data.length !== rows.length){ console.error(`engine_catalog seed short write: expected ${rows.length} rows back, got ${data.length}`); return; }
+    console.log(`engine_catalog: seeded ${data.length} engines (${have.size} already present)`);
+  } else {
+    console.log(`engine_catalog: all ${ENGINE_SEED.length} engines already present — nothing inserted`);
+  }
+  const probe = await getEngineByKey("payments_stripe");
+  const all = await listEngines();
+  console.log("verify → getEngineByKey('payments_stripe'):", probe ? probe.name + " [" + probe.status + "]" : "MISSING",
+              "| listEngines:", all.length, "rows:", all.map(e => e.engine_key).join(", "));
+  return all;
+}
+
+async function getEngineByKey(engineKey){
+  const { data, error } = await sb.from("engine_catalog").select("*").eq("engine_key", engineKey).single();
+  if(error){ console.error("getEngineByKey failed:", error.message); return null; }
+  return data;
+}
+
+async function listEngines(){
+  const { data, error } = await sb.from("engine_catalog").select("*").order("engine_key");
+  if(error){ console.error("listEngines failed:", error.message); return []; }
+  return data;
+}
+
 async function assessGap(gapId, silent){
   const g = S.automation.gaps.find(x => x.id === gapId);
   if(!g) return;
