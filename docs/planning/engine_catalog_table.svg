@@ -1,0 +1,33 @@
+<svg width="680" height="500" viewBox="0 0 680 500" xmlns="http://www.w3.org/2000/svg" font-family="Inter, system-ui, sans-serif">
+<rect width="680" height="500" fill="#0D1F2D"/>
+<text x="40" y="28" fill="#F4F5F0" font-size="15" font-weight="700">engine_catalog \u2014 table shape</text>
+<rect x="170" y="46" width="340" height="440" rx="12" fill="#132B3D" stroke="#378ADD"/>
+<text x="340" y="72" fill="#B5D4F4" font-size="13" font-weight="700" text-anchor="middle">engine_catalog</text>
+<rect x="190" y="90" width="300" height="40" rx="8" fill="#0F6E56" stroke="#1D9E75"/>
+<text x="206" y="114" fill="#E1F5EE" font-size="13" font-weight="700">engine_key</text>
+<text x="474" y="114" fill="#9FE1CB" font-size="11" text-anchor="end">match key \u00b7 unique</text>
+<rect x="190" y="136" width="300" height="36" rx="8" fill="#20302B" stroke="#5F5E5A"/>
+<text x="206" y="158" fill="#D3D1C7" font-size="13" font-weight="700">name</text>
+<text x="474" y="158" fill="#B4B2A9" font-size="11" text-anchor="end">text</text>
+<rect x="190" y="178" width="300" height="36" rx="8" fill="#3A2A0A" stroke="#BA7517"/>
+<text x="206" y="200" fill="#FAC775" font-size="13" font-weight="700">status</text>
+<text x="474" y="200" fill="#EF9F27" font-size="11" text-anchor="end">proven | documented | formulated</text>
+<rect x="190" y="220" width="300" height="36" rx="8" fill="#20302B" stroke="#5F5E5A"/>
+<text x="206" y="242" fill="#D3D1C7" font-size="13" font-weight="700">category</text>
+<text x="474" y="242" fill="#B4B2A9" font-size="11" text-anchor="end">setup | automation | mixed</text>
+<rect x="190" y="262" width="300" height="36" rx="8" fill="#20302B" stroke="#5F5E5A"/>
+<text x="206" y="284" fill="#D3D1C7" font-size="13" font-weight="700">summary</text>
+<text x="474" y="284" fill="#B4B2A9" font-size="11" text-anchor="end">text</text>
+<rect x="190" y="304" width="300" height="40" rx="8" fill="#241F3D" stroke="#7F77DD"/>
+<text x="206" y="328" fill="#CECBF6" font-size="13" font-weight="700">spec</text>
+<text x="474" y="328" fill="#AFA9EC" font-size="11" text-anchor="end">jsonb \u00b7 the buildable detail</text>
+<rect x="190" y="350" width="300" height="40" rx="8" fill="#241F3D" stroke="#7F77DD"/>
+<text x="206" y="374" fill="#CECBF6" font-size="13" font-weight="700">client_parameters</text>
+<text x="474" y="374" fill="#AFA9EC" font-size="11" text-anchor="end">jsonb \u00b7 fill per client</text>
+<rect x="190" y="396" width="300" height="36" rx="8" fill="#331D28" stroke="#D4537E"/>
+<text x="206" y="418" fill="#F4C0D1" font-size="13" font-weight="700">depends_on</text>
+<text x="474" y="418" fill="#ED93B1" font-size="11" text-anchor="end">engine_key[]</text>
+<rect x="190" y="438" width="300" height="34" rx="8" fill="#20302B" stroke="#5F5E5A"/>
+<text x="206" y="459" fill="#D3D1C7" font-size="13" font-weight="700">operator_id \u00b7 timestamps</text>
+<text x="474" y="459" fill="#B4B2A9" font-size="11" text-anchor="end">RLS</text>
+</svg>
