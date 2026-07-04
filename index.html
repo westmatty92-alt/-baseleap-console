@@ -211,6 +211,8 @@ async function ai({ system, messages, model = "claude-sonnet-4-6", max_tokens = 
   });
   if(!res.ok){ const body = await res.json().catch(()=>null); throw new Error("AI request failed: " + res.status + (body ? " — " + JSON.stringify(body) : "")); }
   const data = await res.json();
+  if(data.stop_reason === "max_tokens")
+    console.warn(`ai(): output TRUNCATED — hit max_tokens=${max_tokens}`, "usage:", JSON.stringify(data.usage || null));
   return (data.content || []).filter(b => b.type === "text").map(b => b.text).join("");
 }
 
@@ -1166,10 +1168,12 @@ async function loadAcceptedGaps(clientId){
 // just doubles cost on an outage.
 async function generatePlanDraft(system, userMsg, gaps){
   let raw = await ai({ system, messages: [{ role:"user", content: userMsg }], max_tokens: 8000 });
+  console.log(`build-plan raw (attempt 1, ${raw.length} chars):`, raw);
   try{ return parseAndOrderPlan(raw, gaps); }
   catch(e1){
     raw = await ai({ system, messages: [{ role:"user", content:
       userMsg + `\n\nYour previous attempt violated the output contract — ${e1.message}. Regenerate the complete corrected JSON.` }], max_tokens: 8000 });
+    console.log(`build-plan raw (attempt 2, ${raw.length} chars):`, raw);
     try{ return parseAndOrderPlan(raw, gaps); }
     catch(e2){ throw new Error(`plan failed validation twice (first: ${e1.message}; then: ${e2.message})`); }
   }
