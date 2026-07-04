@@ -12,6 +12,9 @@ Before writing any code:
 
 **Tripwire:** if you catch yourself mid-build with undefined requirements, STOP and write the spec first.
 
+## 🗺️ PLAN VISUALLY
+For any architecture or structural decision (a data model, a new module's data flow, a pipeline, how components connect), produce a visual map as part of the plan — SVG + PNG, not just prose. Show components as nodes, the connections between them, and built-vs-planned (solid = exists, dashed = planned). Keep the source files in `docs/planning/` and embed the PNG in the relevant Notion spec. Anything with structure or multiple connected pieces earns a map.
+
 ---
 
 ## WHAT THIS IS
