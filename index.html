@@ -10,7 +10,9 @@
     --midnight:#0D1F2D; --depth:#1A1A2E; --volt:#00D4A0; --run:#00A878; --canvas:#F4F5F0;
     --ink:#0D1F2D; --muted:#5B6B73; --line:#E2E6E3; --surface:#FFFFFF; --bg:#F4F5F0;
     /* dark decision-surface tokens (reusable for the future console-wide dark restyle) */
-    --d-line:rgba(255,255,255,.07); --d-text:rgba(237,239,242,.88); --d-text-strong:#EDEFF2; --d-muted:#9AA3AD;
+    /* elevation scale: --d-bg (recessed content well) < --midnight (panels/sidebar) < --depth (cards) */
+    --d-bg:#0A1622;
+    --d-line:rgba(255,255,255,.09); --d-text:rgba(237,239,242,.88); --d-text-strong:#EDEFF2; --d-muted:#9AA3AD;
     --ok:#22C55E; --err:#EF4444; --info:#6366F1;
     --radius:10px; --font:"Garet","Segoe UI",system-ui,-apple-system,sans-serif;
   }
@@ -102,9 +104,9 @@
   .step-badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:10px;background:var(--canvas);border:1px solid var(--line);color:var(--muted);white-space:nowrap}
 
   /* Finalize — dark decision surface (scoped to the Finalize subtab) */
-  .fin-surface{margin:0 -24px -24px;padding:28px 24px 64px;background:var(--midnight);min-height:calc(100vh - 168px)}
+  .fin-surface{margin:0 -24px -24px;padding:28px 24px 64px;background:var(--d-bg);min-height:calc(100vh - 168px);box-shadow:inset 0 14px 18px -16px rgba(0,0,0,.7),inset 14px 0 18px -16px rgba(0,0,0,.7)}
   .fin-col{max-width:860px;margin:0 auto}
-  .fin-bar{position:sticky;top:12px;z-index:5;display:flex;align-items:center;gap:18px;background:var(--depth);border:1px solid var(--d-line);border-radius:12px;padding:16px 20px 20px;box-shadow:0 10px 30px rgba(0,0,0,.35);overflow:hidden}
+  .fin-bar{position:sticky;top:12px;z-index:5;display:flex;align-items:center;gap:18px;background:var(--depth);border:1px solid var(--d-line);border-radius:12px;padding:16px 20px 20px;box-shadow:0 10px 30px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.05);overflow:hidden}
   .fin-bar-meter{position:absolute;left:0;right:0;bottom:0;height:2px;background:rgba(0,168,120,.18)}
   .fin-bar-meter i{display:block;height:100%;background:var(--run);width:0;transition:width .25s ease}
   .fin-count{font-weight:800;font-size:28px;line-height:1.1;color:var(--d-text-strong)}
@@ -118,8 +120,27 @@
   .fin-cta.idle{background:none;border-color:var(--d-line);color:var(--d-muted);cursor:default}
   .fin-note{font-size:12px;color:var(--d-muted);margin:16px 2px 0}
   .fin-empty{color:var(--d-muted);font-size:13px;padding:40px 0;text-align:center}
-  .fin-row{display:flex;align-items:center;justify-content:space-between;background:var(--depth);border:1px solid var(--d-line);border-radius:12px;padding:14px 18px;margin-top:12px;color:var(--d-text);font-size:14px}
-  .fin-row span{font-size:11px;color:var(--d-muted);letter-spacing:.04em;text-transform:uppercase}
+  .fin-bulk{display:flex;gap:6px;margin:18px 0 4px}
+  .fin-bulk button{background:none;border:1px solid transparent;color:var(--d-muted);font-size:12px;padding:6px 10px;border-radius:8px;transition:border-color .15s ease,color .15s ease}
+  .fin-bulk button:hover{border-color:var(--d-line);color:var(--d-text)}
+  .fin-bulk button:disabled{opacity:.4;pointer-events:none}
+  .fin-card{background:var(--depth);border:1px solid var(--d-line);border-left:3px solid var(--info);border-radius:12px;padding:16px 18px;margin-top:12px;box-shadow:0 2px 10px rgba(0,0,0,.3),inset 0 1px 0 rgba(255,255,255,.04);transition:border-color .15s ease,background-color .15s ease,opacity .15s ease}
+  .fin-card.accepted{border-left-color:var(--ok);background-color:#1A2330}   /* Depth + 5% Success, precomputed so background-color transitions */
+  .fin-card.declined{border-left-color:rgba(239,68,68,.55);opacity:.55}
+  .fin-card.declined:hover{opacity:.85}
+  .fin-card.busy{pointer-events:none;opacity:.7}
+  .fin-card-top{display:flex;align-items:flex-start;gap:14px}
+  .fin-title{flex:1;font-size:15px;font-weight:500;color:var(--d-text-strong);line-height:1.35;padding-top:3px}
+  .fin-seg{display:flex;border:1px solid var(--d-line);border-radius:9px;overflow:hidden;flex-shrink:0}
+  .fin-seg button{background:none;border:none;color:var(--d-muted);font-size:12px;font-weight:500;padding:7px 14px;transition:background-color .15s ease,color .15s ease}
+  .fin-seg button:hover{color:var(--d-text)}
+  .fin-seg button:focus-visible{outline:2px solid var(--volt);outline-offset:-2px}
+  .fin-seg button+button{border-left:1px solid var(--d-line)}
+  .fin-seg button.on-accept{background-color:rgba(34,197,94,.18);color:#7EE2A8}
+  .fin-seg button.on-decline{background-color:rgba(239,68,68,.16);color:#F49B9B}
+  .fin-badges{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+  .fin-badge{font-size:11px;font-weight:500;padding:2px 9px;border-radius:10px;background:rgba(255,255,255,.05);border:1px solid var(--d-line);color:var(--d-muted);white-space:nowrap}
+  .fin-problem{margin-top:10px;font-size:13px;color:var(--d-muted);line-height:1.5;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}
   .audit-empty{color:var(--muted);font-size:13px;padding:24px 0}
   .stack-row{display:flex;align-items:center;gap:10px;margin-bottom:10px}
   .stack-row label{width:150px;flex-shrink:0;font-size:12px;color:var(--muted)}
@@ -194,7 +215,7 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
    GLOBAL STATE  (S.* is reset on every client switch)
 ============================================================ */
 function freshAudit(){ return { tab:"guide", guideNotes:{}, captureText:"", summary:null, sessionId:null, loaded:false, analyzing:false, msg:"", stackForm:null, stackOtherFlags:{}, extracting:false }; }
-function freshAutomation(){ return { tab:"gaps", loaded:false, msg:"", gaps:[], drafts:{}, assessing:{}, errors:{}, assessingAll:false, progress:"" }; }
+function freshAutomation(){ return { tab:"gaps", loaded:false, msg:"", gaps:[], drafts:{}, assessing:{}, errors:{}, assessingAll:false, progress:"", finBusy:{}, finBulkBusy:false, finMsg:"" }; }
 function freshBuildPlan(){ return { loaded:false, msg:"", plan:null, steps:[], draft:null, draftGaps:null, generating:false, saving:false }; }
 
 const S = {
@@ -1364,17 +1385,84 @@ function finalizeToPlan(){
   if(S.buildPlan.loaded && !S.buildPlan.plan && !S.buildPlan.draft && !S.buildPlan.generating) generateBuildPlan();
 }
 
+function setFinalizeMsg(t){ S.automation.finMsg = t; const el = document.getElementById("finalize-msg"); if(el) el.textContent = t; }
+
+// One tap = one verified write. Clicking the already-selected side reverts to
+// proposed (built-in undo). UPDATE never re-stamps operator_id (RLS covers it);
+// .select().single() forces verification and we re-render from the returned row.
+async function setGapSelection(gapId, target){
+  const g = S.automation.gaps.find(x => x.id === gapId);
+  if(!g || S.automation.finBusy[gapId] || S.automation.finBulkBusy) return;
+  const selection = g.selection === target ? "proposed" : target;
+  S.automation.finBusy[gapId] = true; renderAutomation();
+  const { data, error } = await sb.from("gaps").update({ selection }).eq("id", gapId).select().single();
+  delete S.automation.finBusy[gapId];
+  if(error){ setFinalizeMsg("Selection failed: " + error.message); renderAutomation(); return; }
+  Object.assign(g, data);                 // trust the persisted row, not the local patch
+  setFinalizeMsg("");
+  renderAutomation();
+}
+
+// Bulk write: one UPDATE ... IN(ids) with a returned-count check. A short count
+// means RLS or drift ate rows — surface it and reload from DB truth, never guess.
+async function bulkSetSelection(ids, selection, label){
+  if(!ids.length || S.automation.finBulkBusy) return;
+  S.automation.finBulkBusy = true; renderAutomation();
+  const { data, error } = await sb.from("gaps").update({ selection }).in("id", ids).select();
+  S.automation.finBulkBusy = false;
+  if(error || !data || data.length !== ids.length){
+    setFinalizeMsg(`${label} failed: ${error ? error.message : `expected ${ids.length} rows back, got ${data ? data.length : 0}`} — reloading from database.`);
+    S.automation.loaded = false; renderAutomation();
+    return;
+  }
+  data.forEach(row => { const g = S.automation.gaps.find(x => x.id === row.id); if(g) Object.assign(g, row); });
+  setFinalizeMsg(label + " ✓");
+  renderAutomation();
+}
+
+function acceptAllGaps(){ const f = finSplit(); bulkSetSelection(f.validated.filter(g => g.selection !== "accepted").map(g => g.id), "accepted", "Accept all"); }
+function declineRemainingGaps(){ const f = finSplit(); bulkSetSelection(f.undecided.map(g => g.id), "declined", "Decline remaining"); }
+function resetAllSelections(){ const f = finSplit(); bulkSetSelection(f.validated.filter(g => g.selection === "accepted" || g.selection === "declined").map(g => g.id), "proposed", "Reset"); }
+
+function renderFinCard(g){
+  const state = g.selection === "accepted" ? "accepted" : g.selection === "declined" ? "declined" : "proposed";
+  const badges = [
+    g.severity || "medium",
+    g.matched_engine || (g.is_new_template ? "new template" : null),
+    g.band, g.estimated_hours != null ? g.estimated_hours + "h" : null,
+  ].filter(Boolean).map(b => `<span class="fin-badge">${esc(String(b))}</span>`).join("");
+  return `
+    <div class="fin-card ${state}${S.automation.finBusy[g.id] ? " busy" : ""}">
+      <div class="fin-card-top">
+        <div class="fin-title">${esc(g.title)}</div>
+        <div class="fin-seg" role="group" aria-label="Selection for ${esc(g.title)}">
+          <button class="${state === "accepted" ? "on-accept" : ""}" onclick="setGapSelection('${g.id}','accepted')">Accept</button>
+          <button class="${state === "declined" ? "on-decline" : ""}" onclick="setGapSelection('${g.id}','declined')">Decline</button>
+        </div>
+      </div>
+      ${badges ? `<div class="fin-badges">${badges}</div>` : ""}
+      ${g.problem ? `<div class="fin-problem">${esc(g.problem)}</div>` : ""}
+    </div>`;
+}
+
 function renderFinalizeBody(){
   const body = document.getElementById("automation-body");
   if(!S.automation.loaded){ body.innerHTML = `<div class="audit-empty">Loading gaps…</div>`; loadAutomationData(S.activeClientId); return; }
   const f = finSplit();
-  const rows = f.validated.map(g =>
-    `<div class="fin-row">${esc(g.title)}<span>${esc(g.selection || "proposed")}</span></div>`).join("");
+  const bulkDis = S.automation.finBulkBusy ? "disabled" : "";
   body.innerHTML = `
     <div class="fin-surface"><div class="fin-col">
       ${renderFinalizeBar(f)}
-      <div id="fin-list">${f.validated.length ? rows : `<div class="fin-empty">No validated gaps yet — qualify gaps on the Feasibility tab first.</div>`}</div>
+      ${f.validated.length ? `
+        <div class="fin-bulk">
+          <button onclick="acceptAllGaps()" ${bulkDis}>Accept all</button>
+          <button onclick="declineRemainingGaps()" ${bulkDis || (f.undecided.length ? "" : "disabled")}>Decline remaining</button>
+          <button onclick="resetAllSelections()" ${bulkDis}>Reset all to proposed</button>
+        </div>
+        <div id="fin-list">${f.validated.map(renderFinCard).join("")}</div>`
+        : `<div class="fin-empty">No validated gaps yet — qualify gaps on the Feasibility tab first.</div>`}
       ${f.pending ? `<div class="fin-note">${f.pending} gap${f.pending === 1 ? " is" : "s are"} still awaiting feasibility — assess ${f.pending === 1 ? "it" : "them"} on the Feasibility tab if ${f.pending === 1 ? "it's" : "they're"} in scope.</div>` : ""}
+      <div class="fin-note" id="finalize-msg">${esc(S.automation.finMsg)}</div>
     </div></div>`;
 }
 
