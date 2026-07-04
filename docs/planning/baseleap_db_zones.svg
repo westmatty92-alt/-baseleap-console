@@ -1,0 +1,79 @@
+<svg width="680" height="620" viewBox="0 0 680 620" xmlns="http://www.w3.org/2000/svg" font-family="Inter, system-ui, -apple-system, sans-serif">
+<rect x="0" y="0" width="680" height="620" fill="#0D1F2D"/>
+<text x="40" y="30" fill="#F4F5F0" font-size="17" font-weight="700">Baseleap Console — Database in four zones</text>
+<text x="40" y="48" fill="#8CA3B0" font-size="12">Solid = built now · dashed = planned (path to target)</text>
+
+<!-- Zone 1 -->
+<rect x="40" y="62" width="600" height="104" rx="14" fill="#132B3D" stroke="#378ADD" stroke-width="1"/>
+<text x="58" y="86" fill="#B5D4F4" font-size="14" font-weight="700">1 · Client &amp; company core</text>
+<text x="58" y="104" fill="#85B7EB" font-size="12">who the prospect is — the spine every zone links to</text>
+<rect x="58" y="116" width="120" height="38" rx="8" fill="#0F6E56" stroke="#1D9E75"/>
+<text x="118" y="140" fill="#E1F5EE" font-size="13" font-weight="700" text-anchor="middle">clients</text>
+<rect x="192" y="116" width="130" height="38" rx="8" fill="#0F6E56" stroke="#1D9E75"/>
+<text x="257" y="134" fill="#E1F5EE" font-size="13" font-weight="700" text-anchor="middle">client_files</text>
+<text x="257" y="149" fill="#9FE1CB" font-size="11" text-anchor="middle">uploads</text>
+<rect x="336" y="116" width="140" height="38" rx="8" fill="none" stroke="#5DCAA5" stroke-dasharray="4 3"/>
+<text x="406" y="134" fill="#9FE1CB" font-size="13" font-weight="700" text-anchor="middle">companies</text>
+<text x="406" y="149" fill="#5DCAA5" font-size="11" text-anchor="middle">B2B account</text>
+<rect x="490" y="116" width="132" height="38" rx="8" fill="none" stroke="#5DCAA5" stroke-dasharray="4 3"/>
+<text x="556" y="134" fill="#9FE1CB" font-size="13" font-weight="700" text-anchor="middle">associations</text>
+<text x="556" y="149" fill="#5DCAA5" font-size="11" text-anchor="middle">record links</text>
+
+<!-- Zone 2 -->
+<rect x="40" y="180" width="600" height="104" rx="14" fill="#1E1B36" stroke="#7F77DD" stroke-width="1"/>
+<text x="58" y="204" fill="#CECBF6" font-size="14" font-weight="700">2 · Discovery</text>
+<text x="58" y="222" fill="#AFA9EC" font-size="12">research → audit → gaps → selection</text>
+<rect x="58" y="234" width="130" height="38" rx="8" fill="none" stroke="#ED93B1" stroke-dasharray="4 3"/>
+<text x="123" y="252" fill="#F4C0D1" font-size="13" font-weight="700" text-anchor="middle">client_research</text>
+<text x="123" y="267" fill="#ED93B1" font-size="11" text-anchor="middle">pre-call</text>
+<rect x="202" y="234" width="140" height="38" rx="8" fill="#993556" stroke="#D4537E"/>
+<text x="272" y="258" fill="#FBEAF0" font-size="13" font-weight="700" text-anchor="middle">audit_sessions</text>
+<rect x="356" y="234" width="120" height="38" rx="8" fill="#993556" stroke="#D4537E"/>
+<text x="416" y="258" fill="#FBEAF0" font-size="13" font-weight="700" text-anchor="middle">gaps</text>
+<rect x="490" y="234" width="132" height="38" rx="8" fill="#993556" stroke="#D4537E"/>
+<text x="556" y="252" fill="#FBEAF0" font-size="13" font-weight="700" text-anchor="middle">gap_reports</text>
+<text x="556" y="267" fill="#F4C0D1" font-size="11" text-anchor="middle">client doc</text>
+
+<!-- Zone 3 -->
+<rect x="40" y="298" width="600" height="140" rx="14" fill="#2A2113" stroke="#BA7517" stroke-width="1"/>
+<text x="58" y="322" fill="#FAC775" font-size="14" font-weight="700">3 · Delivery</text>
+<text x="58" y="340" fill="#EF9F27" font-size="12">proposal → build plan → steps → live-system memory</text>
+<rect x="58" y="352" width="120" height="38" rx="8" fill="#993C1D" stroke="#D85A30"/>
+<text x="118" y="376" fill="#FAECE7" font-size="13" font-weight="700" text-anchor="middle">proposals</text>
+<rect x="192" y="352" width="120" height="38" rx="8" fill="#993C1D" stroke="#D85A30"/>
+<text x="252" y="376" fill="#FAECE7" font-size="13" font-weight="700" text-anchor="middle">build_plans</text>
+<rect x="326" y="352" width="120" height="38" rx="8" fill="#993C1D" stroke="#D85A30"/>
+<text x="386" y="376" fill="#FAECE7" font-size="13" font-weight="700" text-anchor="middle">build_steps</text>
+<rect x="460" y="352" width="162" height="38" rx="8" fill="none" stroke="#F0997B" stroke-dasharray="4 3"/>
+<text x="541" y="370" fill="#F5C4B3" font-size="13" font-weight="700" text-anchor="middle">deployed_system</text>
+<text x="541" y="385" fill="#F0997B" font-size="11" text-anchor="middle">the ledger</text>
+<rect x="58" y="398" width="150" height="34" rx="8" fill="none" stroke="#F0997B" stroke-dasharray="4 3"/>
+<text x="133" y="419" fill="#F5C4B3" font-size="11" text-anchor="middle">step_corrections</text>
+<rect x="222" y="398" width="120" height="34" rx="8" fill="none" stroke="#F0997B" stroke-dasharray="4 3"/>
+<text x="282" y="419" fill="#F5C4B3" font-size="11" text-anchor="middle">generated_sops</text>
+<rect x="356" y="398" width="180" height="34" rx="8" fill="none" stroke="#F0997B" stroke-dasharray="4 3"/>
+<text x="446" y="419" fill="#F5C4B3" font-size="11" text-anchor="middle">system_edges (graph)</text>
+
+<!-- Zone 4 -->
+<rect x="40" y="452" width="600" height="104" rx="14" fill="#14260E" stroke="#639922" stroke-width="1"/>
+<text x="58" y="476" fill="#C0DD97" font-size="14" font-weight="700">4 · Scale &amp; catalog (mostly planned)</text>
+<text x="58" y="494" fill="#97C459" font-size="12">the moat — reusable engines + multi-tenant + sector snapshots</text>
+<rect x="58" y="506" width="140" height="38" rx="8" fill="none" stroke="#B4B2A9" stroke-dasharray="4 3"/>
+<text x="128" y="524" fill="#D3D1C7" font-size="13" font-weight="700" text-anchor="middle">engine_catalog</text>
+<text x="128" y="539" fill="#B4B2A9" font-size="11" text-anchor="middle">proven specs</text>
+<rect x="212" y="506" width="150" height="38" rx="8" fill="none" stroke="#B4B2A9" stroke-dasharray="4 3"/>
+<text x="287" y="529" fill="#D3D1C7" font-size="13" font-weight="700" text-anchor="middle">sector_snapshots</text>
+<rect x="376" y="506" width="120" height="38" rx="8" fill="none" stroke="#B4B2A9" stroke-dasharray="4 3"/>
+<text x="436" y="524" fill="#D3D1C7" font-size="13" font-weight="700" text-anchor="middle">operators</text>
+<text x="436" y="539" fill="#B4B2A9" font-size="11" text-anchor="middle">owner_id</text>
+<rect x="510" y="506" width="112" height="38" rx="8" fill="none" stroke="#B4B2A9" stroke-dasharray="4 3"/>
+<text x="566" y="529" fill="#D3D1C7" font-size="13" font-weight="700" text-anchor="middle">engine_runs</text>
+
+<!-- connectors -->
+<line x1="340" y1="166" x2="340" y2="179" stroke="#5F5E5A" stroke-width="1.5"/>
+<path d="M336 175 L340 180 L344 175" fill="none" stroke="#5F5E5A" stroke-width="1.5"/>
+<line x1="340" y1="284" x2="340" y2="297" stroke="#5F5E5A" stroke-width="1.5"/>
+<path d="M336 293 L340 298 L344 293" fill="none" stroke="#5F5E5A" stroke-width="1.5"/>
+<line x1="340" y1="438" x2="340" y2="451" stroke="#5F5E5A" stroke-width="1.5"/>
+<path d="M336 447 L340 452 L344 447" fill="none" stroke="#5F5E5A" stroke-width="1.5"/>
+</svg>
