@@ -9,6 +9,9 @@
   :root{
     --midnight:#0D1F2D; --depth:#1A1A2E; --volt:#00D4A0; --run:#00A878; --canvas:#F4F5F0;
     --ink:#0D1F2D; --muted:#5B6B73; --line:#E2E6E3; --surface:#FFFFFF; --bg:#F4F5F0;
+    /* dark decision-surface tokens (reusable for the future console-wide dark restyle) */
+    --d-line:rgba(255,255,255,.07); --d-text:rgba(237,239,242,.88); --d-text-strong:#EDEFF2; --d-muted:#9AA3AD;
+    --ok:#22C55E; --err:#EF4444; --info:#6366F1;
     --radius:10px; --font:"Garet","Segoe UI",system-ui,-apple-system,sans-serif;
   }
   *{box-sizing:border-box;margin:0;padding:0}
@@ -97,6 +100,26 @@
   .plan-warn-title{color:#E24B4A;font-weight:700;font-size:14px;margin-bottom:6px}
   .plan-warn-item{color:#E24B4A;font-size:13px;margin-bottom:2px}
   .step-badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:10px;background:var(--canvas);border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+
+  /* Finalize — dark decision surface (scoped to the Finalize subtab) */
+  .fin-surface{margin:0 -24px -24px;padding:28px 24px 64px;background:var(--midnight);min-height:calc(100vh - 168px)}
+  .fin-col{max-width:860px;margin:0 auto}
+  .fin-bar{position:sticky;top:12px;z-index:5;display:flex;align-items:center;gap:18px;background:var(--depth);border:1px solid var(--d-line);border-radius:12px;padding:16px 20px 20px;box-shadow:0 10px 30px rgba(0,0,0,.35);overflow:hidden}
+  .fin-bar-meter{position:absolute;left:0;right:0;bottom:0;height:2px;background:rgba(0,168,120,.18)}
+  .fin-bar-meter i{display:block;height:100%;background:var(--run);width:0;transition:width .25s ease}
+  .fin-count{font-weight:800;font-size:28px;line-height:1.1;color:var(--d-text-strong)}
+  .fin-count small{font-size:12px;font-weight:500;color:var(--d-muted);margin-left:8px;letter-spacing:.05em;text-transform:uppercase}
+  .fin-totals{font-size:12px;color:var(--d-muted);margin-top:4px}
+  .fin-right{margin-left:auto;display:flex;align-items:center;gap:14px}
+  .fin-hint{font-size:12px;color:var(--d-muted);text-align:right}
+  .fin-cta{padding:11px 18px;border-radius:10px;font-size:14px;font-weight:600;border:1px solid transparent;transition:background .2s ease,color .2s ease,border-color .2s ease;white-space:nowrap}
+  .fin-cta.armed{background:var(--volt);color:var(--midnight)}
+  .fin-cta.armed:hover{background:var(--run);color:#fff}
+  .fin-cta.idle{background:none;border-color:var(--d-line);color:var(--d-muted);cursor:default}
+  .fin-note{font-size:12px;color:var(--d-muted);margin:16px 2px 0}
+  .fin-empty{color:var(--d-muted);font-size:13px;padding:40px 0;text-align:center}
+  .fin-row{display:flex;align-items:center;justify-content:space-between;background:var(--depth);border:1px solid var(--d-line);border-radius:12px;padding:14px 18px;margin-top:12px;color:var(--d-text);font-size:14px}
+  .fin-row span{font-size:11px;color:var(--d-muted);letter-spacing:.04em;text-transform:uppercase}
   .audit-empty{color:var(--muted);font-size:13px;padding:24px 0}
   .stack-row{display:flex;align-items:center;gap:10px;margin-bottom:10px}
   .stack-row label{width:150px;flex-shrink:0;font-size:12px;color:var(--muted)}
@@ -953,7 +976,7 @@ function renderAutomationCard(g){
 
 function renderAutomation(){
   const content = document.getElementById("content");
-  const tabs = [["gaps","Feasibility"],["plan","Build plan"]];
+  const tabs = [["gaps","Feasibility"],["finalize","Finalize"],["plan","Build plan"]];
   content.innerHTML = `
     <div class="panel-title">Automation agent</div>
     <div class="panel-sub">${esc(S.activeClient.business_name)} — feasibility gate, then the build plan.</div>
@@ -962,6 +985,7 @@ function renderAutomation(){
     </div>
     <div id="automation-body"></div>`;
   if(S.automation.tab === "plan") renderBuildPlanBody();
+  else if(S.automation.tab === "finalize") renderFinalizeBody();
   else renderFeasibilityBody();
 }
 
@@ -1157,8 +1181,7 @@ function parseAndOrderPlan(raw, gaps){
 /* ---- generate / save / load ---- */
 function setBuildPlanMsg(t){ S.buildPlan.msg = t; const el = document.getElementById("buildplan-msg"); if(el) el.textContent = t; }
 
-// The planner reads only accepted gaps (selection is set by the Gap Report;
-// until that module exists, flip selection in the Supabase SQL editor to test).
+// The planner reads only accepted gaps — selection is set on the Finalize subtab.
 async function loadAcceptedGaps(clientId){
   const { data, error } = await sb.from("gaps").select("*")
     .eq("client_id", clientId).eq("validation_status", "validated").eq("selection", "accepted")
@@ -1284,6 +1307,77 @@ async function loadBuildPlanData(clientId){
   renderAutomation();
 }
 
+/* ---- Finalize subtab: the gap-finalization decision surface ----
+   Bridge between the gap report and the build plan. Reads validated gaps,
+   writes gaps.selection (proposed | accepted | declined) — the one selection
+   state that drives BOTH the proposal and the build plan. Dark by design:
+   this is the presentation-adjacent surface. */
+const BAND_RANGES = { simple:[500,1000], standard:[1500,3000], complex:[3500,6000] };
+
+function finSplit(){
+  const validated = S.automation.gaps.filter(g => g.validation_status === "validated");
+  return {
+    validated,
+    pending: S.automation.gaps.filter(g => g.validation_status === "pending").length,
+    accepted: validated.filter(g => g.selection === "accepted"),
+    undecided: validated.filter(g => g.selection !== "accepted" && g.selection !== "declined"),
+  };
+}
+
+function finTotalsLine(accepted){
+  if(!accepted.length) return "no gaps accepted yet";
+  const hours = accepted.reduce((t, g) => t + (g.estimated_hours || 0), 0);
+  let lo = 0, hi = 0, plus = false;
+  accepted.forEach(g => {
+    const r = BAND_RANGES[g.band];
+    if(r){ lo += r[0]; hi += r[1]; if(g.band === "complex") plus = true; }
+  });
+  const k = n => "$" + (n >= 1000 ? (n/1000).toFixed(1).replace(/\.0$/,"") + "k" : n);
+  return `≈ ${hours}h internal` + (lo ? ` · ${k(lo)}–${k(hi)}${plus ? "+" : ""} band value` : "");
+}
+
+function renderFinalizeBar(f){
+  const decided = f.validated.length - f.undecided.length;
+  const armed = f.accepted.length > 0 && f.undecided.length === 0;
+  const pct = f.validated.length ? Math.round(decided / f.validated.length * 100) : 0;
+  const hint = f.undecided.length
+    ? `${f.undecided.length} gap${f.undecided.length === 1 ? "" : "s"} undecided`
+    : "accept at least one gap";
+  return `
+    <div class="fin-bar">
+      <div>
+        <div class="fin-count">${f.accepted.length} / ${f.validated.length}<small>accepted</small></div>
+        <div class="fin-totals">${esc(finTotalsLine(f.accepted))}</div>
+      </div>
+      <div class="fin-right">
+        ${armed ? "" : `<span class="fin-hint">${esc(hint)}</span>`}
+        <button class="fin-cta ${armed ? "armed" : "idle"}" ${armed ? `onclick="finalizeToPlan()"` : "disabled"}>Generate build plan →</button>
+      </div>
+      <div class="fin-bar-meter"><i style="width:${pct}%"></i></div>
+    </div>`;
+}
+
+function finalizeToPlan(){
+  S.automation.tab = "plan";
+  renderAutomation();
+  // fresh client state loads first; generation only auto-starts on a truly empty plan slate
+  if(S.buildPlan.loaded && !S.buildPlan.plan && !S.buildPlan.draft && !S.buildPlan.generating) generateBuildPlan();
+}
+
+function renderFinalizeBody(){
+  const body = document.getElementById("automation-body");
+  if(!S.automation.loaded){ body.innerHTML = `<div class="audit-empty">Loading gaps…</div>`; loadAutomationData(S.activeClientId); return; }
+  const f = finSplit();
+  const rows = f.validated.map(g =>
+    `<div class="fin-row">${esc(g.title)}<span>${esc(g.selection || "proposed")}</span></div>`).join("");
+  body.innerHTML = `
+    <div class="fin-surface"><div class="fin-col">
+      ${renderFinalizeBar(f)}
+      <div id="fin-list">${f.validated.length ? rows : `<div class="fin-empty">No validated gaps yet — qualify gaps on the Feasibility tab first.</div>`}</div>
+      ${f.pending ? `<div class="fin-note">${f.pending} gap${f.pending === 1 ? " is" : "s are"} still awaiting feasibility — assess ${f.pending === 1 ? "it" : "them"} on the Feasibility tab if ${f.pending === 1 ? "it's" : "they're"} in scope.</div>` : ""}
+    </div></div>`;
+}
+
 /* ---- Build-plan subtab UI ---- */
 function renderBuildPlanBody(){
   const body = document.getElementById("automation-body");
@@ -1297,7 +1391,7 @@ function renderPlanEmpty(){
   return `
     <div class="card">
       <div class="phase-t">No build plan yet</div>
-      <div class="msg" style="margin-bottom:12px">Generates ONE dependency-ordered plan (setup + automation steps) from this client's accepted gaps. Gaps must be validated on the Feasibility tab and marked accepted (Gap Report) first.</div>
+      <div class="msg" style="margin-bottom:12px">Generates ONE dependency-ordered plan (setup + automation steps) from this client's accepted gaps. Validate gaps on the Feasibility tab, then mark them accepted on the Finalize tab.</div>
       <button class="btn-primary" style="width:auto" onclick="generateBuildPlan()" ${S.buildPlan.generating?"disabled":""}>${S.buildPlan.generating?"Generating plan…":"Generate build plan"}</button>
     </div>`;
 }
