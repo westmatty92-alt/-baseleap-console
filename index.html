@@ -1183,12 +1183,10 @@ async function generatePlanDraft(system, userMsg, gaps){
   let raw;
   try{
     raw = await ai({ system, messages: [{ role:"user", content: userMsg }], max_tokens: 32000 });
-    console.log(`build-plan raw (attempt 1, ${raw.length} chars):`, raw);
     return parseAndOrderPlan(raw, gaps);
   }catch(e1){
     if(/AI request failed/.test(e1.message)) throw e1;   // transport/proxy error — retrying blind just doubles cost
     raw = await ai({ system, messages: [{ role:"user", content: userMsg + "\n\n" + planRetryFeedback(e1) }], max_tokens: 32000 });
-    console.log(`build-plan raw (attempt 2, ${raw.length} chars):`, raw);
     try{ return parseAndOrderPlan(raw, gaps); }
     catch(e2){ throw new Error(`plan failed validation twice (first: ${e1.message}; then: ${e2.message})`); }
   }
