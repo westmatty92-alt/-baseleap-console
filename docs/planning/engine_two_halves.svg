@@ -1,0 +1,35 @@
+<svg width="680" height="440" viewBox="0 0 680 440" xmlns="http://www.w3.org/2000/svg" font-family="Inter, system-ui, sans-serif">
+<rect width="680" height="440" fill="#0D1F2D"/>
+<text x="40" y="28" fill="#F4F5F0" font-size="15" font-weight="700">One engine, two halves</text>
+<text x="40" y="46" fill="#8CA3B0" font-size="12">the spec never changes \u00b7 the deployment layer is configured per client</text>
+
+<rect x="40" y="64" width="280" height="340" rx="14" fill="#0F2E27" stroke="#1D9E75"/>
+<text x="60" y="90" fill="#9FE1CB" font-size="14" font-weight="700">spec \u2014 the architecture</text>
+<text x="60" y="108" fill="#5DCAA5" font-size="12">never changes \u00b7 the moat</text>
+<rect x="60" y="128" width="240" height="40" rx="8" fill="#0F6E56" stroke="#1D9E75"/>
+<text x="80" y="153" fill="#E1F5EE" font-size="12">guard-first ordering</text>
+<rect x="60" y="176" width="240" height="40" rx="8" fill="#0F6E56" stroke="#1D9E75"/>
+<text x="80" y="201" fill="#E1F5EE" font-size="12">find \u2192 update \u2192 create opportunity</text>
+<rect x="60" y="224" width="240" height="40" rx="8" fill="#0F6E56" stroke="#1D9E75"/>
+<text x="80" y="249" fill="#E1F5EE" font-size="12">payment = source of truth</text>
+<rect x="60" y="272" width="240" height="40" rx="8" fill="#0F6E56" stroke="#1D9E75"/>
+<text x="80" y="297" fill="#E1F5EE" font-size="12">duplicate prevention</text>
+<rect x="60" y="320" width="240" height="40" rx="8" fill="#0F6E56" stroke="#1D9E75"/>
+<text x="80" y="345" fill="#E1F5EE" font-size="12">one membership = one opportunity</text>
+
+<rect x="360" y="64" width="280" height="340" rx="14" fill="#2A2113" stroke="#BA7517"/>
+<text x="380" y="90" fill="#FAC775" font-size="14" font-weight="700">deployment \u2014 per client</text>
+<text x="380" y="108" fill="#EF9F27" font-size="12">what a technician configures</text>
+<rect x="380" y="128" width="240" height="76" rx="8" fill="#132B3D" stroke="#378ADD"/>
+<text x="400" y="152" fill="#B5D4F4" font-size="14" font-weight="700">1 \u00b7 branding</text>
+<text x="400" y="174" fill="#85B7EB" font-size="12">names, logo, copy, URLs,</text>
+<text x="400" y="190" fill="#85B7EB" font-size="12">emails, SMS, links</text>
+<rect x="380" y="216" width="240" height="76" rx="8" fill="#241F3D" stroke="#7F77DD"/>
+<text x="400" y="240" fill="#CECBF6" font-size="14" font-weight="700">2 \u00b7 business rules</text>
+<text x="400" y="262" fill="#AFA9EC" font-size="12">prices, discounts, points,</text>
+<text x="400" y="278" fill="#AFA9EC" font-size="12">tiers, math operations</text>
+<rect x="380" y="304" width="240" height="76" rx="8" fill="#20302B" stroke="#5F5E5A"/>
+<text x="400" y="328" fill="#D3D1C7" font-size="14" font-weight="700">3 \u00b7 never touch</text>
+<text x="400" y="350" fill="#B4B2A9" font-size="12">the architecture on the left \u2014</text>
+<text x="400" y="366" fill="#B4B2A9" font-size="12">edit and you break the engine</text>
+</svg>
