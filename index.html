@@ -93,6 +93,10 @@
   .sev-high{border-left:3px solid #E24B4A}
   .sev-medium{border-left:3px solid #EF9F27}
   .sev-low{border-left:3px solid #639922}
+  .plan-warn{border:2px solid #E24B4A;background:rgba(226,75,74,.06);border-radius:10px;padding:12px 14px;margin-bottom:14px}
+  .plan-warn-title{color:#E24B4A;font-weight:700;font-size:14px;margin-bottom:6px}
+  .plan-warn-item{color:#E24B4A;font-size:13px;margin-bottom:2px}
+  .step-badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:10px;background:var(--canvas);border:1px solid var(--line);color:var(--muted);white-space:nowrap}
   .audit-empty{color:var(--muted);font-size:13px;padding:24px 0}
   .stack-row{display:flex;align-items:center;gap:10px;margin-bottom:10px}
   .stack-row label{width:150px;flex-shrink:0;font-size:12px;color:var(--muted)}
@@ -168,7 +172,7 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 ============================================================ */
 function freshAudit(){ return { tab:"guide", guideNotes:{}, captureText:"", summary:null, sessionId:null, loaded:false, analyzing:false, msg:"", stackForm:null, stackOtherFlags:{}, extracting:false }; }
 function freshAutomation(){ return { tab:"gaps", loaded:false, msg:"", gaps:[], drafts:{}, assessing:{}, errors:{}, assessingAll:false, progress:"" }; }
-function freshBuildPlan(){ return { loaded:false, msg:"", plan:null, steps:[], draft:null, generating:false, saving:false }; }
+function freshBuildPlan(){ return { loaded:false, msg:"", plan:null, steps:[], draft:null, draftGaps:null, generating:false, saving:false }; }
 
 const S = {
   user: null,
@@ -943,13 +947,27 @@ function renderAutomationCard(g){
 
 function renderAutomation(){
   const content = document.getElementById("content");
-  if(!S.automation.loaded){ content.innerHTML = `<div class="audit-empty">Loading gaps…</div>`; loadAutomationData(S.activeClientId); return; }
+  const tabs = [["gaps","Feasibility"],["plan","Build plan"]];
+  content.innerHTML = `
+    <div class="panel-title">Automation agent</div>
+    <div class="panel-sub">${esc(S.activeClient.business_name)} — feasibility gate, then the build plan.</div>
+    <div class="subtabs">
+      ${tabs.map(([id,lbl]) => `<button class="subtab ${S.automation.tab===id?"active":""}" onclick="automationTab('${id}')">${lbl}</button>`).join("")}
+    </div>
+    <div id="automation-body"></div>`;
+  if(S.automation.tab === "plan") renderBuildPlanBody();
+  else renderFeasibilityBody();
+}
+
+function automationTab(t){ S.automation.tab = t; renderAutomation(); }
+
+function renderFeasibilityBody(){
+  const body = document.getElementById("automation-body");
+  if(!S.automation.loaded){ body.innerHTML = `<div class="audit-empty">Loading gaps…</div>`; loadAutomationData(S.activeClientId); return; }
   const pending = S.automation.gaps.filter(g => g.validation_status === "pending");
   const validated = S.automation.gaps.filter(g => g.validation_status === "validated");
   const stackText = summarizeStack(S.activeClient.current_stack);
-  content.innerHTML = `
-    <div class="panel-title">Automation agent</div>
-    <div class="panel-sub">${esc(S.activeClient.business_name)} — feasibility gate. Assess pending gaps against current stack, then validate.</div>
+  body.innerHTML = `
     <div class="card">
       <div class="phase-h">Current stack</div>
       <div class="msg">${stackText ? esc(stackText) : "No stack captured — run Stack extraction in Audit Assistant first."}</div>
@@ -962,6 +980,445 @@ function renderAutomation(){
     <div class="phase-t" style="margin:24px 0 6px">Validated (${validated.length})</div>
     ${validated.length ? validated.map(renderAutomationCard).join("") : `<div class="audit-empty">None validated yet.</div>`}
     <div class="msg" id="automation-msg">${esc(S.automation.msg)}</div>`;
+}
+
+/* ============================================================
+   MODULE 2 — PHASE C: BUILD PLANNER
+   Turns accepted, validated gaps into ONE dependency-ordered plan of
+   build_steps across both agents (setup + automation, cross-agent edges).
+   The AI proposes steps and depends_on edges; CODE assigns position via
+   topological sort — model-emitted order is never trusted.
+============================================================ */
+const BUILD_SEQUENCING_PROMPT = `ORDERING DOCTRINE (you emit DEPENDENCY EDGES, never positions — deterministic code computes the final order):
+1. Long-lead first, always. A2P registration and domain/email-auth verification have external approval clocks and gate whole channels. If ANY accepted engine sends SMS, the A2P step exists and every SMS-sending step depends on it. Same for email auth + warm-up — a fresh sub-account cannot bulk-send day one.
+2. Foundation before engines, scoped per engine. An engine depends only on the gates it actually needs — never block a no-SMS engine on A2P.
+3. Catalog dependency order: Payment Processor Foundation → payment-triggered engines (booking Won-state, session decrement, referral revenue awards) → loyalty/membership on top. If an accepted gap needs a prerequisite engine that was NOT accepted, add that to scope_flags (name both the gap and the missing engine) — surface it, never silently absorb it.
+4. Dedupe foundations. Emit ONE A2P step, ONE email-auth step, ONE pipeline step — each with many dependents. Never a per-engine copy of a shared gate.
+5. Every engine's chain ends with a test-gate step. Configured ≠ complete: the last step of each engine is its controlled test, and that step's checklist is the test matrix (happy path · not-eligible · every branch · missing data · duplicate/re-entry · external-app failure where relevant).
+6. Parallel tracks are fine. Independent dependency subtrees need no artificial edges between them.
+Cross-agent edges are expected: automation steps typically depend on setup steps (Review Engine workflow ← GBP connected ← A2P); the reverse exists too (a setup import waiting on an automation that cleans the data). agent is an attribute of a step, not a partition.`;
+
+const SETUP_GATES_PROMPT = `SETUP FOUNDATION & DELIVERY GATES (emit setup steps ONLY for gates the accepted engines actually need — never the full sequence unconditionally):
+Hard dependency rules: custom fields → forms → workflows. Domain verified → funnel live AND email subdomain possible. A2P approved → any SMS engine live. Email auth + warm-up → any campaign send. Host user exists → calendar. Pipeline + duplicate policy defined → opportunity workflows. Payment provider connected → payment-triggered engines.
+Foundational sequence (dependency-ordered): business profile & data model (custom fields/tags/test contact) → domains & DNS → phone + A2P registration → email deliverability (dedicated subdomain, SPF/DKIM/DMARC, warm-up) → lead capture (funnel + form; fields exist BEFORE the form) → outbound & follow-up → scheduling (host user first) → pipelines & opportunities (duplicate policy BEFORE any opportunity workflow).
+A2P/10DLC (the SMS gate): register brand (legal name + EIN exactly matching official records) → campaign (use case matching real traffic, HELP/STOP sample messages, public opt-in evidence: unchecked consent checkbox + accessible privacy policy) → assign numbers → wait for approval. External approval clock — start immediately, long_lead:true.
+Email deliverability (the email gate): dedicated sending subdomain, ONE SPF record, DKIM copied exactly, DMARC monitoring-first; warm-up is platform-enforced with staged daily limits — no day-one bulk sends. External propagation + warm-up clock — long_lead:true.
+Setup completion rule: configured ≠ complete. Every setup step's checklist ends with its controlled-test verification (test contact, expected vs actual result, PUBLISHED/verified status confirmed — a saved draft is not active).`;
+
+const GHL_GRAMMAR_PROMPT = `GHL WORKFLOW GRAMMAR (for DESIGN-mode steps — new, untemplated automations; the live builder is final authority, every step gets verified in-UI at build time):
+Triggers: Contact Created/Changed/Tag/DND · Birthday/Custom Date Reminder · Task events · Trigger Link Clicked | Opportunity Created/Changed · Pipeline Stage Changed · Status Changed (Open/Won/Lost/Abandoned) · Stale Opportunities · Order Form/Placed/Fulfilled | Form/Survey Submitted · Customer Replied · Inbound Email · Email Events (delivered/opened/clicked/bounced) · Call Status · SMS error code · keyword match | Appointment Status (created/rescheduled/canceled/confirmed/showed/no-showed — filter by exact calendar; Customer Booked = self-booked ONLY) | Payment Received (the ONLY money truth) · Invoice Paid/Sent/Viewed/Void · Subscription lifecycle (NOT payment) · Refund | Documents & Contracts signed/declined/viewed (contract-signed = the post-agreement boundary) | FB/IG/TikTok/LinkedIn lead forms | Page View · Abandoned Checkout · Scheduler (time-based) · Inbound Webhook (premium — the n8n entry point).
+Actions: Send Email/SMS/WhatsApp/Voicemail-drop · Manual Call/SMS queue · Internal Notification (alert user/role/team) · Slack · GMB message · Review Request · FB/IG DM · Drip | Create/Find Contact (found/not-found branches) · Update Field · Add/Remove Tag · Notes · DND · Assign User · Merge | Create Opportunity (intentional duplicates) · Find→Update Opportunity · Create/Update upsert · Remove | Update Custom Values (account-level state) · Math/Text/Date Formatters · Custom Code · Google Sheets (premium) | Wait (ALWAYS set a timeout) · If/Else (always keep a fallback branch) · Split A/B · Go To · Goal Event · Add/Remove from Workflow | Stripe one-time charge · Send Invoice/Recurring Invoice/Estimate/Contract | Update Appointment Status | AI steps (metered) | Webhook out / Custom Webhook (managed credentials — never paste secrets).
+Semantics that change designs: only Payment Received + a transaction-ID idempotency token proves money (form submission, order placed, invoice Sent/Viewed, subscription "active" do NOT — engines that award value gate on Payment Received). Appointment lifecycle is fully native. Email opens are unreliable — route on clicks/replies/outcomes. Design every trigger for re-entry and duplicates (processed-state tags, find-before-create). An action only sees records in its workflow context. DND/consent respected on every send; A2P and email-auth are DEPENDENCY EDGES of send steps, never steps inside a workflow.
+Native-vs-external boundary: automation living in GHL's own data (contacts, opps, appointments, reviews, GHL payments) = native build. Reading/writing an external system-of-record = n8n bridge (Inbound Webhook in, Webhook action out, HMAC verify, ~100 req/10s). Stripe, FB/IG leads, GBP reviews = native; QuickBooks and deep external-tool data = n8n. Premium executions (inbound webhooks, Sheets, Slack, AI steps) are metered — note volume-sensitive designs in detail.`;
+
+const BUILD_STEP_CONTRACT_PROMPT = `OUTPUT — respond ONLY with valid JSON, no markdown, exactly this shape:
+{"title":"client-safe plan title","summary":"2-3 sentence client-safe overview of what gets built and why","scope_flags":["accepted gap that needs a prerequisite engine which was not accepted — name both"],"steps":[{"ref":"s1","agent":"setup","mode":null,"gap_ref":null,"long_lead":false,"title":"client-safe outcome in plain language","detail":"operator mechanics: trigger config, wiring, fallback path","checklist":["concrete verifiable item"],"estimated_hours":1,"depends_on":[]}]}
+Field rules:
+- ref: short unique local id (s1, s2, …). depends_on lists refs of steps that must be DONE first — every ref must exist, no cycles. Do NOT order the steps array meaningfully and do NOT emit positions — dependency edges are the only ordering signal.
+- agent: "setup" (sub-account foundation work) or "automation" (engine/workflow work).
+- mode: automation steps only — "deploy" (templated engine: snapshot + parameterize) or "design" (new untemplated build). Always null on setup steps.
+- gap_ref: the NUMBER of the accepted gap this step delivers (from the numbered list in the request), or null for foundation/setup steps. EVERY accepted gap must be delivered by at least one automation step.
+- long_lead: true ONLY on steps with an external approval/propagation clock (A2P registration; domain/email-auth + warm-up). Everything else false.
+- title: CLIENT-SAFE plain language ("Automated review requests go live") — never hours, prices, tool names, or mechanics. All mechanics go in detail.
+- checklist: the concrete build/verify items for the step; on a test-gate step it is the test matrix. estimated_hours: internal cost-to-deliver for THIS step — an engine's chain should sum to roughly that gap's validated estimate.
+- Deploy-mode engines are typically ONE deploy step (depending on the shared foundations it needs) plus ONE test-gate step. Design-mode engines may decompose into more steps.
+- scope_flags: [] when there are none.`;
+
+function buildPlanSystemPrompt(hasMode2){
+  return "You are the Build Planner for Baseleap, a GHL automation agency. The client has signed; you turn their ACCEPTED, feasibility-validated gaps into ONE dependency-ordered build plan spanning both agents: setup steps (sub-account foundation) and automation steps (the engines). You propose the steps and their dependency edges; deterministic code — not you — computes the final order.\n\n"
+    + BUILD_SEQUENCING_PROMPT + "\n\n"
+    + SETUP_GATES_PROMPT + "\n\n"
+    + (hasMode2 ? GHL_GRAMMAR_PROMPT + "\n\n" : "")
+    + AUTOMATION_CATALOG_PROMPT + "\n\n"
+    + BUILD_STEP_CONTRACT_PROMPT;
+}
+
+function buildPlanGapLine(g, i){
+  return `${i}. ${g.title}\n`
+    + `   problem: ${g.problem || "—"}\n`
+    + `   severity: ${g.severity || "medium"} | approach: ${g.approach || "?"} | mechanism: ${g.mechanism || "?"}\n`
+    + `   mode: ${(g.is_new_template === true || !g.matched_engine) ? "DESIGN (new template)" : `DEPLOY (templated engine: ${g.matched_engine})`}`
+    + ` | validated hours: ${g.estimated_hours ?? "?"} | band: ${g.band || "?"}`;
+}
+
+function buildPlanUserMessage(gaps){
+  const stackSummary = summarizeStack(S.activeClient.current_stack) || "No current stack captured.";
+  return `Client: ${S.activeClient.business_name} (${S.activeClient.industry || "industry n/a"})\n`
+    + `Current stack: ${stackSummary}\n\n`
+    + `Accepted gaps to deliver (gap_ref = the number):\n`
+    + gaps.map(buildPlanGapLine).join("\n")
+    + `\n\nGenerate the single dependency-ordered build plan JSON now.`;
+}
+
+/* ---- parse + order: the AI proposes edges, this code decides the order ---- */
+const SEVERITY_RANK = { high: 0, medium: 1, low: 2 };   // lower = builds earlier
+
+// Throws a specific error on the first contract violation; returns nothing.
+// Checks every field of every step, that all depends_on refs resolve, and that
+// no step depends on itself. Cycles are caught by the sort (Kahn's leftover set).
+function validatePlanShape(p, gaps){
+  if(typeof p.title !== "string" || !p.title.trim()) throw new Error("plan title missing");
+  if(typeof p.summary !== "string" || !p.summary.trim()) throw new Error("plan summary missing");
+  if(!Array.isArray(p.scope_flags) || p.scope_flags.some(f => typeof f !== "string")) throw new Error("scope_flags must be an array of strings");
+  if(!Array.isArray(p.steps) || !p.steps.length) throw new Error("plan has no steps");
+  const refs = new Set();
+  p.steps.forEach((s, i) => {
+    const at = `step ${i+1}${typeof s.ref === "string" && s.ref.trim() ? ` ("${s.ref}")` : ""}`;
+    if(typeof s.ref !== "string" || !s.ref.trim()) throw new Error(at + ": ref missing");
+    if(refs.has(s.ref)) throw new Error(at + ": duplicate ref");
+    refs.add(s.ref);
+    if(!["setup","automation"].includes(s.agent)) throw new Error(at + ": agent must be setup|automation");
+    if(s.agent === "automation" ? !["deploy","design"].includes(s.mode) : s.mode != null)
+      throw new Error(at + ": mode must be deploy|design on automation steps and null on setup steps");
+    if(!(s.gap_ref === null || (Number.isInteger(s.gap_ref) && s.gap_ref >= 0 && s.gap_ref < gaps.length)))
+      throw new Error(at + `: gap_ref must be null or 0–${gaps.length - 1}`);
+    if(typeof s.long_lead !== "boolean") throw new Error(at + ": long_lead must be boolean");
+    if(typeof s.title !== "string" || !s.title.trim()) throw new Error(at + ": title missing");
+    if(typeof s.detail !== "string" || !s.detail.trim()) throw new Error(at + ": detail missing");
+    if(!Array.isArray(s.checklist) || s.checklist.some(c => typeof c !== "string" || !c.trim()))
+      throw new Error(at + ": checklist must be an array of non-empty strings");
+    if(typeof s.estimated_hours !== "number" || !isFinite(s.estimated_hours) || s.estimated_hours < 0)
+      throw new Error(at + ": estimated_hours must be a number ≥ 0");
+    if(!Array.isArray(s.depends_on) || s.depends_on.some(d => typeof d !== "string")) throw new Error(at + ": depends_on must be an array of refs");
+    if(s.depends_on.includes(s.ref)) throw new Error(at + ": depends on itself");
+  });
+  p.steps.forEach(s => s.depends_on.forEach(d => {
+    if(!refs.has(d)) throw new Error(`step "${s.ref}" depends on unknown ref "${d}"`);
+  }));
+}
+
+// A step's severity comes from the gap it delivers; foundation steps (no gap)
+// rank below low — dependency edges, not severity, are what pull them early.
+function stepSeverityRank(s, gaps){
+  const g = s.gap_ref === null ? null : gaps[s.gap_ref];
+  return g && SEVERITY_RANK[g.severity] !== undefined ? SEVERITY_RANK[g.severity] : 3;
+}
+
+// Kahn's topological sort. Among the currently-ready steps (all dependencies
+// already placed), the next pick is decided by: long-lead flag → severity of the
+// delivered gap → ascending estimated_hours → original array index (stability).
+// Throws naming the stuck refs if the queue drains before every step is placed (= cycle).
+function orderPlanSteps(steps, gaps){
+  const indegree = new Map(steps.map(s => [s.ref, s.depends_on.length]));
+  const dependents = new Map(steps.map(s => [s.ref, []]));
+  steps.forEach(s => s.depends_on.forEach(d => dependents.get(d).push(s.ref)));
+  const byRef = new Map(steps.map(s => [s.ref, s]));
+  const pickNext = (a, b) =>
+       (b.long_lead === true) - (a.long_lead === true)
+    || stepSeverityRank(a, gaps) - stepSeverityRank(b, gaps)
+    || a.estimated_hours - b.estimated_hours
+    || steps.indexOf(a) - steps.indexOf(b);
+  let ready = steps.filter(s => indegree.get(s.ref) === 0);
+  const ordered = [];
+  while(ready.length){
+    ready.sort(pickNext);
+    const s = ready.shift();
+    ordered.push(s);
+    dependents.get(s.ref).forEach(ref => {
+      indegree.set(ref, indegree.get(ref) - 1);
+      if(indegree.get(ref) === 0) ready.push(byRef.get(ref));
+    });
+  }
+  if(ordered.length !== steps.length){
+    const stuck = steps.filter(s => !ordered.includes(s)).map(s => s.ref).join(", ");
+    throw new Error("dependency cycle among: " + stuck);
+  }
+  return ordered.map((s, i) => ({ ...s, position: i }));
+}
+
+// raw AI text → validated, deterministically ordered draft plan.
+// Throws with a specific message on any contract violation — the caller
+// retries generation ONCE on failure and never saves an invalid graph.
+function parseAndOrderPlan(raw, gaps){
+  let p;
+  try{ p = JSON.parse(raw.replace(/```json|```/g, "").trim()); }
+  catch(e){ throw new Error("AI returned invalid JSON"); }
+  validatePlanShape(p, gaps);
+  p.steps.forEach(s => { s.depends_on = [...new Set(s.depends_on)]; });  // dupes would corrupt indegree counts
+  const steps = orderPlanSteps(p.steps, gaps).map(s => ({
+    ...s, title: s.title.trim(), detail: s.detail.trim(), checklist: s.checklist.map(c => c.trim()),
+  }));
+  const covered = new Set(steps.map(s => s.gap_ref).filter(r => r !== null));
+  const warnings = gaps.map((g, i) => covered.has(i) ? null : `Accepted gap "${g.title}" has no step delivering it.`).filter(Boolean);
+  return {
+    title: p.title.trim(), summary: p.summary.trim(),
+    scope_flags: p.scope_flags.map(f => f.trim()).filter(Boolean),
+    steps, warnings,
+  };
+}
+
+/* ---- generate / save / load ---- */
+function setBuildPlanMsg(t){ S.buildPlan.msg = t; const el = document.getElementById("buildplan-msg"); if(el) el.textContent = t; }
+
+// The planner reads only accepted gaps (selection is set by the Gap Report;
+// until that module exists, flip selection in the Supabase SQL editor to test).
+async function loadAcceptedGaps(clientId){
+  const { data, error } = await sb.from("gaps").select("*")
+    .eq("client_id", clientId).eq("validation_status", "validated").eq("selection", "accepted")
+    .order("sort_order");
+  if(error) throw new Error("could not load accepted gaps: " + error.message);
+  return data || [];
+}
+
+// Retry-once wiring: ONLY a contract violation (parseAndOrderPlan throw) earns the
+// retry, with the named violation fed back so the second attempt can fix it.
+// Transport/proxy errors from ai() propagate immediately — retrying those blind
+// just doubles cost on an outage.
+async function generatePlanDraft(system, userMsg, gaps){
+  let raw = await ai({ system, messages: [{ role:"user", content: userMsg }], max_tokens: 8000 });
+  try{ return parseAndOrderPlan(raw, gaps); }
+  catch(e1){
+    raw = await ai({ system, messages: [{ role:"user", content:
+      userMsg + `\n\nYour previous attempt violated the output contract — ${e1.message}. Regenerate the complete corrected JSON.` }], max_tokens: 8000 });
+    try{ return parseAndOrderPlan(raw, gaps); }
+    catch(e2){ throw new Error(`plan failed validation twice (first: ${e1.message}; then: ${e2.message})`); }
+  }
+}
+
+async function generateBuildPlan(){
+  if(S.buildPlan.generating) return;
+  S.buildPlan.generating = true; setBuildPlanMsg("Generating plan…"); renderAutomation();
+  try{
+    const gaps = await loadAcceptedGaps(S.activeClientId);
+    if(!gaps.length) throw new Error("no accepted gaps — validate gaps here, then mark them accepted (Gap Report) first");
+    const hasMode2 = gaps.some(g => g.is_new_template === true || !g.matched_engine);
+    S.buildPlan.draft = await generatePlanDraft(buildPlanSystemPrompt(hasMode2), buildPlanUserMessage(gaps), gaps);
+    S.buildPlan.draftGaps = gaps;   // the exact list the draft's gap_refs index into — frozen with the draft
+    setBuildPlanMsg("Draft ready — review below, then save.");
+  }catch(e){
+    console.error("generateBuildPlan error:", e);
+    setBuildPlanMsg("Generation failed: " + e.message);
+  }
+  S.buildPlan.generating = false; renderAutomation();
+}
+
+// Draft steps → build_steps rows. Local refs become real UUIDs minted client-side,
+// so depends_on UUID[] resolves inside ONE atomic batch insert.
+function draftStepRows(draft, gaps, planId, op){
+  const idByRef = Object.fromEntries(draft.steps.map(s => [s.ref, crypto.randomUUID()]));
+  return draft.steps.map(s => ({
+    id: idByRef[s.ref], build_plan_id: planId, operator_id: op,
+    gap_id: s.gap_ref === null ? null : gaps[s.gap_ref].id,
+    agent: s.agent, mode: s.mode,
+    matched_engine: s.gap_ref === null ? null : (gaps[s.gap_ref].matched_engine || null),
+    title: s.title, detail: s.detail,
+    checklist: s.checklist.map(t => ({ text: t, done: false })),
+    estimated_hours: s.estimated_hours, status: "queued",
+    depends_on: s.depends_on.map(r => idByRef[r]),
+    position: s.position,
+  }));
+}
+
+// Two writes: parent plan, then ALL steps as one batch insert (single statement —
+// atomic, so steps are all-or-nothing). The partial-failure window is between the
+// two writes: plan row in, steps failed → delete the plan row (build_steps cascade).
+async function saveBuildPlan(){
+  const d = S.buildPlan.draft;
+  if(!d || S.buildPlan.saving) return;
+  S.buildPlan.saving = true; setBuildPlanMsg("Saving…"); renderAutomation();
+  try{
+    const { data: plan, error: planErr } = await sb.from("build_plans")
+      .insert({ operator_id: S.user.id, client_id: S.activeClientId, title: d.title, summary: d.summary })
+      .select().single();
+    if(planErr || !plan) throw new Error("plan insert failed: " + (planErr ? planErr.message : "no row returned"));
+
+    const rows = draftStepRows(d, S.buildPlan.draftGaps, plan.id, S.user.id);
+    const { data: steps, error: stepErr } = await sb.from("build_steps").insert(rows).select();
+    if(stepErr || !steps || steps.length !== rows.length){
+      await rollbackBuildPlan(plan.id, stepErr ? stepErr.message : `expected ${rows.length} rows back, got ${steps ? steps.length : 0}`);
+      S.buildPlan.saving = false; renderAutomation(); return;
+    }
+    S.buildPlan.plan = plan;
+    S.buildPlan.steps = steps.slice().sort((a, b) => a.position - b.position);
+    S.buildPlan.draft = null; S.buildPlan.draftGaps = null;   // draft is spent — the saved rows are now the truth
+    setBuildPlanMsg("Plan saved ✓");
+  }catch(e){
+    console.error("saveBuildPlan error:", e);
+    setBuildPlanMsg("Save failed: " + e.message + " — nothing was saved, draft kept.");
+  }
+  S.buildPlan.saving = false; renderAutomation();
+}
+
+// Deleting the plan row cascades to any inserted build_steps (FK ON DELETE CASCADE),
+// so one verified delete restores the pre-save state. The draft is kept either way.
+async function rollbackBuildPlan(planId, why){
+  const { error } = await sb.from("build_plans").delete().eq("id", planId);
+  setBuildPlanMsg(error
+    ? `Save failed (${why}) AND rollback failed (${error.message}) — orphaned plan ${planId}, remove it in Supabase. Draft kept.`
+    : `Save failed: ${why}. Rolled back — nothing was saved. Draft kept; try again.`);
+}
+
+// Latest plan per client + its steps in topological position order.
+async function loadBuildPlanData(clientId){
+  try{
+    const { data: plans, error } = await sb.from("build_plans").select("*")
+      .eq("client_id", clientId).order("created_at", { ascending: false }).limit(1);
+    if(error) throw new Error(error.message);
+    S.buildPlan.plan = (plans && plans[0]) || null;
+    S.buildPlan.steps = [];
+    if(S.buildPlan.plan){
+      const { data: steps, error: e2 } = await sb.from("build_steps").select("*")
+        .eq("build_plan_id", S.buildPlan.plan.id).order("position");
+      if(e2) throw new Error(e2.message);
+      S.buildPlan.steps = steps || [];
+    }
+  }catch(e){ setBuildPlanMsg("Load failed: " + e.message); }
+  S.buildPlan.loaded = true;
+  renderAutomation();
+}
+
+/* ---- Build-plan subtab UI ---- */
+function renderBuildPlanBody(){
+  const body = document.getElementById("automation-body");
+  if(!S.buildPlan.loaded){ body.innerHTML = `<div class="audit-empty">Loading build plan…</div>`; loadBuildPlanData(S.activeClientId); return; }
+  // precedence: a saved plan is the truth; a draft only shows before any save
+  const inner = S.buildPlan.plan ? renderSavedPlan() : S.buildPlan.draft ? renderDraftReview() : renderPlanEmpty();
+  body.innerHTML = inner + `<div class="msg" id="buildplan-msg" style="margin-top:10px">${esc(S.buildPlan.msg)}</div>`;
+}
+
+function renderPlanEmpty(){
+  return `
+    <div class="card">
+      <div class="phase-t">No build plan yet</div>
+      <div class="msg" style="margin-bottom:12px">Generates ONE dependency-ordered plan (setup + automation steps) from this client's accepted gaps. Gaps must be validated on the Feasibility tab and marked accepted (Gap Report) first.</div>
+      <button class="btn-primary" style="width:auto" onclick="generateBuildPlan()" ${S.buildPlan.generating?"disabled":""}>${S.buildPlan.generating?"Generating plan…":"Generate build plan"}</button>
+    </div>`;
+}
+
+/* -- draft review: warnings FIRST (look before you save), then scope flags, summary, ordered steps -- */
+function renderDraftWarnings(d){
+  if(!d.warnings.length) return "";
+  return `
+    <div class="plan-warn">
+      <div class="plan-warn-title">⚠ ${d.warnings.length} accepted gap${d.warnings.length===1?"":"s"} NOT covered by this plan</div>
+      ${d.warnings.map(w => `<div class="plan-warn-item">• ${esc(w)}</div>`).join("")}
+      <div class="msg" style="margin-top:6px">Look before you save: regenerate, or save knowingly — some gaps are a conversation, not an automation.</div>
+    </div>`;
+}
+
+function draftDepLabel(s, d){
+  return s.depends_on.map(ref => { const t = d.steps.find(x => x.ref === ref); return t ? "#" + (t.position + 1) : ref; }).join(", ");
+}
+
+function stepBadges(s){
+  return [s.agent, s.mode, s.long_lead ? "long-lead" : "", s.estimated_hours != null ? s.estimated_hours + "h" : ""]
+    .filter(Boolean).map(b => `<span class="step-badge">${esc(String(b))}</span>`).join(" ");
+}
+
+function renderDraftStep(s, d){
+  const gap = s.gap_ref === null ? null : S.buildPlan.draftGaps[s.gap_ref];
+  return `
+    <div class="gap-card ${gap ? "sev-" + esc(gap.severity || "medium") : ""}">
+      <div class="gap-top">
+        <div style="flex:1;font-size:14px;font-weight:600">${s.position + 1}. ${esc(s.title)}</div>
+        ${stepBadges(s)}
+      </div>
+      <div class="gap-body">
+        ${gap ? `<div class="msg" style="margin-bottom:4px">Delivers: ${esc(gap.title)}</div>` : ""}
+        ${s.depends_on.length ? `<div class="msg" style="margin-bottom:4px">After: ${esc(draftDepLabel(s, d))}</div>` : ""}
+        <div style="font-size:13px;margin:6px 0">${esc(s.detail)}</div>
+        ${s.checklist.length ? `<div class="msg">${s.checklist.map(c => "☐ " + esc(c)).join("<br>")}</div>` : ""}
+      </div>
+    </div>`;
+}
+
+function renderDraftReview(){
+  const d = S.buildPlan.draft;
+  const hours = d.steps.reduce((t, s) => t + s.estimated_hours, 0);
+  return renderDraftWarnings(d)
+    + (d.scope_flags.length ? `
+      <div class="card" style="border-left:3px solid #EF9F27">
+        <div class="phase-h">Scope flags — surfaced by the planner</div>
+        ${d.scope_flags.map(f => `<div class="msg">• ${esc(f)}</div>`).join("")}
+      </div>` : "")
+    + `<div class="card">
+        <div class="phase-h">Draft plan — NOT saved yet</div>
+        <div class="phase-t">${esc(d.title)}</div>
+        <div class="msg">${esc(d.summary)}</div>
+        <div class="msg" style="margin-top:6px">${d.steps.length} steps · ~${hours}h internal cost-to-deliver</div>
+      </div>`
+    + d.steps.map(s => renderDraftStep(s, d)).join("")
+    + `<div class="btn-row" style="margin-top:14px">
+        <button class="btn-primary" style="width:auto" onclick="saveBuildPlan()" ${S.buildPlan.saving?"disabled":""}>${S.buildPlan.saving?"Saving…":"Save plan"}</button>
+        <button class="btn-ghost" onclick="generateBuildPlan()" ${S.buildPlan.generating?"disabled":""}>${S.buildPlan.generating?"Generating…":"Regenerate"}</button>
+        <button class="btn-ghost" onclick="discardDraft()">Discard draft</button>
+      </div>`;
+}
+
+function discardDraft(){
+  S.buildPlan.draft = null; S.buildPlan.draftGaps = null;
+  setBuildPlanMsg("Draft discarded — nothing was saved.");
+  renderAutomation();
+}
+
+/* -- saved plan: per-step status / checklist / notes, every write verified -- */
+function savedDepLabel(s){
+  const byId = new Map(S.buildPlan.steps.map(x => [x.id, x]));
+  return s.depends_on.map(id => { const t = byId.get(id); return t ? `#${t.position + 1}${t.status === "done" ? " ✓" : ""}` : "?"; }).join(", ");
+}
+
+function renderSavedStep(s){
+  const statusOpts = ["queued","building","testing","done"].map(v => `<option value="${v}" ${s.status===v?"selected":""}>${v}</option>`).join("");
+  const checklist = (s.checklist || []).map((c, i) => `
+    <label style="display:block;font-size:13px;margin:2px 0">
+      <input type="checkbox" ${c.done?"checked":""} onchange="toggleStepChecklist('${s.id}',${i})"> ${c.done ? `<s>${esc(c.text)}</s>` : esc(c.text)}
+    </label>`).join("");
+  return `
+    <div class="gap-card">
+      <div class="gap-top">
+        <div style="flex:1;font-size:14px;font-weight:600">${s.position + 1}. ${esc(s.title)}</div>
+        ${stepBadges(s)}
+        <select onchange="setStepStatus('${s.id}', this.value)">${statusOpts}</select>
+      </div>
+      <div class="gap-body">
+        ${s.depends_on.length ? `<div class="msg" style="margin-bottom:6px">After: ${esc(savedDepLabel(s))}</div>` : ""}
+        ${s.detail ? `<div style="font-size:13px;margin-bottom:8px">${esc(s.detail)}</div>` : ""}
+        ${checklist ? `<div style="margin-bottom:8px">${checklist}</div>` : ""}
+        <label>Notes</label>
+        <textarea class="notes" onchange="saveStepNotes('${s.id}', this.value)">${esc(s.notes || "")}</textarea>
+      </div>
+    </div>`;
+}
+
+function renderSavedPlan(){
+  const p = S.buildPlan.plan, steps = S.buildPlan.steps;
+  const done = steps.filter(s => s.status === "done").length;
+  return `
+    <div class="card">
+      <div class="phase-h">Build plan · ${esc(p.status || "")}</div>
+      <div class="phase-t">${esc(p.title || "Untitled plan")}</div>
+      <div class="msg">${esc(p.summary || "")}</div>
+      <div class="msg" style="margin-top:6px">${done} of ${steps.length} steps done</div>
+    </div>`
+    + steps.map(renderSavedStep).join("");
+}
+
+async function setStepStatus(stepId, status){
+  const s = S.buildPlan.steps.find(x => x.id === stepId); if(!s) return;
+  // completed_at is the Phase D hinge (SOP-gen + ledger): stamped on done, cleared on any move away
+  const patch = { status, completed_at: status === "done" ? new Date().toISOString() : null };
+  const { data, error } = await sb.from("build_steps").update(patch).eq("id", stepId).select().single();
+  if(error){ setBuildPlanMsg("Status update failed: " + error.message); renderAutomation(); return; }
+  Object.assign(s, data);
+  setBuildPlanMsg(`Step ${s.position + 1} → ${data.status} ✓`);
+  renderAutomation();
+}
+
+async function toggleStepChecklist(stepId, idx){
+  const s = S.buildPlan.steps.find(x => x.id === stepId); if(!s) return;
+  const list = (s.checklist || []).map((c, i) => i === idx ? { ...c, done: !c.done } : c);
+  const { data, error } = await sb.from("build_steps").update({ checklist: list }).eq("id", stepId).select().single();
+  if(error){ setBuildPlanMsg("Checklist update failed: " + error.message); renderAutomation(); return; }  // rerender snaps the checkbox back
+  Object.assign(s, data);
+  renderAutomation();
+}
+
+async function saveStepNotes(stepId, text){
+  const s = S.buildPlan.steps.find(x => x.id === stepId); if(!s) return;
+  const { data, error } = await sb.from("build_steps").update({ notes: text.trim() || null }).eq("id", stepId).select().single();
+  if(error){ setBuildPlanMsg("Notes save failed: " + error.message); return; }
+  Object.assign(s, data);
+  setBuildPlanMsg("Notes saved ✓");   // no rerender — keeps focus/scroll; local row already mirrors the DB
 }
 
 /* ============================================================
