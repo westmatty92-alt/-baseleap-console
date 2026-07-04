@@ -211,8 +211,12 @@ async function ai({ system, messages, model = "claude-sonnet-4-6", max_tokens = 
   });
   if(!res.ok){ const body = await res.json().catch(()=>null); throw new Error("AI request failed: " + res.status + (body ? " — " + JSON.stringify(body) : "")); }
   const data = await res.json();
-  if(data.stop_reason === "max_tokens")
+  if(data.stop_reason === "max_tokens"){
+    // A truncated response is never usable — name the real failure instead of
+    // letting it surface downstream as "invalid JSON".
     console.warn(`ai(): output TRUNCATED — hit max_tokens=${max_tokens}`, "usage:", JSON.stringify(data.usage || null));
+    throw new Error(`output truncated — hit the ${max_tokens}-token output cap before finishing`);
+  }
   return (data.content || []).filter(b => b.type === "text").map(b => b.text).join("");
 }
 
@@ -1024,7 +1028,8 @@ Field rules:
 - title: CLIENT-SAFE plain language ("Automated review requests go live") — never hours, prices, tool names, or mechanics. All mechanics go in detail.
 - checklist: the concrete build/verify items for the step; on a test-gate step it is the test matrix. estimated_hours: internal cost-to-deliver for THIS step — an engine's chain should sum to roughly that gap's validated estimate.
 - Deploy-mode engines are typically ONE deploy step (depending on the shared foundations it needs) plus ONE test-gate step. Design-mode engines may decompose into more steps.
-- scope_flags: [] when there are none.`;
+- scope_flags: [] when there are none.
+- BE ECONOMICAL — the full plan must fit in one response. detail: 1-2 tight sentences (trigger, key wiring, fallback — no prose padding). checklist: at most 6 items, each a short imperative phrase. summary: 2-3 sentences. Brevity comes from tighter PROSE, never from dropping steps, checklist items that matter, or dependency edges.`;
 
 function buildPlanSystemPrompt(hasMode2){
   return "You are the Build Planner for Baseleap, a GHL automation agency. The client has signed; you turn their ACCEPTED, feasibility-validated gaps into ONE dependency-ordered build plan spanning both agents: setup steps (sub-account foundation) and automation steps (the engines). You propose the steps and their dependency edges; deterministic code — not you — computes the final order.\n\n"
@@ -1166,13 +1171,23 @@ async function loadAcceptedGaps(clientId){
 // retry, with the named violation fed back so the second attempt can fix it.
 // Transport/proxy errors from ai() propagate immediately — retrying those blind
 // just doubles cost on an outage.
+// Retry feedback names the REAL problem: a truncation retry asks for concision
+// (dropping steps is not allowed); a contract violation asks for the specific fix.
+function planRetryFeedback(err){
+  return /truncated/.test(err.message)
+    ? "Your previous attempt was cut off at the output-token limit before the JSON completed. Regenerate the COMPLETE plan more concisely — shorter detail sentences, tighter checklist phrasing. Do NOT drop steps, checklists, or dependency edges to save space."
+    : `Your previous attempt violated the output contract — ${err.message}. Regenerate the complete corrected JSON.`;
+}
+
 async function generatePlanDraft(system, userMsg, gaps){
-  let raw = await ai({ system, messages: [{ role:"user", content: userMsg }], max_tokens: 8000 });
-  console.log(`build-plan raw (attempt 1, ${raw.length} chars):`, raw);
-  try{ return parseAndOrderPlan(raw, gaps); }
-  catch(e1){
-    raw = await ai({ system, messages: [{ role:"user", content:
-      userMsg + `\n\nYour previous attempt violated the output contract — ${e1.message}. Regenerate the complete corrected JSON.` }], max_tokens: 8000 });
+  let raw;
+  try{
+    raw = await ai({ system, messages: [{ role:"user", content: userMsg }], max_tokens: 32000 });
+    console.log(`build-plan raw (attempt 1, ${raw.length} chars):`, raw);
+    return parseAndOrderPlan(raw, gaps);
+  }catch(e1){
+    if(/AI request failed/.test(e1.message)) throw e1;   // transport/proxy error — retrying blind just doubles cost
+    raw = await ai({ system, messages: [{ role:"user", content: userMsg + "\n\n" + planRetryFeedback(e1) }], max_tokens: 32000 });
     console.log(`build-plan raw (attempt 2, ${raw.length} chars):`, raw);
     try{ return parseAndOrderPlan(raw, gaps); }
     catch(e2){ throw new Error(`plan failed validation twice (first: ${e1.message}; then: ${e2.message})`); }
