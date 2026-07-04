@@ -3,6 +3,15 @@
 This file tells Claude Code how to work in this repo. Read it fully before any task.
 **Source-of-truth docs live IN THIS REPO:** read `MASTER_BUILD_GUIDE.md` for the build sequence and `REFERENCES.md` for reference material before starting a module. (The canonical spec also lives in the Notion page "Baseleap Console — Build Spec & Data Contracts", but the in-repo guides are what you read directly.) When a data contract changes, update the in-repo guide in the same session.
 
+## 🛑 THE ONE RULE
+Before writing any code:
+1. Read `MASTER_BUILD_GUIDE.md` and build the NEXT unbuilt item in dependency order — not whatever seems next.
+2. Write a Definition of Done for that item.
+3. Get Matthew's approval in plan mode.
+4. Build to that spec.
+
+**Tripwire:** if you catch yourself mid-build with undefined requirements, STOP and write the spec first.
+
 ---
 
 ## WHAT THIS IS
@@ -60,9 +69,9 @@ Each agent reads its skills in-context from `.claude/skills/<name>/SKILL.md` (cu
 ---
 
 ## WORKFLOW
-1. Read this file, `REFERENCES.md`, and `MASTER_BUILD_GUIDE.md` (build sequence) + the relevant module section before starting.
+1. Read this file, `REFERENCES.md`, and `MASTER_BUILD_GUIDE.md` (build sequence) + the relevant module section before starting. THE ONE RULE applies: the build target is the NEXT unbuilt item in dependency order — not whatever seems next.
 2. Read the Notion track plan and the highest-priority incomplete item.
 3. Explore the existing `index.html` for the pattern before adding a module — this repo has strong patterns; follow them.
-4. Describe your approach and wait for approval before implementing (plan mode).
+4. Describe your approach with a written Definition of Done and wait for approval before implementing (plan mode). No approval without the Definition of Done.
 5. Build → test → verify Supabase writes returned rows → ask before pushing.
 6. If a data contract changed, update the in-repo guide in the same session.
