@@ -1112,6 +1112,104 @@ async function listEngines(){
   return data;
 }
 
+// spec.deployment — the AI-readable condensed deployment guide per snapshottable
+// engine (three tiers: branding / business_rules incl. math_operations / never_touch).
+// Full-fidelity master: Notion "🛠️ Deployment Guides" under the Engine Catalog.
+// payments_stripe is drop-in — no deployment section by design.
+const ENGINE_DEPLOYMENT = {
+  membership: {
+    branding: {
+      custom_fields: "rename per client: Membership Status, Membership Type, Sessions Used, Sessions Remaining, Last Payment Date, Next Points Expiry, Credit Balance, Bonus Cycles",
+      tags: "rebrand state tags (e.g. Member – Glow VIP → Gold Member / Monthly Member / Premium Client)",
+      pipelines: "membership pipeline name, stages, opportunity statuses (some clients don't call them memberships)",
+      templates: "membership welcome, renewal, past-due, expired, cancellation emails + SMS (deliverable — quote it)"
+    },
+    business_rules: {
+      discovery: "membership names, prices, billing frequency, recurring vs one-time, included sessions, session reset rules, expiry rules, which services consume sessions, which memberships allow booking, whether cancelled members retain access",
+      stripe: "membership products, price IDs, subscription intervals, billing frequency",
+      trigger_filters: "reconfigure every workflow's trigger filters for the new products/prices — the most commonly missed setting; miss one and the workflow silently doesn't fire",
+      math_operations: ["session allocations","session decrement amount","membership duration","renewal windows","expiry windows","threshold values — all hardcoded, all change"],
+      tests: ["activation","renewal","cancellation","past due","booking lock","session decrement"]
+    },
+    never_touch: [
+      "one membership = one opportunity",
+      "subscription-STATE triggers (never Payment Received)",
+      "booking-lock logic",
+      "session-decrement logic",
+      "past-due access enforcement"
+    ]
+  },
+  referral: {
+    branding: {
+      custom_fields: "Referral Code, Referred By Code, Points, Wallet/Credit Balance, Tier, Referral Count, Last Referral Date, Commission Balance, Reward Tokens",
+      tags: "biggest customization — map to the client's EXISTING tag scheme, don't duplicate: Referral – Pending / Confirmed, Tier – Elite, SYS – Referral Guard, Referral Invite Sent",
+      referral_links: "booking URL, referral query parameter, code prefix (SR-{{contact.id}} → client prefix)",
+      templates: "referral invite, confirmation, reward, tier-unlock emails + SMS; optional Softr rewards portal (external build — record-level security critical)"
+    },
+    business_rules: {
+      discovery: "reward structure (points / cash / store credit / free service / commission), tiers + thresholds, discount %, eligible services/products, referral code prefix",
+      trigger_filters: "reconfigure every workflow's trigger filters for the client's services — the most commonly missed setting",
+      math_operations: ["points awarded per action (e.g. 200 → 100)","reward values","discount %","store credit amounts","commission %","bonus services","tier thresholds","reward expiry","referral limits","multiplier events — every math action updates; this engine has the most client-specific math"],
+      webhooks: "usually forgotten — webhook URLs, payload names, source/service/membership names, conversion types, event types, award tokens, client IDs; the webhook BODY often contains hardcoded business/service names",
+      tests: ["referral code generation","capture","booking with/without referral","reward","tier promotion","commission payout","reward redemption","duplicate prevention"],
+      refactor_note: "neutralize Stay-Radiant-specific names into template-first architecture: neutral workflow names, namespaced tag prefixes (REF-, MEM-, SYS-), all client values in one config doc — turns deployment into mechanical configuration"
+    },
+    never_touch: [
+      "referral guard (one-time-send lock + code backfill)",
+      "attribution logic",
+      "fraud guards",
+      "tier-evaluation structure"
+    ]
+  },
+  booking: {
+    branding: {
+      services: "swap names/descriptions/prices/durations/categories; each main service needs its own booking-confirmation workflow",
+      service_tags: "SR-Service-[Name] → CLIENT-Service-[Name] (one permanent contact-level tag per service); add-ons CLIENT-Addon-[Name] — modifiers, not core services",
+      calendars: "calendar names, service calendars, staff assigned, availability, service IDs, URLs, forms, buffers, durations",
+      pipelines: "pipeline name, stages, statuses (pattern: booking creates Bookings/Open → Stripe updates Paid/Booked/Won)",
+      templates: "booking confirmation, payment confirmation, failed payment, cancellation, reschedule, reminder, prep, aftercare emails + SMS; reminder timing per service type (deliverable — quote it)"
+    },
+    business_rules: {
+      discovery: "services, prices, durations, staff, availability, payment requirement (upfront / deposit / pay-later), cancellation policy, reminder timing, pipeline + stages, completion status",
+      completion_logic: "define what 'completed' means per client (SR pattern: appointment Showed → opportunity Completed, keeps Won, removes temp Paid tag, triggers review/referral handoff)",
+      manual_booking_mode: "booking_mode client_parameter: online | manual | both (both recommended = more work = higher quote). Payment model: paid-at-booking / deposit (Deposit Paid, Amount, Balance Due fields) / pay-later (Manual Payment Pending/Confirmed + internal alert). A manually created booking must NOT be Won until payment is confirmed. Requires the STAFF SOP deliverable — manual booking breaks fastest from staff error, not automation",
+      trigger_filters: "reconfigure every workflow's Service Booking trigger for the client's calendars/services — the most commonly missed setting",
+      math_operations: ["service prices","deposit amounts","balance-due calculations","reminder timing offsets"],
+      tests: ["book each service","correct service tag applies","opportunity created without duplicate","payment success/failure","paid/won transition","add-ons","completion/showed","review/referral handoff","no-show/cancel","repeat client"]
+    },
+    never_touch: [
+      "booking workflows create the opportunity as Open (never Won) — payment/completion logic marks Won",
+      "service identity lives in the Service Booking trigger, not later If/Else",
+      "Stripe stays the single payment source of truth (never duplicated per service)",
+      "core service = identity, add-ons = modifiers"
+    ]
+  }
+};
+
+// UPDATE existing rows: merge spec.deployment alongside the seeded spec content.
+// Never re-stamps operator_id (RLS covers it); every write chains .select().single().
+// Run once from the browser console: updateEngineDeployment()
+async function updateEngineDeployment(){
+  const results = [];
+  for(const [key, deployment] of Object.entries(ENGINE_DEPLOYMENT)){
+    const row = await getEngineByKey(key);
+    if(!row){ console.error("updateEngineDeployment:", key, "not found — skipped"); continue; }
+    const spec = { ...(row.spec || {}), deployment };
+    const { data, error } = await sb.from("engine_catalog")
+      .update({ spec, updated_at: new Date().toISOString() })
+      .eq("engine_key", key).select().single();
+    if(error){ console.error("updateEngineDeployment failed for", key + ":", error.message); continue; }
+    results.push(data);
+    console.log("deployment written →", key, "| spec keys:", Object.keys(data.spec).join(", "));
+  }
+  const ref = await getEngineByKey("referral");
+  const dep = ref && ref.spec && ref.spec.deployment;
+  console.log("verify referral → spec.deployment present:", !!dep,
+    "| tiers:", dep ? Object.keys(dep).join(", ") : "—",
+    "| original spec intact:", !!(ref && ref.spec && ref.spec.automations && ref.spec.level === "summary"));
+  return results;
+}
+
 async function assessGap(gapId, silent){
   const g = S.automation.gaps.find(x => x.id === gapId);
   if(!g) return;
