@@ -43,9 +43,19 @@ not a partition.
 
 ## The step contract (what generation must emit)
 JSON: { title, summary, scope_flags: [strings], steps: [ { ref,
-agent: "setup"|"automation", mode: "deploy"|"design"|null,
+agent: "setup"|"automation", mode: "retrieve"|"formulate"|null,
 gap_ref: <index into supplied gaps or null>, long_lead: bool, title, detail,
 checklist: [strings], estimated_hours, depends_on: [refs] } ] }
+- `mode` (migration 007): "retrieve" = catalog engine (drop-in OR parameterize),
+  "formulate" = designed from scratch, null on setup steps. Drop-in vs
+  parameterize is NOT a mode — both are retrieve, distinguished by the presence
+  of a "changes made" note on the step. Code re-derives mode from the sweep
+  route after parsing — model-emitted mode is never trusted, like positions.
+- The sweep (three-way catalog routing per accepted gap) runs BEFORE generation
+  and FEEDS this contract: routing lines + engine-prerequisite hints go into the
+  generation request; engine spec / deployment tiers / changes note are attached
+  to steps BY CODE after parsing (never emitted inside the plan JSON — token
+  budget). They persist in operator-only build_steps.notes.
 - Plan-level `title`/`summary` are CLIENT-SAFE (they populate
   build_plans.title/summary). `scope_flags` carries rule-3 scope holes (an
   accepted gap needing a not-accepted prerequisite engine, naming both) —

@@ -1411,7 +1411,7 @@ A2P/10DLC (the SMS gate): register brand (legal name + EIN exactly matching offi
 Email deliverability (the email gate): dedicated sending subdomain, ONE SPF record, DKIM copied exactly, DMARC monitoring-first; warm-up is platform-enforced with staged daily limits — no day-one bulk sends. External propagation + warm-up clock — long_lead:true.
 Setup completion rule: configured ≠ complete. Every setup step's checklist ends with its controlled-test verification (test contact, expected vs actual result, PUBLISHED/verified status confirmed — a saved draft is not active).`;
 
-const GHL_GRAMMAR_PROMPT = `GHL WORKFLOW GRAMMAR (for DESIGN-mode steps — new, untemplated automations; the live builder is final authority, every step gets verified in-UI at build time):
+const GHL_GRAMMAR_PROMPT = `GHL WORKFLOW GRAMMAR (for FORMULATE-mode steps — new engines designed from scratch; the live builder is final authority, every step gets verified in-UI at build time):
 Triggers: Contact Created/Changed/Tag/DND · Birthday/Custom Date Reminder · Task events · Trigger Link Clicked | Opportunity Created/Changed · Pipeline Stage Changed · Status Changed (Open/Won/Lost/Abandoned) · Stale Opportunities · Order Form/Placed/Fulfilled | Form/Survey Submitted · Customer Replied · Inbound Email · Email Events (delivered/opened/clicked/bounced) · Call Status · SMS error code · keyword match | Appointment Status (created/rescheduled/canceled/confirmed/showed/no-showed — filter by exact calendar; Customer Booked = self-booked ONLY) | Payment Received (the ONLY money truth) · Invoice Paid/Sent/Viewed/Void · Subscription lifecycle (NOT payment) · Refund | Documents & Contracts signed/declined/viewed (contract-signed = the post-agreement boundary) | FB/IG/TikTok/LinkedIn lead forms | Page View · Abandoned Checkout · Scheduler (time-based) · Inbound Webhook (premium — the n8n entry point).
 Actions: Send Email/SMS/WhatsApp/Voicemail-drop · Manual Call/SMS queue · Internal Notification (alert user/role/team) · Slack · GMB message · Review Request · FB/IG DM · Drip | Create/Find Contact (found/not-found branches) · Update Field · Add/Remove Tag · Notes · DND · Assign User · Merge | Create Opportunity (intentional duplicates) · Find→Update Opportunity · Create/Update upsert · Remove | Update Custom Values (account-level state) · Math/Text/Date Formatters · Custom Code · Google Sheets (premium) | Wait (ALWAYS set a timeout) · If/Else (always keep a fallback branch) · Split A/B · Go To · Goal Event · Add/Remove from Workflow | Stripe one-time charge · Send Invoice/Recurring Invoice/Estimate/Contract | Update Appointment Status | AI steps (metered) | Webhook out / Custom Webhook (managed credentials — never paste secrets).
 Semantics that change designs: only Payment Received + a transaction-ID idempotency token proves money (form submission, order placed, invoice Sent/Viewed, subscription "active" do NOT — engines that award value gate on Payment Received). Appointment lifecycle is fully native. Email opens are unreliable — route on clicks/replies/outcomes. Design every trigger for re-entry and duplicates (processed-state tags, find-before-create). An action only sees records in its workflow context. DND/consent respected on every send; A2P and email-auth are DEPENDENCY EDGES of send steps, never steps inside a workflow.
@@ -1422,14 +1422,207 @@ const BUILD_STEP_CONTRACT_PROMPT = `OUTPUT — respond ONLY with valid JSON, no 
 Field rules:
 - ref: short unique local id (s1, s2, …). depends_on lists refs of steps that must be DONE first — every ref must exist, no cycles. Do NOT order the steps array meaningfully and do NOT emit positions — dependency edges are the only ordering signal.
 - agent: "setup" (sub-account foundation work) or "automation" (engine/workflow work).
-- mode: automation steps only — "deploy" (templated engine: snapshot + parameterize) or "design" (new untemplated build). Always null on setup steps.
+- mode: automation steps only — "retrieve" (catalog engine: drop-in or parameterize, per the routing given for the gap) or "formulate" (new engine designed from scratch). Always null on setup steps. Code re-derives mode from the routing after parsing — emit it consistent with each gap's stated route.
+- The engine spec, deployment checklist, and any "changes made" note are attached to steps BY CODE after you respond — do NOT restate spec/deployment content in detail or checklist. detail stays your 1-2 mechanics sentences; checklist stays the build/verify items.
 - gap_ref: the NUMBER of the accepted gap this step delivers (from the numbered list in the request), or null for foundation/setup steps. EVERY accepted gap must be delivered by at least one automation step.
 - long_lead: true ONLY on steps with an external approval/propagation clock (A2P registration; domain/email-auth + warm-up). Everything else false.
 - title: CLIENT-SAFE plain language ("Automated review requests go live") — never hours, prices, tool names, or mechanics. All mechanics go in detail.
 - checklist: the concrete build/verify items for the step; on a test-gate step it is the test matrix. estimated_hours: internal cost-to-deliver for THIS step — an engine's chain should sum to roughly that gap's validated estimate.
-- Deploy-mode engines are typically ONE deploy step (depending on the shared foundations it needs) plus ONE test-gate step. Design-mode engines may decompose into more steps.
+- Retrieve-mode engines are typically ONE deploy step (depending on the shared foundations it needs) plus ONE test-gate step. Formulate-mode engines may decompose into more steps.
 - scope_flags: [] when there are none.
 - BE ECONOMICAL — the full plan must fit in one response. detail: 1-2 tight sentences (trigger, key wiring, fallback — no prose padding). checklist: at most 6 items, each a short imperative phrase. summary: 2-3 sentences. Brevity comes from tighter PROSE, never from dropping steps, checklist items that matter, or dependency edges.`;
+
+/* ---- THE SWEEP: three-way catalog routing per accepted gap ----
+   Deterministic routing reads gap.matched_engine (persisted by the Automation
+   Agent — never re-judged). AI runs only for parameterize (adapt a catalog
+   engine) and formulate (design a new one). mode = retrieve|formulate is the
+   fundamental split; drop-in vs parameterize is NOT a mode — both retrieve,
+   distinguished by the presence of a "changes made" note. */
+
+const PARAMETERIZE_CONTRACT_PROMPT = `OUTPUT — respond ONLY with valid JSON, no markdown, exactly this shape:
+{"parameter_values":{"<declared key>":"the concrete value for THIS client"},"changes_made":"operator-readable list of every adaptation, e.g. discount set to 15%, tiers renamed Silver/Gold, field sr_referral_code → acme_referral_code","deployment_overrides":{"branding":{},"business_rules":{}}}
+Field rules:
+- parameter_values: one entry per declared client_parameter key — every key, no extras. Value = the concrete setting for this client, or "NEEDS DISCOVERY: <what to ask>" when the business context doesn't answer it.
+- changes_made: every adaptation in one plain list — this is what the operator confirms before building. Never empty.
+- deployment_overrides: ONLY the deployment-guide VALUES that change for this client (adapted math, renamed tiers/fields/tags). Echo nothing that stays as-is. never_touch is architecture — never overridden.`;
+
+const FORMULATE_CONTRACT_PROMPT = `OUTPUT — respond ONLY with valid JSON, no markdown, exactly this shape:
+{"spec":{"purpose":"one sentence","automations":[{"name":"workflow name","trigger":{"type":"exact GHL trigger","filters":{}},"steps":["ordered build actions"],"tests":["test matrix items"]}]},"deployment":{"branding":{"<area>":"what changes per client"},"business_rules":{"math_operations":["every hardcoded number that changes per client"]},"never_touch":["architectural rules that break the engine if edited"]}}
+Field rules:
+- spec: catalog-grade — a builder executes it without more research. Trigger semantics match the business event exactly; design every trigger for re-entry/duplicates (processed-state tags, find-before-create); value-awarding steps gate on Payment Received.
+- deployment: the three-tier guide for FUTURE clients of this engine — branding (names/copy/links), business_rules incl. math_operations (the most-forgotten tier), never_touch (the architecture).
+- This engine is DESIGNED, NOT PROVEN — tests must name what to verify live before trusting it.`;
+
+// Deterministic three-way router — no AI, no re-judging.
+function classifyGapRoute(g, catalogByKey){
+  const engine = g.matched_engine ? catalogByKey.get(g.matched_engine) : null;
+  if(!engine) return { route: "formulate", engine: null };
+  return Object.keys(engine.client_parameters || {}).length
+    ? { route: "parameterize", engine }
+    : { route: "dropin", engine };
+}
+
+// Shared retry-once wiring for the sweep's per-gap AI calls (same doctrine as
+// generatePlanDraft): only a contract violation earns the retry, with the named
+// violation fed back; transport/proxy errors propagate immediately.
+async function aiJsonWithRetry({ system, userMsg, max_tokens, validate, what }){
+  const attempt = async (msg) => {
+    let out;
+    const raw = await ai({ system, messages: [{ role:"user", content: msg }], max_tokens });
+    try{ out = JSON.parse(raw.replace(/```json|```/g, "").trim()); }
+    catch(e){ throw new Error("invalid JSON"); }
+    validate(out);
+    return out;
+  };
+  try{ return await attempt(userMsg); }
+  catch(e1){
+    if(/AI request failed/.test(e1.message)) throw e1;
+    try{ return await attempt(userMsg + `\n\nYour previous attempt violated the output contract — ${e1.message}. Respond with the complete corrected JSON only.`); }
+    catch(e2){ throw new Error(`${what} failed validation twice (first: ${e1.message}; then: ${e2.message})`); }
+  }
+}
+
+function sweepClientContext(){
+  const stackSummary = summarizeStack(S.activeClient.current_stack) || "No current stack captured.";
+  return `Client: ${S.activeClient.business_name} (${S.activeClient.industry || "industry n/a"})\nCurrent stack: ${stackSummary}`;
+}
+
+function validateAdaptation(a, engine){
+  if(!a || typeof a !== "object") throw new Error("adaptation is not an object");
+  if(!a.parameter_values || typeof a.parameter_values !== "object") throw new Error("parameter_values missing");
+  const declared = Object.keys(engine.client_parameters || {});
+  const got = Object.keys(a.parameter_values);
+  const extra = got.filter(k => !declared.includes(k));
+  const missing = declared.filter(k => !got.includes(k));
+  if(extra.length) throw new Error("parameter_values has undeclared keys: " + extra.join(", "));
+  if(missing.length) throw new Error("parameter_values missing declared keys: " + missing.join(", "));
+  if(typeof a.changes_made !== "string" || !a.changes_made.trim()) throw new Error("changes_made missing");
+  if(a.deployment_overrides != null && typeof a.deployment_overrides !== "object") throw new Error("deployment_overrides must be an object");
+}
+
+// PARAMETERIZE: adapt a catalog engine's declared knobs + deployment VALUES to
+// this client; the changes_made note is what the operator confirms before building.
+async function adaptEngineToClient(engine, gap){
+  const dep = engine.spec && engine.spec.deployment;
+  const system = "You adapt a proven GHL automation engine to a new client. Adapt ONLY the declared client_parameters and deployment-guide values — the engine architecture is fixed.\n\n"
+    + PARAMETERIZE_CONTRACT_PROMPT;
+  const userMsg = sweepClientContext()
+    + `\n\nGap this engine delivers: ${gap.title}\nProblem: ${gap.problem || "—"}`
+    + `\n\nEngine: ${engine.name} (${engine.engine_key})\nEngine summary: ${engine.summary || "—"}`
+    + `\nDeclared client_parameters (adapt EVERY key):\n${JSON.stringify(engine.client_parameters, null, 1)}`
+    + (dep ? `\nDeployment business_rules to adapt the VALUES of:\n${JSON.stringify(dep.business_rules || {}, null, 1)}` : "\n(No deployment guide on this engine yet — adapt the declared parameters only.)")
+    + `\n\nAdapt this engine to the client now.`;
+  return aiJsonWithRetry({ system, userMsg, max_tokens: 2000,
+    validate: a => validateAdaptation(a, engine), what: `parameterize (${engine.engine_key})` });
+}
+
+function validateFormulation(f){
+  if(!f || typeof f !== "object") throw new Error("formulation is not an object");
+  if(!f.spec || typeof f.spec !== "object" || typeof f.spec.purpose !== "string" || !f.spec.purpose.trim()) throw new Error("spec.purpose missing");
+  if(!Array.isArray(f.spec.automations) || !f.spec.automations.length) throw new Error("spec.automations empty");
+  f.spec.automations.forEach((a, i) => {
+    if(typeof a.name !== "string" || !a.name.trim()) throw new Error(`automation ${i+1}: name missing`);
+    if(!a.trigger || typeof a.trigger.type !== "string") throw new Error(`automation ${i+1}: trigger.type missing`);
+    if(!Array.isArray(a.steps) || !a.steps.length) throw new Error(`automation ${i+1}: steps empty`);
+  });
+  const d = f.deployment;
+  if(!d || typeof d !== "object") throw new Error("deployment missing");
+  if(!d.branding || typeof d.branding !== "object") throw new Error("deployment.branding missing");
+  if(!d.business_rules || typeof d.business_rules !== "object" || !Array.isArray(d.business_rules.math_operations))
+    throw new Error("deployment.business_rules.math_operations must be an array");
+  if(!Array.isArray(d.never_touch) || !d.never_touch.length) throw new Error("deployment.never_touch empty");
+}
+
+// FORMULATE: no catalog row — AI designs BOTH halves (spec + three-tier
+// deployment guide) from the GHL grammar. Never written to engine_catalog here;
+// graduation is the operator's call after a real build (separate step, deferred).
+async function formulateEngine(gap){
+  const system = "You design a NEW GHL automation engine from scratch for an agency build plan. It has no proven template — design conservatively and testably.\n\n"
+    + GHL_GRAMMAR_PROMPT + "\n\n" + FORMULATE_CONTRACT_PROMPT;
+  const userMsg = sweepClientContext()
+    + `\n\nGap to deliver:\nTitle: ${gap.title}\nProblem: ${gap.problem || "—"}`
+    + `\nValidated mechanism: ${gap.mechanism || "?"} | approach: ${gap.approach || "?"} | severity: ${gap.severity || "medium"}`
+    + `\n\nDesign the engine now.`;
+  return aiJsonWithRetry({ system, userMsg, max_tokens: 4000,
+    validate: validateFormulation, what: `formulate (${gap.title})` });
+}
+
+// The sweep orchestrator: one catalog read, then sequential per-gap routing.
+// Results are indexed by gap position — the same index gap_ref uses.
+async function sweepAcceptedGaps(gaps){
+  const engines = await listEngines();
+  const byKey = new Map(engines.map(e => [e.engine_key, e]));
+  const results = [];
+  for(let i = 0; i < gaps.length; i++){
+    const g = gaps[i];
+    const { route, engine } = classifyGapRoute(g, byKey);
+    setBuildPlanMsg(`Sweeping catalog ${i + 1}/${gaps.length} — ${g.title} (${route})…`);
+    if(route === "dropin"){
+      results.push({ route, engine_key: engine.engine_key, depends_on: engine.depends_on || [],
+        spec: engine.spec, deployment: (engine.spec && engine.spec.deployment) || null, changes_note: null });
+    } else if(route === "parameterize"){
+      const a = await adaptEngineToClient(engine, g);
+      results.push({ route, engine_key: engine.engine_key, depends_on: engine.depends_on || [],
+        spec: engine.spec, deployment: (engine.spec && engine.spec.deployment) || null,
+        parameter_values: a.parameter_values, deployment_overrides: a.deployment_overrides || null,
+        changes_note: a.changes_made });
+    } else {
+      const f = await formulateEngine(g);
+      results.push({ route, engine_key: null, depends_on: [],
+        spec: f.spec, deployment: f.deployment, changes_note: null });
+    }
+  }
+  return results;
+}
+
+// Post-parse attachment: sweep artifacts land on steps BY CODE, keyed by gap_ref
+// — never emitted inside the plan JSON (token budget). mode is overridden from
+// the route; the first automation step per gap carries the artifacts + editable
+// changes note, later steps of the same gap just carry the review flag.
+function attachSweepToDraft(draft, sweep){
+  const seen = new Set();
+  draft.steps.forEach(s => {
+    if(s.gap_ref === null || s.agent !== "automation" || !sweep[s.gap_ref]) return;
+    const sw = sweep[s.gap_ref];
+    s.mode = sw.route === "formulate" ? "formulate" : "retrieve";
+    s.needs_review = (sw.route === "parameterize" || sw.route === "formulate") ? sw.route : null;
+    s.carries_artifacts = !seen.has(s.gap_ref);
+    if(s.carries_artifacts && sw.route === "parameterize") s.changes_note = sw.changes_note;
+    seen.add(s.gap_ref);
+  });
+  draft.sweep = sweep;
+}
+
+// Operator-only notes for a swept step: review marker → changes note →
+// parameter values → deployment tiers (+ client overrides) → engine spec.
+function composeStepNotes(sw, changesNote){
+  const { deployment: _dup, ...specSansDeployment } = sw.spec || {};
+  const parts = [];
+  if(sw.route === "parameterize") parts.push("⚠ REVIEW — parameterized engine: confirm the changes below before building.");
+  if(sw.route === "formulate")    parts.push("⚠ REVIEW — formulated engine: designed, unproven. Verify every step live before trusting it.");
+  if(sw.route === "dropin")       parts.push("Drop-in engine — deploy as-is.");
+  if(changesNote) parts.push("CHANGES MADE:\n" + changesNote);
+  if(sw.parameter_values) parts.push("PARAMETER VALUES:\n" + JSON.stringify(sw.parameter_values, null, 1));
+  if(sw.deployment) parts.push("DEPLOYMENT (three tiers):\n" + JSON.stringify(sw.deployment, null, 1));
+  if(sw.deployment_overrides && Object.keys(sw.deployment_overrides).length)
+    parts.push("DEPLOYMENT OVERRIDES (client-adapted values):\n" + JSON.stringify(sw.deployment_overrides, null, 1));
+  if(sw.spec) parts.push("ENGINE SPEC:\n" + JSON.stringify(specSansDeployment, null, 1));
+  return parts.join("\n\n");
+}
+
+function stepNotesForRow(s, sweep){
+  if(s.gap_ref === null || !sweep || !sweep[s.gap_ref]) return null;
+  const sw = sweep[s.gap_ref];
+  if(!s.carries_artifacts) return s.needs_review ? "⚠ REVIEW — see this engine's main step for spec/deployment/changes." : null;
+  return composeStepNotes(sw, s.changes_note ?? sw.changes_note);
+}
+
+// The editable "changes made" note (DoD: note exists + is editable; polish later).
+// No re-render — the textarea itself is the live editor.
+function updateDraftChangesNote(ref, value){
+  const s = S.buildPlan.draft && S.buildPlan.draft.steps.find(x => x.ref === ref);
+  if(s) s.changes_note = value;
+}
 
 function buildPlanSystemPrompt(hasMode2){
   return "You are the Build Planner for Baseleap, a GHL automation agency. The client has signed; you turn their ACCEPTED, feasibility-validated gaps into ONE dependency-ordered build plan spanning both agents: setup steps (sub-account foundation) and automation steps (the engines). You propose the steps and their dependency edges; deterministic code — not you — computes the final order.\n\n"
@@ -1440,20 +1633,33 @@ function buildPlanSystemPrompt(hasMode2){
     + BUILD_STEP_CONTRACT_PROMPT;
 }
 
-function buildPlanGapLine(g, i){
+// Routing line per gap, from the sweep. Engine-prerequisite hints are computed
+// deterministically from catalog depends_on: a prerequisite delivered by another
+// accepted gap = dependency edge; missing = rule-3 scope flag material.
+function gapRouteLine(sw, acceptedKeys){
+  const route = sw.route === "dropin"
+      ? `DROP-IN (catalog engine ${sw.engine_key} — deploy as-is; mode retrieve)`
+    : sw.route === "parameterize"
+      ? `PARAMETERIZE (catalog engine ${sw.engine_key} — adapted to this client; mode retrieve; spec + changes note attached by code)`
+      : `FORMULATE (no catalog engine — new spec + deployment designed; mode formulate; attached by code)`;
+  const prereqs = (sw.depends_on || []).map(k =>
+    acceptedKeys.has(k) ? `${k} (accepted — add a dependency edge to its steps)` : `${k} (NOT accepted — scope flag, name both)`);
+  return `   route: ${route}` + (prereqs.length ? `\n   engine prerequisites: ${prereqs.join(", ")}` : "");
+}
+
+function buildPlanGapLine(g, i, sweep){
+  const acceptedKeys = new Set(sweep.map(x => x.engine_key).filter(Boolean));
   return `${i}. ${g.title}\n`
     + `   problem: ${g.problem || "—"}\n`
     + `   severity: ${g.severity || "medium"} | approach: ${g.approach || "?"} | mechanism: ${g.mechanism || "?"}\n`
-    + `   mode: ${(g.is_new_template === true || !g.matched_engine) ? "DESIGN (new template)" : `DEPLOY (templated engine: ${g.matched_engine})`}`
-    + ` | validated hours: ${g.estimated_hours ?? "?"} | band: ${g.band || "?"}`;
+    + gapRouteLine(sweep[i], acceptedKeys) + "\n"
+    + `   validated hours: ${g.estimated_hours ?? "?"} | band: ${g.band || "?"}`;
 }
 
-function buildPlanUserMessage(gaps){
-  const stackSummary = summarizeStack(S.activeClient.current_stack) || "No current stack captured.";
-  return `Client: ${S.activeClient.business_name} (${S.activeClient.industry || "industry n/a"})\n`
-    + `Current stack: ${stackSummary}\n\n`
+function buildPlanUserMessage(gaps, sweep){
+  return sweepClientContext() + "\n\n"
     + `Accepted gaps to deliver (gap_ref = the number):\n`
-    + gaps.map(buildPlanGapLine).join("\n")
+    + gaps.map((g, i) => buildPlanGapLine(g, i, sweep)).join("\n")
     + `\n\nGenerate the single dependency-ordered build plan JSON now.`;
 }
 
@@ -1475,8 +1681,8 @@ function validatePlanShape(p, gaps){
     if(refs.has(s.ref)) throw new Error(at + ": duplicate ref");
     refs.add(s.ref);
     if(!["setup","automation"].includes(s.agent)) throw new Error(at + ": agent must be setup|automation");
-    if(s.agent === "automation" ? !["deploy","design"].includes(s.mode) : s.mode != null)
-      throw new Error(at + ": mode must be deploy|design on automation steps and null on setup steps");
+    if(s.agent === "automation" ? !["retrieve","formulate"].includes(s.mode) : s.mode != null)
+      throw new Error(at + ": mode must be retrieve|formulate on automation steps and null on setup steps");
     if(!(s.gap_ref === null || (Number.isInteger(s.gap_ref) && s.gap_ref >= 0 && s.gap_ref < gaps.length)))
       throw new Error(at + `: gap_ref must be null or 0–${gaps.length - 1}`);
     if(typeof s.long_lead !== "boolean") throw new Error(at + ": long_lead must be boolean");
@@ -1597,8 +1803,11 @@ async function generateBuildPlan(){
   try{
     const gaps = await loadAcceptedGaps(S.activeClientId);
     if(!gaps.length) throw new Error("no accepted gaps — validate gaps here, then mark them accepted (Gap Report) first");
-    const hasMode2 = gaps.some(g => g.is_new_template === true || !g.matched_engine);
-    S.buildPlan.draft = await generatePlanDraft(buildPlanSystemPrompt(hasMode2), buildPlanUserMessage(gaps), gaps);
+    const sweep = await sweepAcceptedGaps(gaps);   // the three-way routing, before the main generation
+    const hasMode2 = sweep.some(sw => sw.route === "formulate");
+    setBuildPlanMsg("Sweep done — generating plan…");
+    S.buildPlan.draft = await generatePlanDraft(buildPlanSystemPrompt(hasMode2), buildPlanUserMessage(gaps, sweep), gaps);
+    attachSweepToDraft(S.buildPlan.draft, sweep);  // artifacts + mode override land by code, never via the plan JSON
     S.buildPlan.draftGaps = gaps;   // the exact list the draft's gap_refs index into — frozen with the draft
     setBuildPlanMsg("Draft ready — review below, then save.");
   }catch(e){
@@ -1618,6 +1827,7 @@ function draftStepRows(draft, gaps, planId, op){
     agent: s.agent, mode: s.mode,
     matched_engine: s.gap_ref === null ? null : (gaps[s.gap_ref].matched_engine || null),
     title: s.title, detail: s.detail,
+    notes: stepNotesForRow(s, draft.sweep),
     checklist: s.checklist.map(t => ({ text: t, done: false })),
     estimated_hours: s.estimated_hours, status: "queued",
     depends_on: s.depends_on.map(r => idByRef[r]),
@@ -1855,8 +2065,18 @@ function draftDepLabel(s, d){
 }
 
 function stepBadges(s){
-  return [s.agent, s.mode, s.long_lead ? "long-lead" : "", s.estimated_hours != null ? s.estimated_hours + "h" : ""]
+  return [s.agent, s.mode, s.needs_review ? "⚠ review · " + s.needs_review : "", s.long_lead ? "long-lead" : "", s.estimated_hours != null ? s.estimated_hours + "h" : ""]
     .filter(Boolean).map(b => `<span class="step-badge">${esc(String(b))}</span>`).join(" ");
+}
+
+// Parameterize steps carry the editable "changes made" note (the drop-in vs
+// parameterize signal — drop-in steps have none). Edits stay on the draft step
+// and are persisted into notes at save.
+function renderDraftChangesNote(s){
+  if(s.needs_review !== "parameterize" || !s.carries_artifacts) return "";
+  return `
+    <div class="msg" style="margin:6px 0 4px">Changes made — confirm (editable):</div>
+    <textarea oninput="updateDraftChangesNote('${esc(s.ref)}', this.value)">${esc(s.changes_note || "")}</textarea>`;
 }
 
 function renderDraftStep(s, d){
@@ -1871,6 +2091,7 @@ function renderDraftStep(s, d){
         ${gap ? `<div class="msg" style="margin-bottom:4px">Delivers: ${esc(gap.title)}</div>` : ""}
         ${s.depends_on.length ? `<div class="msg" style="margin-bottom:4px">After: ${esc(draftDepLabel(s, d))}</div>` : ""}
         <div style="font-size:13px;margin:6px 0">${esc(s.detail)}</div>
+        ${renderDraftChangesNote(s)}
         ${s.checklist.length ? `<div class="msg">${s.checklist.map(c => "☐ " + esc(c)).join("<br>")}</div>` : ""}
       </div>
     </div>`;
