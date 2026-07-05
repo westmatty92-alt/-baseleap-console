@@ -43,6 +43,13 @@ a real production engine in full Build-Plan Depth structure (4 automations with 
 nodes/final_rule/tests + manifest + deployment). It supersedes the thin review_request
 row (left in place, historical); the Automation Agent's catalog prompt emits the
 [engine_key: review_engine] so new assessments route retrieve, not formulate.
+Completion signal parameterized (July 5 2026): automation 1's trigger is the per-client
+`completion_trigger` parameter — Appointment Status = Showed (appointment businesses) OR
+pipeline stage = Job Complete/Won (contractors) — so review gaps match for both shapes;
+credit/cap/dedupe automations 2-4 are signal-independent and unchanged. Re-run
+`upsertReviewEngine()` after pulling this change so the live row carries the new
+parameter. `depends_on` still lists booking (appointment shape) — pipeline clients see a
+harmless booking scope-flag hint; making depends_on conditional is deferred.
 Deployment guide / notes split (migration 009): the artifact step persists the full
 auto-generated deployment story on `build_steps.deployment`, rendered as a READ-ONLY
 collapsed "Deployment guide" section (review marker inline on the toggle → changes made

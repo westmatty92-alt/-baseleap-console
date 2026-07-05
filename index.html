@@ -816,7 +816,7 @@ Known engines (name | approach | band [engine_key] — DOES / NOT FOR). matched_
 DEEP engines (proven spec — a match deploys as-built, deploy hours):
 - Payment Processor Foundation (Stripe) | integrate | standard [engine_key: payments_stripe] — DOES: react to payments that already happen — Stripe success/failure/refund handling, coupon redemption, revenue logging; foundational, build first. NOT FOR: creating or sending invoices, invoice-milestone sequences (deposit→progress→final), estimates, or accounting workflows (QuickBooks/Xero jobs = integrate with matched_engine=null); non-Stripe processors are net-new.
 - Meta Lead Follow-Up Drip | build | standard [engine_key: lead_response] — DOES: Meta (FB/IG) instant-form lead capture → timeline-branched follow-up drip that stops on booking. NOT FOR: non-Meta lead sources (website forms, GMB, walk-ins), newsletters, or win-back of lapsed customers.
-- Review Engine (request + credit) | build | simple [engine_key: review_engine] — DOES: post-service review request after verified completion (Showed), optional verified review-credit incentive program. NOT FOR: reputation monitoring, review gating, or survey/feedback forms.
+- Review Engine (request + credit) | build | simple [engine_key: review_engine] — DOES: post-COMPLETION review request + optional verified review-credit incentive program; the completion signal is a per-client deployment variable — Appointment Status = Showed (appointment businesses) OR pipeline stage = Job Complete/Won (contractors, pipeline businesses). NOT FOR: reputation monitoring, review gating, or survey/feedback forms.
 STUB engines (documented pattern, not deepened — a match still gets DESIGNED FRESH at build time: first-build hours, templated:false):
 - Booking Lifecycle (confirm/cancel/complete) | build | standard [engine_key: booking] — DOES: booking confirmations + reminders, service tagging, manual-booking and manual-payment handling. NOT FOR: payment truth (payments_stripe owns it) or invoicing.
 - Membership: Session Decrement / Booking-Lock / Reactivation Gate | build | standard [engine_key: membership] — DOES: Stripe SUBSCRIPTION lifecycle — past-due enforcement, session counts, cancellation cleanup, booking lock; reactivation = state cleanup on re-pay. NOT FOR: one-time payments (payments_stripe) or marketing win-back drips (formulate).
@@ -1355,7 +1355,7 @@ const REVIEW_ENGINE = {
   engine_key: "review_engine",
   name: "Review Engine (request + verified credit)",
   status: "proven", category: "automation",
-  summary: "Requests reviews after verified service completion (Showed — never Service Booking), with an optional verify-credit-redeem incentive program behind a Reward Enabled toggle. Core ask is universal; reward section deploys only for incentive clients. Hard guards against duplicate and excess credits; staff's ONLY manual action is verify-then-add-one-tag.",
+  summary: "Requests reviews after verified job completion (completion signal is a per-client parameter: Appointment Showed for appointment businesses, pipeline stage = Job Complete for contractors — never a booking/intent event), with an optional verify-credit-redeem incentive program behind a Reward Enabled toggle. Core ask is universal; reward section deploys only for incentive clients. Hard guards against duplicate and excess credits; staff's ONLY manual action is verify-then-add-one-tag.",
   spec: {
     purpose: "Request reviews after verified service completion; optionally verify, credit, and redeem review incentives, with hard guards against duplicate/excess credits.",
     applicability: "Core ask (automation 1) = universal, always deployed. Reward section (automations 2-4) = only clients running a review-incentive program (Reward Enabled toggle).",
@@ -1363,10 +1363,10 @@ const REVIEW_ENGINE = {
     automations: [
       {
         name: "Review Request (Post-Service) — core",
-        trigger: { type: "Appointment Status = Showed", filters: { calendars: "normal service calendars — NOT Service Booking" } },
-        final_rule: "When an appointment is marked Showed, if the client wasn't already asked, wait a delay, then send the review ask by email (+ optional SMS) — never on cancellations/no-shows.",
+        trigger: { type: "Client completion signal (client_parameter completion_trigger): Appointment Status = Showed OR Pipeline Stage changed to [completion stage]", filters: { rule: "the client's verified-completion event only — never a booking/intent event; appointment shape excludes Service Booking calendars" } },
+        final_rule: "When the client's completion signal fires (appointment marked Showed, or pipeline stage moved to Job Complete), if the client wasn't already asked, wait a delay, then send the review ask by email (+ optional SMS) — never on booking, cancellation, or no-show events.",
         nodes: [
-          { type: "trigger", config: "Appointment Status = Showed (normal calendars; NOT Service Booking)" },
+          { type: "trigger", config: "Client completion signal (per completion_trigger): appointment businesses = Appointment Status Showed (normal calendars; NOT Service Booking) · pipeline businesses = Pipeline Stage changed to the client's completion stage" },
           { type: "guard",   config: "If tag review-requested OR review_credit_maxed present → end" },
           { type: "update",  config: "Set field Last Review Request Date = now" },
           { type: "update",  config: "Add tag review-requested" },
@@ -1377,10 +1377,10 @@ const REVIEW_ENGINE = {
           { type: "end",     config: "Stop" }
         ],
         tests: [
-          "Happy path: mark a test appointment Showed → after the delay the email (and SMS if enabled) arrives with the correct platform links; Last Review Request Date set; review-requested tag applied",
-          "Guard re-fire: mark the same contact Showed again → workflow ends at the guard, no second ask",
+          "Happy path: fire the client's completion signal on a test contact (mark Showed / move pipeline stage to Job Complete) → after the delay the email (and SMS if enabled) arrives with the correct platform links; Last Review Request Date set; review-requested tag applied",
+          "Guard re-fire: fire the completion signal on the same contact again → workflow ends at the guard, no second ask",
           "Maxed guard: a contact carrying review_credit_maxed gets no ask",
-          "Exit condition: cancelled and no-show appointments never trigger the ask (Showed only)"
+          "Exit condition: booking, cancelled, and no-show events never trigger the ask (the client's completion signal only)"
         ]
       },
       {
@@ -1486,13 +1486,14 @@ const REVIEW_ENGINE = {
         reward_amount: "$15 per review, $30 lifetime cap — FIX legacy copy that says $20"
       },
       business_rules: {
+        completion_trigger: "wire automation 1's trigger to this client's completion event — the only node that changes between the appointment and pipeline deployment shapes",
         reward_enabled: "master toggle — No = Automation 1 only (core ask); Yes = all 4 (full incentive program)",
         math_operations: ["wait delay 2–12h","credit per review $15","hard lifetime cap $30","one credit per platform"]
       },
       never_touch: [
         "ONLY adding the correct tag triggers credits — staff never adjust balances/coupons manually",
         "the $30 cap + per-platform dedupe guards (removing them = credit abuse)",
-        "reviews trigger ONLY on Showed (never Service Booking)",
+        "reviews trigger ONLY on the client's verified completion signal (Showed / completion pipeline stage) — never on booking/intent events",
         "guard-first on every workflow",
         "Stripe enforces the coupon / GHL enforces eligibility — both stay wired"
       ],
@@ -1500,13 +1501,14 @@ const REVIEW_ENGINE = {
     }
   },
   client_parameters: {
+    completion_trigger: "the client's job-completion event that fires automation 1 — 'Appointment Status = Showed (normal service calendars — NOT Service Booking)' for appointment businesses, or 'Pipeline Stage changed to [stage]' (e.g. Job Complete / Won) for pipeline businesses like contractors. Never a booking/intent event.",
     review_platforms: "primary + secondary review platforms (Google + FB default)",
     review_links:     "the client's live review URLs per platform",
     email_copy:       "review request + thank-you email copy",
     sms_copy:         "optional review request SMS copy",
     coupon_codes:     "the Stripe coupon codes (REVIEW15/REVIEW30 pattern — must exist in Stripe first)",
     reward_enabled:   "master toggle: No = core ask only, Yes = full incentive program",
-    request_delay:    "wait between Showed and the ask (2–12h)",
+    request_delay:    "wait between the completion signal and the ask (2–12h)",
     credit_per_review: "reward per verified review ($15 default)",
     lifetime_cap:     "hard lifetime credit cap ($30 default)"
   },
