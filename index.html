@@ -1937,33 +1937,60 @@ async function formulateEngine(gap){
     validate: validateFormulation, what: `formulate (${gap.title})` });
 }
 
-// The sweep orchestrator: one catalog read, then sequential per-gap routing.
-// Results are indexed by gap position — the same index gap_ref uses.
+// The sweep orchestrator: one catalog read, classify every gap (deterministic),
+// then run the parameterize/formulate AI calls through a BOUNDED CONCURRENT POOL.
+// Results are assigned by gap position — the same index gap_ref uses — so
+// completion order never affects the output; concurrency changes wall-clock only.
+// allSettled semantics: every gap runs to completion; any failure aborts the
+// generation with ONE aggregated error naming each failed gap (no silent drops,
+// no partial plans — a plan missing a swept gap would change plan structure).
+// Per-call max_tokens + the ai() stop_reason truncation check live inside the
+// untouched adaptEngineToClient/formulateEngine (Bug #17 preserved by construction).
+const SWEEP_CONCURRENCY = 5;   // each call is its own /api/ai invocation (300s each); 5 keeps worst-case in-flight output well under rate limits
+
 async function sweepAcceptedGaps(gaps){
   const engines = await listEngines();
   const byKey = new Map(engines.map(e => [e.engine_key, e]));
-  const results = [];
-  for(let i = 0; i < gaps.length; i++){
-    const g = gaps[i];
-    const { route, engine } = classifyGapRoute(g, byKey);
-    setBuildPlanMsg(`Sweeping catalog ${i + 1}/${gaps.length} — ${g.title} (${route})…`);
+  const routed = gaps.map(g => classifyGapRoute(g, byKey));
+  const results = new Array(gaps.length);
+  const queue = [];   // gap indexes that need an AI call
+  routed.forEach(({ route, engine }, i) => {
     if(route === "dropin"){
-      results.push({ route, engine_key: engine.engine_key, depends_on: engine.depends_on || [],
+      results[i] = { route, engine_key: engine.engine_key, depends_on: engine.depends_on || [],
         spec: engine.spec, deployment: (engine.spec && engine.spec.deployment) || null,
-        manifest: (engine.spec && engine.spec.manifest) || null, changes_note: null });
-    } else if(route === "parameterize"){
-      const a = await adaptEngineToClient(engine, g);
-      results.push({ route, engine_key: engine.engine_key, depends_on: engine.depends_on || [],
-        spec: engine.spec, deployment: (engine.spec && engine.spec.deployment) || null,
-        manifest: (engine.spec && engine.spec.manifest) || null,
-        parameter_values: a.parameter_values, deployment_overrides: a.deployment_overrides || null,
-        changes_note: a.changes_made });
-    } else {
-      const f = await formulateEngine(g);
-      results.push({ route, engine_key: null, depends_on: [],
-        spec: f.spec, deployment: f.deployment, manifest: f.manifest, changes_note: null });
+        manifest: (engine.spec && engine.spec.manifest) || null, changes_note: null };
+    } else queue.push(i);
+  });
+  const aiTotal = queue.length;
+  let done = 0;
+  const failures = [];
+  const progress = () => setBuildPlanMsg(`Sweeping ${gaps.length} gap${gaps.length === 1 ? "" : "s"} — ${gaps.length - aiTotal} drop-in (instant), ${aiTotal} AI call${aiTotal === 1 ? "" : "s"} (≤${SWEEP_CONCURRENCY} at once)… ${done}/${aiTotal} done`);
+  progress();
+  const worker = async () => {
+    while(queue.length){
+      const i = queue.shift();
+      const { route, engine } = routed[i];
+      const g = gaps[i];
+      try{
+        if(route === "parameterize"){
+          const a = await adaptEngineToClient(engine, g);
+          results[i] = { route, engine_key: engine.engine_key, depends_on: engine.depends_on || [],
+            spec: engine.spec, deployment: (engine.spec && engine.spec.deployment) || null,
+            manifest: (engine.spec && engine.spec.manifest) || null,
+            parameter_values: a.parameter_values, deployment_overrides: a.deployment_overrides || null,
+            changes_note: a.changes_made };
+        } else {
+          const f = await formulateEngine(g);
+          results[i] = { route, engine_key: null, depends_on: [],
+            spec: f.spec, deployment: f.deployment, manifest: f.manifest, changes_note: null };
+        }
+      }catch(e){ failures.push(`"${g.title}": ${e.message}`); }
+      done++; progress();
     }
-  }
+  };
+  await Promise.all(Array.from({ length: Math.min(SWEEP_CONCURRENCY, aiTotal) }, worker));
+  if(failures.length)
+    throw new Error(`sweep failed on ${failures.length} of ${aiTotal} AI call${aiTotal === 1 ? "" : "s"} — ${failures.join("; ")} — nothing was generated; press Generate to retry`);
   return results;
 }
 

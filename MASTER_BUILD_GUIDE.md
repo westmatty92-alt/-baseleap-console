@@ -48,6 +48,13 @@ collapsed "Deployment guide" section (review marker inline on the toggle → cha
 → parameter values → three tiers → overrides → engine-spec extras). `notes` = operator
 text only on new plans; old plans keep their historical dump untouched.
 
+Sweep concurrency (July 5 2026): parameterize/formulate AI calls run through a bounded
+pool (SWEEP_CONCURRENCY = 5), results assigned by gap index so completion order never
+affects output; drop-ins stay instant with no AI call. allSettled semantics — every gap
+completes, any failure aborts generation with an aggregated error naming each failed
+gap. Routing/validators/write path untouched (anti-backwards constraint); per-call
+max_tokens + stop_reason checks live inside the unmodified call functions (Bug #17).
+
 ## Feasibility gate (the core business rule, enforced by data)
 Gaps are written by the Audit Assistant with `validation_status = 'pending'`. The Automation Agent
 sets `feasible`, `mechanism`, `estimated_hours`, and flips `validation_status` to `validated`.
