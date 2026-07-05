@@ -237,7 +237,7 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
    GLOBAL STATE  (S.* is reset on every client switch)
 ============================================================ */
 function freshAudit(){ return { tab:"guide", guideNotes:{}, captureText:"", summary:null, sessionId:null, loaded:false, analyzing:false, msg:"", stackForm:null, stackOtherFlags:{}, extracting:false }; }
-function freshAutomation(){ return { tab:"gaps", loaded:false, msg:"", gaps:[], drafts:{}, assessing:{}, errors:{}, assessingAll:false, progress:"", finBusy:{}, finBulkBusy:false, finMsg:"" }; }
+function freshAutomation(){ return { tab:"gaps", loaded:false, msg:"", gaps:[], drafts:{}, assessing:{}, errors:{}, assessingAll:false, validatingAll:false, progress:"", finBusy:{}, finBulkBusy:false, finMsg:"" }; }
 function freshBuildPlan(){ return { loaded:false, msg:"", plan:null, steps:[], draft:null, draftGaps:null, generating:false, saving:false, expanded:{} }; }
 
 const S = {
@@ -1593,11 +1593,22 @@ async function assessAllPending(){
   renderAutomation();
 }
 
+// The single-gap completeness gate, NAMED — used by validateGap AND the bulk
+// loop so there is exactly one definition of "incomplete" (never two drifting
+// copies). Returns the missing field names; [] = draft passes.
+function draftMissingFields(d){
+  const missing = [];
+  if(!d.approach) missing.push("approach");
+  if(!d.mechanism.trim()) missing.push("mechanism");
+  if(typeof d.estimated_hours !== "number") missing.push("hours");
+  return missing;
+}
+
 async function validateGap(gapId){
   const g = S.automation.gaps.find(x => x.id === gapId);
   const d = S.automation.drafts[gapId];
   if(!g || !d) return;
-  if(!d.approach || !d.mechanism.trim() || typeof d.estimated_hours !== "number"){
+  if(draftMissingFields(d).length){
     setAutomationMsg("Assess, or fill in approach, mechanism, and hours, before validating.");
     return;
   }
@@ -1622,6 +1633,37 @@ async function unvalidateGap(gapId){
   Object.assign(g, data);
   syncDraftFromGap(gapId, data);
   setAutomationMsg("Back to pending.");
+  renderAutomation();
+}
+
+// BULK VALIDATE (explicit operator click — never automatic): loops the
+// UNCHANGED validateGap over every pending gap, sequential-await so each
+// verified write lands in state before the next starts (Bug #11 discipline,
+// same loop shape as assessAllPending). Validate-good, skip-and-flag: the
+// pre-check uses the SAME predicate as validateGap's guard, so the guard can
+// never trip inside the loop — a non-validated outcome after the call can
+// only be a DB/RLS write failure, reported like a skip. One bad gap never
+// blocks the rest; an incomplete gap is never written.
+async function validateAllAssessed(){
+  const candidates = S.automation.gaps.filter(g => g.validation_status === "pending");
+  if(!candidates.length || S.automation.validatingAll || S.automation.assessingAll) return;
+  S.automation.validatingAll = true;
+  let validated = 0; const skipped = [];
+  for(let i = 0; i < candidates.length; i++){
+    const g = candidates[i];
+    S.automation.progress = `Validating ${i+1} of ${candidates.length}…`;
+    renderAutomation();
+    const err = S.automation.errors[g.id];
+    if(err){ skipped.push(`${g.title}: assessment failed (${err})`); continue; }
+    const missing = draftMissingFields(getDraft(g));
+    if(missing.length){ skipped.push(`${g.title}: missing ${missing.join(", ")}`); continue; }
+    await validateGap(g.id);
+    if(g.validation_status === "validated") validated++;
+    else skipped.push(`${g.title}: ${(S.automation.msg || "").replace(/^Validate failed: /, "") || "write failed"}`);
+  }
+  S.automation.validatingAll = false;
+  S.automation.progress = "";
+  setAutomationMsg(`Validated ${validated}, skipped ${skipped.length}` + (skipped.length ? ` — ${skipped.join("; ")}` : "."));
   renderAutomation();
 }
 
@@ -1659,8 +1701,8 @@ function renderAssessmentFields(g, d, isValidated){
     ${d.rationale ? `<div class="msg">${esc(d.rationale)}</div>` : ""}
     <div class="btn-row">
       ${isValidated
-        ? `<button class="btn-ghost" onclick="unvalidateGap('${g.id}')">Un-validate</button>`
-        : `<button class="btn-primary" style="width:auto" onclick="validateGap('${g.id}')">Validate</button>`}
+        ? `<button class="btn-ghost" onclick="unvalidateGap('${g.id}')" ${S.automation.validatingAll?"disabled":""}>Un-validate</button>`
+        : `<button class="btn-primary" style="width:auto" onclick="validateGap('${g.id}')" ${S.automation.validatingAll?"disabled":""}>Validate</button>`}
     </div>`;
 }
 
@@ -1668,7 +1710,7 @@ function renderAutomationCard(g){
   const d = getDraft(g);
   const isValidated = g.validation_status === "validated";
   const assessing = !!S.automation.assessing[g.id];
-  const assessDisabled = assessing || S.automation.assessingAll;
+  const assessDisabled = assessing || S.automation.assessingAll || S.automation.validatingAll;
   const err = S.automation.errors[g.id];
   return `
     <div class="gap-card sev-${esc(g.severity||"medium")}">
@@ -1714,7 +1756,8 @@ function renderFeasibilityBody(){
       <div class="msg">${stackText ? esc(stackText) : "No stack captured — run Stack extraction in Audit Assistant first."}</div>
     </div>
     <div class="btn-row" style="margin:14px 0">
-      <button class="btn-primary" style="width:auto" onclick="assessAllPending()" ${(S.automation.assessingAll || !pending.length)?"disabled":""}>${S.automation.assessingAll ? (S.automation.progress || "Assessing…") : "Assess all pending"}</button>
+      <button class="btn-primary" style="width:auto" onclick="assessAllPending()" ${(S.automation.assessingAll || S.automation.validatingAll || !pending.length)?"disabled":""}>${S.automation.assessingAll ? (S.automation.progress || "Assessing…") : "Assess all pending"}</button>
+      <button class="btn-primary" style="width:auto" onclick="validateAllAssessed()" ${(S.automation.validatingAll || S.automation.assessingAll || !pending.length)?"disabled":""}>${S.automation.validatingAll ? (S.automation.progress || "Validating…") : "Validate all assessed"}</button>
     </div>
     <div class="phase-t" style="margin:18px 0 6px">Pending (${pending.length})</div>
     ${pending.length ? pending.map(renderAutomationCard).join("") : `<div class="audit-empty">No pending gaps. Run the Audit Assistant to surface some.</div>`}
