@@ -4,6 +4,36 @@ Numbered incidents and the lesson each one bought. Numbering continues the bug
 history in the Notion Console spec; entries land here when the lesson should sit
 next to the code. Newest first.
 
+## Bug #18 — matched_engine name/key contract mismatch: every catalog gap formulated (July 5 2026)
+
+**Symptom:** a client's "Post-job Google review request" gap FORMULATED instead
+of retrieving the seeded, proven `review_engine` — and 9 of 9 gaps took the slow
+formulate path even though most mapped to catalog engines.
+
+**Root cause:** the sweep's `classifyGapRoute` is a deterministic `Map.get()` of
+`gaps.matched_engine` against `engine_catalog.engine_key` — but the Automation
+Agent's output contract said `"matched_engine":"engine name or null"` and its
+Known-engines list showed display names, so assessments persisted values like
+"Review Engine (request + credit)" that can never equal a key. Three layers:
+(1) the contract asked for the wrong thing; (2) matched_engine is persisted at
+assessment and never re-judged, so pre-fix gaps stayed stale; (3)
+parseAssessResponse accepted any string, so the bad value persisted silently and
+the failure surfaced minutes later as a slow formulate — far from its cause.
+
+**Fix (`same session`):** every Known-engines line carries `[engine_key: …]`
+(three membership-ish lines all map to `membership`; the two missing engines
+added; review maps to `review_engine`, never the superseded `review_request`);
+the shape line demands the exact key; new `KNOWN_ENGINE_KEYS` enum shared by
+prompt + `parseAssessResponse` so an unknown value fails AT WRITE TIME with a
+named error. Sweep routing untouched. Operational: re-assess affected gaps —
+old rows keep their stale values by design.
+
+**The lesson:** when one AI's output is another stage's LOOKUP KEY, the contract
+must name the key vocabulary exactly and the parser must enforce enum
+membership at write time. A free-text field that later feeds a `Map.get()` is a
+silent-formulate (or silent-anything) waiting to happen — the failure surfaces
+far downstream, disguised as a performance problem.
+
 ## Bug #17 — RECURRENCE: sweep AI calls truncated at their small token limits (July 4 2026)
 
 **Symptom:** build-plan generation with the sweep appeared hung. Console showed

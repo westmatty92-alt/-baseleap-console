@@ -21,6 +21,8 @@
 - [ ] AI JSON parsed defensively (strip ```fences, wrap in try/catch) — or use a second extraction call.
 - [ ] Large-output AI calls set an explicit adequate `max_tokens` AND were exercised live once, watching stop_reason/usage — mocked fixtures can't catch truncation (Bug #17, docs/BUG_LEDGER.md).
 - [ ] Tested after deploy: hard refresh, check console for errors.
+- [ ] Any AI output that later feeds a lookup (matched_engine → engine_key) is enum-validated
+      at parse time against the shared const (KNOWN_ENGINE_KEYS) — never persisted free-text (Bug #18).
 
 ## Build-Plan Depth (manifest + node workflow — completeness by construction)
 Engines DECLARE their tags/fields in `spec.manifest`; the planner COMPUTES per-engine

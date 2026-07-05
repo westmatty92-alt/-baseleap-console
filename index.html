@@ -795,6 +795,12 @@ async function saveStack(){
    Assistant identifies gaps; this module only qualifies existing ones —
    it never creates new gap rows.
 ============================================================ */
+// The routing enum: gaps.matched_engine must be one of these engine_keys (or null).
+// Shared by the catalog prompt's [engine_key: …] brackets and parseAssessResponse's
+// shape check — a display name persisting here silently formulates at sweep time
+// (Bug #18). review_request is deliberately EXCLUDED: superseded by review_engine.
+const KNOWN_ENGINE_KEYS = ["payments_stripe","lead_response","booking","membership","referral","missed_call_textback","no_show_reengagement","review_engine"];
+
 const AUTOMATION_CATALOG_PROMPT = `AUTOMATION ENGINE CATALOG (Baseleap):
 Two-number snapshot model: GHL automations, once built, are cloned (snapshot) into a new client's sub-account with only client-specific bits wired up. Cost-to-deliver has two numbers: first-build hours (build from scratch, one-time, higher) and deploy hours (snapshot + parameterize, repeats, much lower). For a TEMPLATED engine match, estimate DEPLOY hours — UNLESS approach is integrate/replace with genuine per-client wiring, then use the higher end. For a gap with no matching engine, estimate FIRST-BUILD hours and set is_new_template:true.
 
@@ -804,15 +810,17 @@ Approach rule (read current_stack first) — the build/replace boundary is about
 - integrate = a capable third-party tool already exists for this job (e.g. QuickBooks, Calendly) — connect/automate it rather than replace it.
 Rule of thumb: "they do it manually / nothing exists" → build. "they use a bad or fragmented tool" → replace. "they have a good tool, just wire it in" → integrate. Do NOT default to replace just because the client's process is informal — check current_stack for an actual named tool before choosing replace.
 
-Known engines (name | approach | templated | deploy hrs | band). When a line carries an [engine_key: …], emit that EXACT key as matched_engine — the build-planner routes by key:
-- Meta Lead Follow-Up Drip | build | yes | <1 day | standard
-- Booking Lifecycle (confirm/cancel/complete) | build | yes | <1 day | standard
-- Payment Processor Foundation (Stripe) | integrate | yes | <1 day | standard — foundational, build first; non-Stripe processors are net-new
-- Referral & Loyalty | build | yes | 1-3 days | complex
+Known engines (name | approach | templated | deploy hrs | band). matched_engine MUST be the [engine_key: …] shown on the matched line — the EXACT key string, never the engine's display name; the build-planner routes by key and a name will silently fail to match:
+- Meta Lead Follow-Up Drip | build | yes | <1 day | standard [engine_key: lead_response]
+- Booking Lifecycle (confirm/cancel/complete) | build | yes | <1 day | standard [engine_key: booking]
+- Payment Processor Foundation (Stripe) | integrate | yes | <1 day | standard — foundational, build first; non-Stripe processors are net-new [engine_key: payments_stripe]
+- Referral & Loyalty | build | yes | 1-3 days | complex [engine_key: referral]
 - Review Engine (request + credit) | build | yes | <1 day | simple [engine_key: review_engine]
-- Session Decrement | build | yes | <1 day | standard
-- Membership Booking-Lock | build | yes | <1 day | standard
-- Reactivation Gate (membership) | build | yes | <1 day | standard — state cleanup on re-pay, NOT a marketing win-back
+- Missed Call Text-Back | build | yes | <1 day | simple [engine_key: missed_call_textback]
+- No-Show Re-Engagement | build | yes | <1 day | simple [engine_key: no_show_reengagement]
+- Session Decrement | build | yes | <1 day | standard [engine_key: membership]
+- Membership Booking-Lock | build | yes | <1 day | standard [engine_key: membership]
+- Reactivation Gate (membership) | build | yes | <1 day | standard — state cleanup on re-pay, NOT a marketing win-back [engine_key: membership]
 
 Not-yet-templated: a marketing win-back drip for lapsed customers is a common gap with no engine yet — model on the Meta timeline pattern, standard band, first-build. Any gap with no matching engine: matched_engine=null, is_new_template=true, first-build hours.
 
@@ -825,7 +833,7 @@ function automationSystemPrompt(){
     + AUTOMATION_CATALOG_PROMPT
     + "\n\nMatch the gap to a known engine where possible. The approach MUST be informed by current_stack: if the client already runs a capable tool for this job, prefer integrate; if current_stack names an actual bad/fragmented tool or artifact doing this job, consider replace; if current_stack shows nothing for this job — including purely manual handling — that is build, never replace.\n\n"
     + "Respond ONLY with valid JSON, no markdown, in exactly this shape:\n"
-    + '{"feasible":true,"approach":"build|integrate|replace","mechanism":"one-line how","estimated_hours":0,"band":"simple|standard|complex","templated":true,"is_new_template":false,"matched_engine":"engine name or null","rationale":"1-2 sentences"}';
+    + '{"feasible":true,"approach":"build|integrate|replace","mechanism":"one-line how","estimated_hours":0,"band":"simple|standard|complex","templated":true,"is_new_template":false,"matched_engine":"the matched line\'s exact [engine_key] or null","rationale":"1-2 sentences"}';
 }
 
 function parseAssessResponse(raw){
@@ -842,6 +850,10 @@ function parseAssessResponse(raw){
     && (parsed.matched_engine === null || typeof parsed.matched_engine === "string")
     && typeof parsed.rationale === "string";
   if(!shapeOk) throw new Error("AI response did not match the expected shape — try again.");
+  // Routing enum (Bug #18): a display name here silently formulates at sweep time.
+  // Enum membership is a shape check, same class as approach/band above.
+  if(parsed.matched_engine !== null && !KNOWN_ENGINE_KEYS.includes(parsed.matched_engine))
+    throw new Error(`matched_engine "${parsed.matched_engine}" is not a catalog engine_key — expected one of ${KNOWN_ENGINE_KEYS.join(", ")} or null. Try again.`);
   return parsed;
 }
 
