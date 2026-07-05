@@ -113,6 +113,14 @@
   .wf-chip{flex:none;font-size:10px;font-weight:700;letter-spacing:.4px;padding:1px 6px;border-radius:8px;background:var(--midnight);color:var(--volt)}
   .wf-branch{margin-left:22px;border-left:2px solid var(--line);padding-left:8px}
   .wf-branch-label{font-size:11px;font-weight:700;color:var(--muted);margin-top:2px}
+  /* nested disclosure: automation list rows + per-automation tests */
+  .auto-head{display:flex;align-items:center;gap:6px;margin-top:6px}
+  .auto-toggle{flex:1;text-align:left;background:none;border:none;padding:4px 0;font-size:13px;font-weight:600;color:var(--depth);cursor:pointer}
+  .auto-num{display:inline-block;font-size:11px;font-weight:700;color:var(--run);margin-right:2px}
+  .auto-name{font-size:13px;font-weight:600;color:var(--muted)}
+  .auto-body{margin:2px 0 8px 18px;border-left:2px solid var(--line);padding-left:10px}
+  .wf-tests{margin:4px 0 6px}
+  .wf-test{font-size:12.5px;margin:2px 0;color:var(--depth)}
 
   /* Finalize — dark decision surface (scoped to the Finalize subtab) */
   .fin-surface{margin:0 -24px -24px;padding:28px 24px 64px;background:var(--d-bg);min-height:calc(100vh - 168px);box-shadow:inset 0 14px 18px -16px rgba(0,0,0,.7),inset 14px 0 18px -16px rgba(0,0,0,.7)}
@@ -1567,6 +1575,7 @@ Field rules:
 - final_rule: fill the template with THIS automation's specifics — it is the spine the nodes expand from.
 - nodes: the ordered node-by-node workflow exactly as assembled in the GHL builder. Each node = {"type","config"}; type is one of trigger|guard|wait|action|update|condition|webhook|handoff|end (webhook = external webhook-out call — never fold it into action; update = field/tag/record state change). The first node is always the trigger; the second is the guard (doctrine rule 3). condition nodes add "yes":[nodes] and "no":[nodes] branch arrays (branches may end with an end node). config is one precise sentence of settings.
 - manifest: classify by doctrine rule 2 — every tag the engine reads or sets and every custom field it needs, named exactly as the nodes reference them. The engine is not buildable until it declares these.
+- tests: the REAL test matrix for THIS automation, not generic phrases. One entry each for: the happy path end-to-end; EVERY guard (prove the duplicate-prevention actually blocks a re-fire); EVERY condition branch — the YES and the NO separately; each webhook ROUND-TRIP (it fires AND the response writes back the expected field); the exit condition (the automation stops on the right tag/state). Each test names the setup, the action, and the expected observable result.
 - deployment: the three-tier guide for FUTURE clients of this engine — branding (names/copy/links), business_rules incl. math_operations (the most-forgotten tier), never_touch (the architecture).
 - This engine is DESIGNED, NOT PROVEN — tests must name what to verify live before trusting it.`;
 
@@ -1658,6 +1667,28 @@ function validateNodes(nodes, at, isBranch){
   if(!isBranch && nodes[0].type !== "trigger") throw new Error(at + ": first node must be the trigger");
 }
 
+// Recursive tally of the node types the tests floor depends on (branches included).
+function countNodeTypes(nodes, counts = { guard: 0, condition: 0 }){
+  (nodes || []).forEach(n => {
+    if(n && counts[n.type] !== undefined) counts[n.type]++;
+    if(n && n.type === "condition"){ countNodeTypes(n.yes, counts); countNodeTypes(n.no, counts); }
+  });
+  return counts;
+}
+
+// Lenient FLOOR, deliberately not the exact matrix formula — the full coverage
+// requirement (happy path, every branch YES+NO, webhook round-trips, exit) lives
+// in the PROMPT. A strict count would false-reject valid formulations over a
+// counting mismatch and make formulate flaky; the floor only rejects trivial output.
+function validateAutomationTests(a, at){
+  if(!Array.isArray(a.tests) || !a.tests.length || a.tests.some(t => typeof t !== "string" || !t.trim()))
+    throw new Error(at + ": tests must be a non-empty array of non-empty strings");
+  const c = countNodeTypes(a.nodes);
+  const floor = c.guard + c.condition;
+  if(a.tests.length < floor)
+    throw new Error(at + `: only ${a.tests.length} tests for ${c.guard} guard(s) + ${c.condition} condition(s) — cover at least each guard and each condition (${floor} minimum), plus happy path, both branch sides, webhook round-trips, and the exit condition`);
+}
+
 function validateManifest(m, at){
   if(!m || typeof m !== "object") throw new Error(at + " missing");
   ["requires_tags","creates_tags"].forEach(k => {
@@ -1680,6 +1711,7 @@ function validateFormulation(f){
     if(!a.trigger || typeof a.trigger.type !== "string") throw new Error(`automation ${i+1}: trigger.type missing`);
     if(typeof a.final_rule !== "string" || !a.final_rule.trim()) throw new Error(`automation ${i+1}: final_rule missing`);
     validateNodes(a.nodes, `automation ${i+1}`, false);
+    validateAutomationTests(a, `automation ${i+1}`);
   });
   validateManifest(f.manifest, "manifest");
   const d = f.deployment;
@@ -2264,6 +2296,17 @@ function renderBuildPlanBody(){
   // precedence: a saved plan is the truth; a draft only shows before any save
   const inner = S.buildPlan.plan ? renderSavedPlan() : S.buildPlan.draft ? renderDraftReview() : renderPlanEmpty();
   body.innerHTML = inner + `<div class="msg" id="buildplan-msg" style="margin-top:10px">${esc(S.buildPlan.msg)}</div>`;
+  autoSizeNotes();
+}
+
+// Scroller fix: the notes content (review flag / spec / deployment dumps) lays out
+// full-height instead of scrolling inside a 64px box. Runs after every plan render;
+// the textarea's own oninput keeps it growing while the operator types (saveStepNotes
+// intentionally doesn't re-render). resize:vertical still allows manual shrinking.
+function autoSizeNotes(){
+  document.querySelectorAll("#automation-body textarea.notes").forEach(t => {
+    t.style.height = "auto"; t.style.height = (t.scrollHeight + 2) + "px";
+  });
 }
 
 function renderPlanEmpty(){
@@ -2317,13 +2360,39 @@ function renderNodeRows(nodes){
   }).join("");
 }
 
-function renderWorkflowFlow(automations){
-  return (automations || []).map(a => {
-    if(typeof a === "string") return `<div class="wf-name">${esc(a)}</div>`;   // thin spec: name-only entry
-    const trig = a.trigger ? `<div class="wf-row"><span class="wf-chip">TRIGGER</span><span>${esc(a.trigger.type + (a.trigger.filters && Object.keys(a.trigger.filters).length ? " — " + JSON.stringify(a.trigger.filters) : ""))}</span></div>` : "";
-    return `<div class="wf-name">${esc(a.name || "")}</div>`
-      + (a.final_rule ? `<div class="wf-rule">${esc(a.final_rule)}</div>` : "")
-      + (a.nodes ? renderNodeRows(a.nodes) : trig + renderNodeRows(a.steps));   // typed nodes open with their own trigger node
+/* Nested disclosure (3 levels): step depth → collapsed automation list (01 · Name)
+   → automation open = final_rule + nodes IMMEDIATELY → collapsed Tests below.
+   Each level keys into S.buildPlan.expanded independently ("<key>:aN", "<key>:aN:t")
+   so states survive PM-layer re-renders. The .auto-head right side stays empty on
+   purpose — the future per-automation "Refine / discuss" chat slots in there. */
+function renderAutomationTests(a, key){
+  const tests = Array.isArray(a.tests) ? a.tests : (a.tests ? [String(a.tests)] : []);
+  if(!tests.length) return "";
+  const tKey = key + ":t";
+  const open = !!S.buildPlan.expanded[tKey];
+  return `<button class="depth-toggle" onclick="toggleStepDepth('${escAttr(tKey)}')">${open ? "▾" : "▸"} Tests (${tests.length})</button>`
+    + (open ? `<div class="wf-tests">${tests.map(t => `<div class="wf-test">☐ ${esc(t)}</div>`).join("")}</div>` : "");
+}
+
+function renderAutomationBody(a, key){
+  const trig = a.trigger ? `<div class="wf-row"><span class="wf-chip">TRIGGER</span><span>${esc(a.trigger.type + (a.trigger.filters && Object.keys(a.trigger.filters).length ? " — " + JSON.stringify(a.trigger.filters) : ""))}</span></div>` : "";
+  return (a.final_rule ? `<div class="wf-rule">${esc(a.final_rule)}</div>` : "")
+    + (a.nodes ? renderNodeRows(a.nodes) : trig + renderNodeRows(a.steps))   // typed nodes open with their own trigger node
+    + renderAutomationTests(a, key);
+}
+
+function renderAutomationList(automations, key){
+  return (automations || []).map((a, i) => {
+    const num = String(i + 1).padStart(2, "0");
+    if(typeof a === "string")   // thin spec: name-only entry, nothing to expand
+      return `<div class="auto-head"><span class="auto-num">${num}</span><span class="auto-name">${esc(a)}</span></div>`;
+    const aKey = `${key}:a${i}`;
+    const open = !!S.buildPlan.expanded[aKey];
+    return `
+      <div class="auto-head">
+        <button class="auto-toggle" onclick="toggleStepDepth('${escAttr(aKey)}')">${open ? "▾" : "▸"} <span class="auto-num">${num}</span> ${esc(a.name || "Untitled automation")}</button>
+      </div>`
+      + (open ? `<div class="auto-body">${renderAutomationBody(a, aKey)}</div>` : "");
   }).join("");
 }
 
@@ -2342,7 +2411,7 @@ function renderStepDepth(s, key){
   if(!s.manifest && !s.workflow) return "";
   const open = !!S.buildPlan.expanded[key];
   return `<button class="depth-toggle" onclick="toggleStepDepth('${escAttr(key)}')">${open ? "▾" : "▸"} Node workflow &amp; manifest</button>`
-    + (open ? `<div class="depth-box">${renderManifestLines(s.manifest)}${s.workflow ? renderWorkflowFlow(s.workflow) : ""}</div>` : "");
+    + (open ? `<div class="depth-box">${renderManifestLines(s.manifest)}${s.workflow ? renderAutomationList(s.workflow, key) : ""}</div>` : "");
 }
 
 // "Names surfaced UP FRONT" (locked requirement): the pre-build checklist card —
@@ -2451,7 +2520,7 @@ function renderSavedStep(s){
         ${checklist ? `<div style="margin-bottom:8px">${checklist}</div>` : ""}
         ${renderStepDepth(s, s.id)}
         <label>Notes</label>
-        <textarea class="notes" onchange="saveStepNotes('${s.id}', this.value)">${esc(s.notes || "")}</textarea>
+        <textarea class="notes" oninput="this.style.height='auto';this.style.height=(this.scrollHeight+2)+'px'" onchange="saveStepNotes('${s.id}', this.value)">${esc(s.notes || "")}</textarea>
       </div>
     </div>`;
 }

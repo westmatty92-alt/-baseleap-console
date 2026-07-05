@@ -32,6 +32,11 @@ fabricate a manifest from a thin spec. Formulate emits its own manifest + typed 
 workflow (`trigger|guard|wait|action|update|condition|webhook|handoff|end`; final_rule
 sentence first). Both persist on `build_steps.manifest`/`.workflow` (migration 008) and
 render behind the step's "Node workflow & manifest" expand — the PM layer never changes.
+Disclosure is NESTED: depth opens to manifest + a collapsed automation list (01 · Name…);
+opening an automation shows final_rule + nodes immediately, with a collapsed per-automation
+Tests sub-section below (tests travel inside `workflow`, so a graduated engine carries its
+own test matrix). Formulate's tests validator is a lenient floor (≥ guards + conditions);
+the full coverage matrix is enforced in the prompt only.
 
 ## Feasibility gate (the core business rule, enforced by data)
 Gaps are written by the Audit Assistant with `validation_status = 'pending'`. The Automation Agent

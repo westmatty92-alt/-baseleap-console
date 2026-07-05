@@ -80,3 +80,6 @@ Each agent reads its skills in-context from `.claude/skills/<name>/SKILL.md` (cu
 4. Describe your approach with a written Definition of Done and wait for approval before implementing (plan mode). No approval without the Definition of Done.
 5. Build → test → verify Supabase writes returned rows → ask before pushing.
 6. If a data contract changed, update the in-repo guide in the same session.
+7. STANDING CLOSING STEP (every Definition of Done): update the Console Operator SOP
+   (Notion page "🖥️ Console Operator SOP" under the Console Build Spec) with the
+   feature's operator-facing behavior — alongside bug-ledger and skill updates.
