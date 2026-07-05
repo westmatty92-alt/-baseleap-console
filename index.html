@@ -121,6 +121,9 @@
   .auto-body{margin:2px 0 8px 18px;border-left:2px solid var(--line);padding-left:10px}
   .wf-tests{margin:4px 0 6px}
   .wf-test{font-size:12.5px;margin:2px 0;color:var(--depth)}
+  /* deployment guide section (read-only) */
+  .dep-tier{font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--run);margin:8px 0 2px}
+  .dep-review{color:#EF9F27;font-weight:700}
 
   /* Finalize — dark decision surface (scoped to the Finalize subtab) */
   .fin-surface{margin:0 -24px -24px;padding:28px 24px 64px;background:var(--d-bg);min-height:calc(100vh - 168px);box-shadow:inset 0 14px 18px -16px rgba(0,0,0,.7),inset 14px 0 18px -16px rgba(0,0,0,.7)}
@@ -1790,38 +1793,33 @@ function attachSweepToDraft(draft, sweep){
   draft.sweep = sweep;
 }
 
-// Operator-only notes for a swept step: review marker → changes note →
-// parameter values → deployment tiers (+ client overrides) → engine spec.
-function composeStepNotes(sw, changesNote){
-  // deployment + manifest render/persist structurally elsewhere — don't duplicate them in the spec dump
-  const { deployment: _dup, manifest: _mf, ...specSansDeployment } = sw.spec || {};
-  const parts = [];
-  if(sw.route === "parameterize") parts.push("⚠ REVIEW — parameterized engine: confirm the changes below before building.");
-  if(sw.route === "formulate")    parts.push("⚠ REVIEW — formulated engine: designed, unproven. Verify every step live before trusting it.");
-  if(sw.route === "dropin")       parts.push("Drop-in engine — deploy as-is.");
-  if(changesNote) parts.push("CHANGES MADE:\n" + changesNote);
-  if(sw.parameter_values) parts.push("PARAMETER VALUES:\n" + JSON.stringify(sw.parameter_values, null, 1));
-  if(sw.deployment) parts.push("DEPLOYMENT (three tiers):\n" + JSON.stringify(sw.deployment, null, 1));
-  if(sw.deployment_overrides && Object.keys(sw.deployment_overrides).length)
-    parts.push("DEPLOYMENT OVERRIDES (client-adapted values):\n" + JSON.stringify(sw.deployment_overrides, null, 1));
-  if(sw.spec) parts.push("ENGINE SPEC:\n" + JSON.stringify(specSansDeployment, null, 1));
-  return parts.join("\n\n");
+// The full auto-generated deployment story for the engine's artifact step —
+// persisted on build_steps.deployment (migration 009) and rendered as the
+// READ-ONLY collapsed "Deployment guide" section. Replaces the old
+// composeStepNotes text dump: the notes column now holds ONLY operator-typed
+// text on new plans (historical rows keep their baked-in dump — never rewritten).
+// spec_extras = the engine spec minus what already renders structurally
+// (automations → workflow view, deployment/manifest → their own sections).
+function composeStepDeployment(sw, changesNote){
+  const { automations: _a, deployment: _d, manifest: _m, ...specExtras } = sw.spec || {};
+  const d = {
+    route: sw.route,
+    needs_review: (sw.route === "parameterize" || sw.route === "formulate") ? sw.route : null,
+    changes_note: changesNote ?? sw.changes_note ?? null,
+    parameter_values: sw.parameter_values || null,
+    tiers: sw.deployment || null,
+    overrides: (sw.deployment_overrides && Object.keys(sw.deployment_overrides).length) ? sw.deployment_overrides : null,
+    spec_extras: Object.keys(specExtras).length ? specExtras : null,
+  };
+  return (d.changes_note || d.parameter_values || d.tiers || d.overrides || d.spec_extras) ? d : null;
 }
 
-function stepNotesForRow(s, sweep){
-  if(s.injected === "manifest")
-    return "FIELD/TAG MANIFEST — setup step computed from the engine's declared manifest:\n" + JSON.stringify(s.manifest, null, 1);
-  if(s.gap_ref === null || !sweep || !sweep[s.gap_ref]) return null;
-  const sw = sweep[s.gap_ref];
-  const tbd = s.manifest && s.manifest.tbd
-    ? "⚠ TAGS/FIELDS TBD — engine not yet deepened: no manifest in the catalog, so its create-tags/fields setup step was NOT generated. List and create them manually before building."
-    : null;
-  if(!s.carries_artifacts){
-    const review = s.needs_review ? "⚠ REVIEW — see this engine's main step for spec/deployment/changes." : null;
-    return [tbd, review].filter(Boolean).join("\n\n") || null;
-  }
-  const notes = composeStepNotes(sw, s.changes_note ?? sw.changes_note);
-  return tbd ? tbd + "\n\n" + notes : notes;
+// Draft steps render the deployment story live from the sweep (edits to the
+// changes note flow through); saved steps read the persisted deployment column.
+function draftStepDeployment(s){
+  const sweep = S.buildPlan.draft && S.buildPlan.draft.sweep;
+  if(!s.carries_artifacts || !sweep || s.gap_ref === null || !sweep[s.gap_ref]) return null;
+  return composeStepDeployment(sweep[s.gap_ref], s.changes_note);
 }
 
 // The editable "changes made" note (DoD: note exists + is editable; polish later).
@@ -2084,9 +2082,11 @@ function draftStepRows(draft, gaps, planId, op){
     agent: s.agent, mode: s.mode,
     matched_engine: s.gap_ref === null ? null : (gaps[s.gap_ref].matched_engine || null),
     title: s.title, detail: s.detail,
-    notes: stepNotesForRow(s, draft.sweep),
+    notes: null,   // operator-typed text only — the auto-generated story lives in deployment (split DoD)
     checklist: s.checklist.map(t => ({ text: t, done: false })),
     manifest: s.manifest || null, workflow: s.workflow || null,   // Build-Plan Depth (migration 008)
+    deployment: s.carries_artifacts && draft.sweep && s.gap_ref !== null && draft.sweep[s.gap_ref]
+      ? composeStepDeployment(draft.sweep[s.gap_ref], s.changes_note) : null,   // migration 009
     estimated_hours: s.estimated_hours, status: "queued",
     depends_on: s.depends_on.map(r => idByRef[r]),
     position: s.position,
@@ -2414,6 +2414,46 @@ function renderStepDepth(s, key){
     + (open ? `<div class="depth-box">${renderManifestLines(s.manifest)}${s.workflow ? renderAutomationList(s.workflow, key) : ""}</div>` : "");
 }
 
+/* -- Deployment guide section (split DoD): READ-ONLY, collapsed by default,
+   structured labeled blocks — never a raw dump, no inputs anywhere. The ⚠ REVIEW
+   flag sits inline on the toggle so it stays visible without opening. -- */
+function renderDeploymentLines(v, depth = 0){
+  const pad = depth ? ` style="margin-left:${depth * 14}px"` : "";
+  if(Array.isArray(v)) return v.map(x => `<div class="mf-line"${pad}>• ${esc(typeof x === "object" ? JSON.stringify(x) : String(x))}</div>`).join("");
+  if(v && typeof v === "object")
+    return Object.entries(v).map(([k, x]) =>
+      (x && typeof x === "object")
+        ? `<div class="mf-line"${pad}><span class="mf-k">${esc(k)}:</span></div>` + renderDeploymentLines(x, depth + 1)
+        : `<div class="mf-line"${pad}><span class="mf-k">${esc(k)}:</span> ${esc(String(x))}</div>`
+    ).join("");
+  return `<div class="mf-line"${pad}>${esc(String(v))}</div>`;
+}
+
+function renderDeploymentBlock(label, v){
+  return v == null ? "" : `<div class="dep-tier">${esc(label)}</div>` + renderDeploymentLines(v);
+}
+
+function renderDeploymentBody(dep){
+  return (dep.route === "dropin" ? `<div class="mf-line">Drop-in engine — deploy as-is.</div>` : "")
+    + renderDeploymentBlock("Changes made", dep.changes_note)
+    + renderDeploymentBlock("Parameter values", dep.parameter_values)
+    + renderDeploymentBlock("Branding", dep.tiers && dep.tiers.branding)
+    + renderDeploymentBlock("Business rules", dep.tiers && dep.tiers.business_rules)
+    + renderDeploymentBlock("Never touch", dep.tiers && dep.tiers.never_touch)
+    + renderDeploymentBlock("Client overrides", dep.overrides)
+    + renderDeploymentBlock("Engine spec", dep.spec_extras);
+}
+
+function renderStepDeployment(dep, key){
+  if(!dep) return "";
+  const dKey = key + ":d";
+  const open = !!S.buildPlan.expanded[dKey];
+  const flag = dep.needs_review === "parameterize" ? `<span class="dep-review">⚠ REVIEW — parameterized: confirm changes</span>`
+             : dep.needs_review === "formulate"    ? `<span class="dep-review">⚠ REVIEW — formulated: unproven</span>` : "";
+  return `<button class="depth-toggle" onclick="toggleStepDepth('${escAttr(dKey)}')">${open ? "▾" : "▸"} Deployment guide ${flag}</button>`
+    + (open ? `<div class="depth-box">${renderDeploymentBody(dep)}</div>` : "");
+}
+
 // "Names surfaced UP FRONT" (locked requirement): the pre-build checklist card —
 // every tag/field the plan's engines need, unioned from the steps' manifests,
 // plus the engines whose manifests are TBD. Works on draft steps (attached) and
@@ -2461,6 +2501,7 @@ function renderDraftStep(s, d){
         ${renderDraftChangesNote(s)}
         ${s.checklist.length ? `<div class="msg">${s.checklist.map(c => "☐ " + esc(c)).join("<br>")}</div>` : ""}
         ${renderStepDepth(s, s.ref)}
+        ${renderStepDeployment(draftStepDeployment(s), s.ref)}
       </div>
     </div>`;
 }
@@ -2519,6 +2560,7 @@ function renderSavedStep(s){
         ${s.detail ? `<div style="font-size:13px;margin-bottom:8px">${esc(s.detail)}</div>` : ""}
         ${checklist ? `<div style="margin-bottom:8px">${checklist}</div>` : ""}
         ${renderStepDepth(s, s.id)}
+        ${renderStepDeployment(s.deployment, s.id)}
         <label>Notes</label>
         <textarea class="notes" oninput="this.style.height='auto';this.style.height=(this.scrollHeight+2)+'px'" onchange="saveStepNotes('${s.id}', this.value)">${esc(s.notes || "")}</textarea>
       </div>

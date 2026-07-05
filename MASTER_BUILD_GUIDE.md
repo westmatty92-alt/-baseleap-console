@@ -37,6 +37,11 @@ opening an automation shows final_rule + nodes immediately, with a collapsed per
 Tests sub-section below (tests travel inside `workflow`, so a graduated engine carries its
 own test matrix). Formulate's tests validator is a lenient floor (≥ guards + conditions);
 the full coverage matrix is enforced in the prompt only.
+Deployment guide / notes split (migration 009): the artifact step persists the full
+auto-generated deployment story on `build_steps.deployment`, rendered as a READ-ONLY
+collapsed "Deployment guide" section (review marker inline on the toggle → changes made
+→ parameter values → three tiers → overrides → engine-spec extras). `notes` = operator
+text only on new plans; old plans keep their historical dump untouched.
 
 ## Feasibility gate (the core business rule, enforced by data)
 Gaps are written by the Audit Assistant with `validation_status = 'pending'`. The Automation Agent
