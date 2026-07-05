@@ -102,6 +102,17 @@
   .plan-warn-title{color:#E24B4A;font-weight:700;font-size:14px;margin-bottom:6px}
   .plan-warn-item{color:#E24B4A;font-size:13px;margin-bottom:2px}
   .step-badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:10px;background:var(--canvas);border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+  /* Build-Plan Depth: expandable node workflow + manifest inside a step card */
+  .depth-toggle{background:none;border:none;padding:0;font-size:12px;font-weight:600;color:var(--run);cursor:pointer;margin:6px 0 2px}
+  .depth-box{border-top:1px dashed var(--line);margin-top:8px;padding-top:8px}
+  .mf-line{font-size:12.5px;margin:2px 0}
+  .mf-k{font-weight:600;color:var(--depth)}
+  .wf-name{font-size:13px;font-weight:600;margin:8px 0 2px;color:var(--depth)}
+  .wf-rule{font-size:12.5px;font-style:italic;color:var(--muted);margin-bottom:4px}
+  .wf-row{font-size:12.5px;margin:2px 0;display:flex;gap:6px;align-items:baseline}
+  .wf-chip{flex:none;font-size:10px;font-weight:700;letter-spacing:.4px;padding:1px 6px;border-radius:8px;background:var(--midnight);color:var(--volt)}
+  .wf-branch{margin-left:22px;border-left:2px solid var(--line);padding-left:8px}
+  .wf-branch-label{font-size:11px;font-weight:700;color:var(--muted);margin-top:2px}
 
   /* Finalize — dark decision surface (scoped to the Finalize subtab) */
   .fin-surface{margin:0 -24px -24px;padding:28px 24px 64px;background:var(--d-bg);min-height:calc(100vh - 168px);box-shadow:inset 0 14px 18px -16px rgba(0,0,0,.7),inset 14px 0 18px -16px rgba(0,0,0,.7)}
@@ -216,7 +227,7 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 ============================================================ */
 function freshAudit(){ return { tab:"guide", guideNotes:{}, captureText:"", summary:null, sessionId:null, loaded:false, analyzing:false, msg:"", stackForm:null, stackOtherFlags:{}, extracting:false }; }
 function freshAutomation(){ return { tab:"gaps", loaded:false, msg:"", gaps:[], drafts:{}, assessing:{}, errors:{}, assessingAll:false, progress:"", finBusy:{}, finBulkBusy:false, finMsg:"" }; }
-function freshBuildPlan(){ return { loaded:false, msg:"", plan:null, steps:[], draft:null, draftGaps:null, generating:false, saving:false }; }
+function freshBuildPlan(){ return { loaded:false, msg:"", plan:null, steps:[], draft:null, draftGaps:null, generating:false, saving:false, expanded:{} }; }
 
 const S = {
   user: null,
@@ -1210,6 +1221,98 @@ async function updateEngineDeployment(){
   return results;
 }
 
+// spec.manifest — the field/tag manifest per engine (Build-Plan Depth DoD):
+// requires_tags = tags it reads/branches on, creates_tags = tags it sets,
+// requires_fields = custom fields it writes/reads. Tag/field names are BARE
+// canonical strings — the setup-step dedupe is by exact string, so no inline
+// commentary; "[X]" marks a per-client parameterized scheme. Only the 5 deep
+// engines: the thin Runbase engines get NO manifest by design (an invented one
+// would be a misleading guess) — the planner flags their steps "tags/fields TBD".
+const ENGINE_MANIFEST = {
+  payments_stripe: {
+    requires_tags: ["Review Credit Eligible"],   // coupon flow reads/removes; membership guard reads MEM state tags (parameterized — declared by membership)
+    creates_tags: ["Paid","Stripe-Payment-Confirmed","Payment-Failed","Refunded","SYS – Guard Check"],
+    requires_fields: [
+      { name: "Last Payment Amount",          type: "currency" },
+      { name: "Last Payment Date",            type: "date" },
+      { name: "Stripe Transaction ID",        type: "text" },
+      { name: "Last Refund Amount",           type: "currency" },
+      { name: "Last Refund Date",             type: "date" },
+      { name: "Stripe Refund Transaction ID", type: "text" }
+    ]
+  },
+  lead_response: {
+    requires_tags: ["appt_booked"],              // stop signal — set by booking
+    creates_tags: ["Lead-Facebook","Lead-InstantForm","Lead-NeedsBooking","Service-Cancelled-NeedsReschedule","[campaign/promo tags — parameterized per campaign]"],
+    requires_fields: [
+      { name: "Interested Service",        type: "text" },   // single-line text at launch (FB mapping rule)
+      { name: "Booking Timeline",          type: "text" },
+      { name: "Launch Location Qualified", type: "text" }
+    ]
+  },
+  booking: {
+    requires_tags: ["Paid","Lead-NeedsBooking"], // Paid gates confirmations; removes the drip-stop tag
+    creates_tags: ["appt_booked","[Service tags — one per service, parameterized]","[Add-on tags — per add-on, parameterized]","Manual Payment Pending","Manual Payment Confirmed","Deposit Paid"],
+    requires_fields: [
+      { name: "Deposit Amount", type: "currency" },   // deposit/manual payment model only
+      { name: "Balance Due",    type: "currency" }
+    ]
+  },
+  membership: {
+    requires_tags: [],
+    creates_tags: ["[Membership state tags — Active/Past Due/Cancelled per tier, parameterized]"],
+    requires_fields: [
+      { name: "Membership Status",  type: "text" },
+      { name: "Membership Type",    type: "text" },
+      { name: "Sessions Used",      type: "number" },
+      { name: "Sessions Remaining", type: "number" },
+      { name: "Last Payment Date",  type: "date" },     // shared with payments_stripe — dedupe by exact name
+      { name: "Next Points Expiry", type: "date" },
+      { name: "Credit Balance",     type: "currency" },
+      { name: "Bonus Cycles",       type: "number" }
+    ]
+  },
+  referral: {
+    requires_tags: ["Paid"],                     // rewards gate on payment truth
+    creates_tags: ["Referral – Pending","Referral – Confirmed","Referral Invite Sent","SYS – Referral Guard","[Tier tags — parameterized per client tiers]"],
+    requires_fields: [
+      { name: "Referral Code",         type: "text" },
+      { name: "Referred By Code",      type: "text" },
+      { name: "Points",                type: "number" },
+      { name: "Wallet/Credit Balance", type: "currency" },
+      { name: "Tier",                  type: "text" },
+      { name: "Referral Count",        type: "number" },
+      { name: "Last Referral Date",    type: "date" },
+      { name: "Commission Balance",    type: "currency" },
+      { name: "Reward Tokens",         type: "text" }
+    ]
+  }
+};
+
+// UPDATE existing rows: merge spec.manifest alongside seeded spec + deployment.
+// Never re-stamps operator_id (RLS covers it); every write chains .select().single().
+// Run once from the browser console: updateEngineManifest()
+async function updateEngineManifest(){
+  const results = [];
+  for(const [key, manifest] of Object.entries(ENGINE_MANIFEST)){
+    const row = await getEngineByKey(key);
+    if(!row){ console.error("updateEngineManifest:", key, "not found — skipped"); continue; }
+    const spec = { ...(row.spec || {}), manifest };
+    const { data, error } = await sb.from("engine_catalog")
+      .update({ spec, updated_at: new Date().toISOString() })
+      .eq("engine_key", key).select().single();
+    if(error){ console.error("updateEngineManifest failed for", key + ":", error.message); continue; }
+    results.push(data);
+    console.log("manifest written →", key, "| spec keys:", Object.keys(data.spec).join(", "));
+  }
+  const ref = await getEngineByKey("referral");
+  const m = ref && ref.spec && ref.spec.manifest;
+  console.log("verify referral → spec.manifest present:", !!m,
+    "| creates:", m ? m.creates_tags.length : "—", "tags | fields:", m ? m.requires_fields.length : "—",
+    "| deployment + original spec intact:", !!(ref && ref.spec && ref.spec.deployment && ref.spec.automations));
+  return results;
+}
+
 async function assessGap(gapId, silent){
   const g = S.automation.gaps.find(x => x.id === gapId);
   if(!g) return;
@@ -1424,6 +1527,7 @@ Field rules:
 - agent: "setup" (sub-account foundation work) or "automation" (engine/workflow work).
 - mode: automation steps only — "retrieve" (catalog engine: drop-in or parameterize, per the routing given for the gap) or "formulate" (new engine designed from scratch). Always null on setup steps. Code re-derives mode from the routing after parsing — emit it consistent with each gap's stated route.
 - The engine spec, deployment checklist, and any "changes made" note are attached to steps BY CODE after you respond — do NOT restate spec/deployment content in detail or checklist. detail stays your 1-2 mechanics sentences; checklist stays the build/verify items.
+- Do NOT emit per-engine tag/field-creation setup steps — code injects one "create tags & fields" setup step per engine from its declared manifest after you respond, and wires the dependency edges. Truly SHARED foundational data-model work (lead source field, pipeline stages, test contact) stays in your sub-account foundation step.
 - gap_ref: the NUMBER of the accepted gap this step delivers (from the numbered list in the request), or null for foundation/setup steps. EVERY accepted gap must be delivered by at least one automation step.
 - long_lead: true ONLY on steps with an external approval/propagation clock (A2P registration; domain/email-auth + warm-up). Everything else false.
 - title: CLIENT-SAFE plain language ("Automated review requests go live") — never hours, prices, tool names, or mechanics. All mechanics go in detail.
@@ -1446,10 +1550,23 @@ Field rules:
 - changes_made: every adaptation in one plain list — this is what the operator confirms before building. Never empty.
 - deployment_overrides: ONLY the deployment-guide VALUES that change for this client (adapted math, renamed tiers/fields/tags). Echo nothing that stays as-is. never_touch is architecture — never overridden.`;
 
+const DESIGN_DOCTRINE_PROMPT = `AUTOMATION DESIGN DOCTRINE (how you decide the nodes, tags, and fields — apply BEFORE writing them):
+1. Think in STATES: name the from-state and to-state the automation moves someone between; write final_rule first — if you can't write that one sentence, the design is too messy.
+2. Tags are signals, fields are truth: tags say what bucket someone is in (workflow triggers, visibility, guards, segmentation); custom FIELDS hold what is true (money, balances, points, dates, renewal logic). This rule decides the manifest — never a tag as a counter or source of truth.
+3. Guard first: every workflow opens with a duplicate-prevention guard (tag exists / field filled / recent payment / token used → end). Double-fires are the #1 broken-GHL cause.
+4. Factory-line node order: Trigger → Guard → Update state → Update records → Send message → Handoff → End.
+5. Name the source of truth: Stripe = payment truth · GHL Calendar = appointment truth · custom fields = state/data truth · tags = visibility · pipelines = operational status.
+6. Find before create (opportunities/records): find → found ? update : create.
+7. Never reward before fulfillment: rewards fire on the qualifying event (paid, showed/completed, no refund) — never on booking.
+8. Delays are timing, not logic: never "wait and hope" — wait, re-find, then branch on what exists. Every delay has a reason.`;
+
 const FORMULATE_CONTRACT_PROMPT = `OUTPUT — respond ONLY with valid JSON, no markdown, exactly this shape:
-{"spec":{"purpose":"one sentence","automations":[{"name":"workflow name","trigger":{"type":"exact GHL trigger","filters":{}},"steps":["ordered build actions"],"tests":["test matrix items"]}]},"deployment":{"branding":{"<area>":"what changes per client"},"business_rules":{"math_operations":["every hardcoded number that changes per client"]},"never_touch":["architectural rules that break the engine if edited"]}}
+{"spec":{"purpose":"one sentence","automations":[{"name":"workflow name","trigger":{"type":"exact GHL trigger","filters":{}},"final_rule":"When [trigger] happens, if [guard passes], update [state], then [action], unless [failure condition].","nodes":[{"type":"trigger","config":"exact trigger + filters"}],"tests":["test matrix items"]}]},"manifest":{"requires_tags":["tags this engine reads/branches on"],"creates_tags":["tags it sets"],"requires_fields":[{"name":"field name","type":"text|number|currency|date"}]},"deployment":{"branding":{"<area>":"what changes per client"},"business_rules":{"math_operations":["every hardcoded number that changes per client"]},"never_touch":["architectural rules that break the engine if edited"]}}
 Field rules:
 - spec: catalog-grade — a builder executes it without more research. Trigger semantics match the business event exactly; design every trigger for re-entry/duplicates (processed-state tags, find-before-create); value-awarding steps gate on Payment Received.
+- final_rule: fill the template with THIS automation's specifics — it is the spine the nodes expand from.
+- nodes: the ordered node-by-node workflow exactly as assembled in the GHL builder. Each node = {"type","config"}; type is one of trigger|guard|wait|action|update|condition|webhook|handoff|end (webhook = external webhook-out call — never fold it into action; update = field/tag/record state change). The first node is always the trigger; the second is the guard (doctrine rule 3). condition nodes add "yes":[nodes] and "no":[nodes] branch arrays (branches may end with an end node). config is one precise sentence of settings.
+- manifest: classify by doctrine rule 2 — every tag the engine reads or sets and every custom field it needs, named exactly as the nodes reference them. The engine is not buildable until it declares these.
 - deployment: the three-tier guide for FUTURE clients of this engine — branding (names/copy/links), business_rules incl. math_operations (the most-forgotten tier), never_touch (the architecture).
 - This engine is DESIGNED, NOT PROVEN — tests must name what to verify live before trusting it.`;
 
@@ -1522,6 +1639,38 @@ async function adaptEngineToClient(engine, gap){
     validate: a => validateAdaptation(a, engine), what: `parameterize (${engine.engine_key})` });
 }
 
+const NODE_TYPES = ["trigger","guard","wait","action","update","condition","webhook","handoff","end"];
+
+// One node = {type, config}; condition nodes carry yes/no branch arrays (one level
+// of nesting is the contract — branches hold plain nodes, validated the same way).
+function validateNodes(nodes, at, isBranch){
+  if(!Array.isArray(nodes) || !nodes.length) throw new Error(at + ": nodes empty");
+  nodes.forEach((n, j) => {
+    const here = `${at} node ${j+1}`;
+    if(!n || typeof n !== "object") throw new Error(here + ": not an object");
+    if(!NODE_TYPES.includes(n.type)) throw new Error(here + `: type must be one of ${NODE_TYPES.join("|")}`);
+    if(typeof n.config !== "string" || !n.config.trim()) throw new Error(here + ": config missing");
+    if(n.type === "condition"){
+      validateNodes(n.yes, here + " yes-branch", true);
+      validateNodes(n.no,  here + " no-branch",  true);
+    }
+  });
+  if(!isBranch && nodes[0].type !== "trigger") throw new Error(at + ": first node must be the trigger");
+}
+
+function validateManifest(m, at){
+  if(!m || typeof m !== "object") throw new Error(at + " missing");
+  ["requires_tags","creates_tags"].forEach(k => {
+    if(!Array.isArray(m[k]) || m[k].some(t => typeof t !== "string" || !t.trim()))
+      throw new Error(`${at}.${k} must be an array of non-empty strings`);
+  });
+  if(!Array.isArray(m.requires_fields)) throw new Error(at + ".requires_fields must be an array");
+  m.requires_fields.forEach((f, i) => {
+    if(!f || typeof f.name !== "string" || !f.name.trim() || typeof f.type !== "string" || !f.type.trim())
+      throw new Error(`${at}.requires_fields[${i}] needs name and type`);
+  });
+}
+
 function validateFormulation(f){
   if(!f || typeof f !== "object") throw new Error("formulation is not an object");
   if(!f.spec || typeof f.spec !== "object" || typeof f.spec.purpose !== "string" || !f.spec.purpose.trim()) throw new Error("spec.purpose missing");
@@ -1529,8 +1678,10 @@ function validateFormulation(f){
   f.spec.automations.forEach((a, i) => {
     if(typeof a.name !== "string" || !a.name.trim()) throw new Error(`automation ${i+1}: name missing`);
     if(!a.trigger || typeof a.trigger.type !== "string") throw new Error(`automation ${i+1}: trigger.type missing`);
-    if(!Array.isArray(a.steps) || !a.steps.length) throw new Error(`automation ${i+1}: steps empty`);
+    if(typeof a.final_rule !== "string" || !a.final_rule.trim()) throw new Error(`automation ${i+1}: final_rule missing`);
+    validateNodes(a.nodes, `automation ${i+1}`, false);
   });
+  validateManifest(f.manifest, "manifest");
   const d = f.deployment;
   if(!d || typeof d !== "object") throw new Error("deployment missing");
   if(!d.branding || typeof d.branding !== "object") throw new Error("deployment.branding missing");
@@ -1544,7 +1695,7 @@ function validateFormulation(f){
 // graduation is the operator's call after a real build (separate step, deferred).
 async function formulateEngine(gap){
   const system = "You design a NEW GHL automation engine from scratch for an agency build plan. It has no proven template — design conservatively and testably.\n\n"
-    + GHL_GRAMMAR_PROMPT + "\n\n" + FORMULATE_CONTRACT_PROMPT;
+    + DESIGN_DOCTRINE_PROMPT + "\n\n" + GHL_GRAMMAR_PROMPT + "\n\n" + FORMULATE_CONTRACT_PROMPT;
   const userMsg = sweepClientContext()
     + `\n\nGap to deliver:\nTitle: ${gap.title}\nProblem: ${gap.problem || "—"}`
     + `\nValidated mechanism: ${gap.mechanism || "?"} | approach: ${gap.approach || "?"} | severity: ${gap.severity || "medium"}`
@@ -1565,17 +1716,19 @@ async function sweepAcceptedGaps(gaps){
     setBuildPlanMsg(`Sweeping catalog ${i + 1}/${gaps.length} — ${g.title} (${route})…`);
     if(route === "dropin"){
       results.push({ route, engine_key: engine.engine_key, depends_on: engine.depends_on || [],
-        spec: engine.spec, deployment: (engine.spec && engine.spec.deployment) || null, changes_note: null });
+        spec: engine.spec, deployment: (engine.spec && engine.spec.deployment) || null,
+        manifest: (engine.spec && engine.spec.manifest) || null, changes_note: null });
     } else if(route === "parameterize"){
       const a = await adaptEngineToClient(engine, g);
       results.push({ route, engine_key: engine.engine_key, depends_on: engine.depends_on || [],
         spec: engine.spec, deployment: (engine.spec && engine.spec.deployment) || null,
+        manifest: (engine.spec && engine.spec.manifest) || null,
         parameter_values: a.parameter_values, deployment_overrides: a.deployment_overrides || null,
         changes_note: a.changes_made });
     } else {
       const f = await formulateEngine(g);
       results.push({ route, engine_key: null, depends_on: [],
-        spec: f.spec, deployment: f.deployment, changes_note: null });
+        spec: f.spec, deployment: f.deployment, manifest: f.manifest, changes_note: null });
     }
   }
   return results;
@@ -1593,7 +1746,13 @@ function attachSweepToDraft(draft, sweep){
     s.mode = sw.route === "formulate" ? "formulate" : "retrieve";
     s.needs_review = (sw.route === "parameterize" || sw.route === "formulate") ? sw.route : null;
     s.carries_artifacts = !seen.has(s.gap_ref);
-    if(s.carries_artifacts && sw.route === "parameterize") s.changes_note = sw.changes_note;
+    if(s.carries_artifacts){
+      if(sw.route === "parameterize") s.changes_note = sw.changes_note;
+      // Build-Plan Depth: the artifact step carries the node workflow + manifest
+      // (never overwrite the {tbd:true} flag injection set on manifest-less engines)
+      s.workflow = (sw.spec && sw.spec.automations) || null;
+      if(sw.manifest) s.manifest = sw.manifest;
+    }
     seen.add(s.gap_ref);
   });
   draft.sweep = sweep;
@@ -1602,7 +1761,8 @@ function attachSweepToDraft(draft, sweep){
 // Operator-only notes for a swept step: review marker → changes note →
 // parameter values → deployment tiers (+ client overrides) → engine spec.
 function composeStepNotes(sw, changesNote){
-  const { deployment: _dup, ...specSansDeployment } = sw.spec || {};
+  // deployment + manifest render/persist structurally elsewhere — don't duplicate them in the spec dump
+  const { deployment: _dup, manifest: _mf, ...specSansDeployment } = sw.spec || {};
   const parts = [];
   if(sw.route === "parameterize") parts.push("⚠ REVIEW — parameterized engine: confirm the changes below before building.");
   if(sw.route === "formulate")    parts.push("⚠ REVIEW — formulated engine: designed, unproven. Verify every step live before trusting it.");
@@ -1617,10 +1777,19 @@ function composeStepNotes(sw, changesNote){
 }
 
 function stepNotesForRow(s, sweep){
+  if(s.injected === "manifest")
+    return "FIELD/TAG MANIFEST — setup step computed from the engine's declared manifest:\n" + JSON.stringify(s.manifest, null, 1);
   if(s.gap_ref === null || !sweep || !sweep[s.gap_ref]) return null;
   const sw = sweep[s.gap_ref];
-  if(!s.carries_artifacts) return s.needs_review ? "⚠ REVIEW — see this engine's main step for spec/deployment/changes." : null;
-  return composeStepNotes(sw, s.changes_note ?? sw.changes_note);
+  const tbd = s.manifest && s.manifest.tbd
+    ? "⚠ TAGS/FIELDS TBD — engine not yet deepened: no manifest in the catalog, so its create-tags/fields setup step was NOT generated. List and create them manually before building."
+    : null;
+  if(!s.carries_artifacts){
+    const review = s.needs_review ? "⚠ REVIEW — see this engine's main step for spec/deployment/changes." : null;
+    return [tbd, review].filter(Boolean).join("\n\n") || null;
+  }
+  const notes = composeStepNotes(sw, s.changes_note ?? sw.changes_note);
+  return tbd ? tbd + "\n\n" + notes : notes;
 }
 
 // The editable "changes made" note (DoD: note exists + is editable; polish later).
@@ -1684,6 +1853,7 @@ function validatePlanShape(p, gaps){
   p.steps.forEach((s, i) => {
     const at = `step ${i+1}${typeof s.ref === "string" && s.ref.trim() ? ` ("${s.ref}")` : ""}`;
     if(typeof s.ref !== "string" || !s.ref.trim()) throw new Error(at + ": ref missing");
+    if(!/^[A-Za-z0-9_-]+$/.test(s.ref)) throw new Error(at + ": ref must be a short alphanumeric id");   // refs land inside onclick='...' handlers — no quotes/markup
     if(refs.has(s.ref)) throw new Error(at + ": duplicate ref");
     refs.add(s.ref);
     if(!["setup","automation"].includes(s.agent)) throw new Error(at + ": agent must be setup|automation");
@@ -1745,19 +1915,68 @@ function orderPlanSteps(steps, gaps){
   return ordered.map((s, i) => ({ ...s, position: i }));
 }
 
-// raw AI text → validated, deterministically ordered draft plan.
+// Completeness by construction (Build-Plan Depth DoD): per-engine "create tags &
+// fields" setup steps are INJECTED BY CODE from the engines' manifests — never
+// hand-listed by the AI (hand-listing is what missed review-received). Runs between
+// shape validation and the topological sort, so injected refs order like any step.
+// Each unique tag/field is created by the FIRST gap whose manifest mentions it
+// (dedupe by exact name); every automation step then depends on each injected step
+// that owns one of its gap's items — setup-before-automation made automatic, with
+// cross-engine edges when one engine creates a tag another requires. A routed
+// engine with NO manifest gets {tbd:true} — visible, never silently setup-free.
+function manifestItemKeys(m){
+  return [...new Set([...(m.creates_tags || []), ...(m.requires_tags || [])])].map(t => "tag:" + t)
+    .concat((m.requires_fields || []).map(f => "field:" + f.name));
+}
+
+function injectManifestSetupSteps(p, gaps, sweep){
+  const owner = new Map();   // "tag:X" / "field:Y" → ref of the injected step that creates it
+  const injected = [];
+  const taken = new Set(p.steps.map(s => s.ref));
+  sweep.forEach((sw, i) => {
+    if(!sw.manifest) return;
+    let ref = "mf" + i;
+    while(taken.has(ref)) ref += "_";   // the AI owns the s* namespace but nothing stops it emitting "mf0"
+    taken.add(ref);
+    const mine = manifestItemKeys(sw.manifest).filter(k => !owner.has(k));
+    mine.forEach(k => owner.set(k, ref));
+    if(!mine.length) return;   // every item already owned by an earlier engine's setup step
+    injected.push({
+      ref, agent: "setup", mode: null, gap_ref: i, long_lead: false, injected: "manifest",
+      title: `Create tags & fields — ${gaps[i].title}`,
+      detail: `Generated from the engine's manifest: these ${mine.length} tag/field item${mine.length === 1 ? "" : "s"} must exist before the engine's workflows are built.`,
+      checklist: mine.map(k => k.startsWith("tag:")
+        ? "Create tag: " + k.slice(4)
+        : (fld => `Create field: ${fld.name} (${fld.type})`)((sw.manifest.requires_fields || []).find(f => "field:" + f.name === k)))
+        .concat(["Verify each item exists on a test contact"]),
+      estimated_hours: 0.5, depends_on: [], manifest: sw.manifest,
+    });
+  });
+  p.steps.forEach(s => {
+    if(s.agent !== "automation" || s.gap_ref === null || !sweep[s.gap_ref]) return;
+    const m = sweep[s.gap_ref].manifest;
+    if(!m){ s.manifest = { tbd: true }; return; }
+    const deps = [...new Set(manifestItemKeys(m).map(k => owner.get(k)).filter(Boolean))];
+    s.depends_on = [...new Set([...s.depends_on, ...deps])];
+  });
+  p.steps.push(...injected);
+}
+
+// raw AI text → validated, code-completed, deterministically ordered draft plan.
 // Throws with a specific message on any contract violation — the caller
 // retries generation ONCE on failure and never saves an invalid graph.
-function parseAndOrderPlan(raw, gaps){
+function parseAndOrderPlan(raw, gaps, sweep){
   let p;
   try{ p = JSON.parse(raw.replace(/```json|```/g, "").trim()); }
   catch(e){ throw new Error("AI returned invalid JSON"); }
   validatePlanShape(p, gaps);
   p.steps.forEach(s => { s.depends_on = [...new Set(s.depends_on)]; });  // dupes would corrupt indegree counts
+  injectManifestSetupSteps(p, gaps, sweep);   // after validation (AI steps only), before the sort (injected refs order like any step)
   const steps = orderPlanSteps(p.steps, gaps).map(s => ({
     ...s, title: s.title.trim(), detail: s.detail.trim(), checklist: s.checklist.map(c => c.trim()),
   }));
-  const covered = new Set(steps.map(s => s.gap_ref).filter(r => r !== null));
+  // coverage counts AUTOMATION steps only — an injected setup step must never mask a missing engine step
+  const covered = new Set(steps.filter(s => s.agent === "automation").map(s => s.gap_ref).filter(r => r !== null));
   const warnings = gaps.map((g, i) => covered.has(i) ? null : `Accepted gap "${g.title}" has no step delivering it.`).filter(Boolean);
   return {
     title: p.title.trim(), summary: p.summary.trim(),
@@ -1790,15 +2009,15 @@ function planRetryFeedback(err){
     : `Your previous attempt violated the output contract — ${err.message}. Regenerate the complete corrected JSON.`;
 }
 
-async function generatePlanDraft(system, userMsg, gaps){
+async function generatePlanDraft(system, userMsg, gaps, sweep){
   let raw;
   try{
     raw = await ai({ system, messages: [{ role:"user", content: userMsg }], max_tokens: 32000 });
-    return parseAndOrderPlan(raw, gaps);
+    return parseAndOrderPlan(raw, gaps, sweep);
   }catch(e1){
     if(/AI request failed/.test(e1.message)) throw e1;   // transport/proxy error — retrying blind just doubles cost
     raw = await ai({ system, messages: [{ role:"user", content: userMsg + "\n\n" + planRetryFeedback(e1) }], max_tokens: 32000 });
-    try{ return parseAndOrderPlan(raw, gaps); }
+    try{ return parseAndOrderPlan(raw, gaps, sweep); }
     catch(e2){ throw new Error(`plan failed validation twice (first: ${e1.message}; then: ${e2.message})`); }
   }
 }
@@ -1812,7 +2031,7 @@ async function generateBuildPlan(){
     const sweep = await sweepAcceptedGaps(gaps);   // the three-way routing, before the main generation
     const hasMode2 = sweep.some(sw => sw.route === "formulate");
     setBuildPlanMsg("Sweep done — generating plan…");
-    S.buildPlan.draft = await generatePlanDraft(buildPlanSystemPrompt(hasMode2), buildPlanUserMessage(gaps, sweep), gaps);
+    S.buildPlan.draft = await generatePlanDraft(buildPlanSystemPrompt(hasMode2), buildPlanUserMessage(gaps, sweep), gaps, sweep);
     attachSweepToDraft(S.buildPlan.draft, sweep);  // artifacts + mode override land by code, never via the plan JSON
     S.buildPlan.draftGaps = gaps;   // the exact list the draft's gap_refs index into — frozen with the draft
     setBuildPlanMsg("Draft ready — review below, then save.");
@@ -1835,6 +2054,7 @@ function draftStepRows(draft, gaps, planId, op){
     title: s.title, detail: s.detail,
     notes: stepNotesForRow(s, draft.sweep),
     checklist: s.checklist.map(t => ({ text: t, done: false })),
+    manifest: s.manifest || null, workflow: s.workflow || null,   // Build-Plan Depth (migration 008)
     estimated_hours: s.estimated_hours, status: "queued",
     depends_on: s.depends_on.map(r => idByRef[r]),
     position: s.position,
@@ -2071,8 +2291,80 @@ function draftDepLabel(s, d){
 }
 
 function stepBadges(s){
-  return [s.agent, s.mode, s.needs_review ? "⚠ review · " + s.needs_review : "", s.long_lead ? "long-lead" : "", s.estimated_hours != null ? s.estimated_hours + "h" : ""]
+  return [s.agent, s.mode, s.needs_review ? "⚠ review · " + s.needs_review : "", s.manifest && s.manifest.tbd ? "⚠ tags/fields TBD" : "", s.long_lead ? "long-lead" : "", s.estimated_hours != null ? s.estimated_hours + "h" : ""]
     .filter(Boolean).map(b => `<span class="step-badge">${esc(String(b))}</span>`).join(" ");
+}
+
+/* -- Build-Plan Depth: expandable node workflow + manifest (draft AND saved) --
+   Structured underneath, readable flow on expand (locked decision): typed
+   {type, config} nodes from formulated engines get a type chip; prose-string
+   steps from catalog specs render as plain STEP rows — same top-to-bottom flow.
+   Expand state lives in S.buildPlan.expanded so it survives the re-renders the
+   PM layer triggers (checklist toggles, status changes). */
+function toggleStepDepth(key){
+  S.buildPlan.expanded[key] = !S.buildPlan.expanded[key];
+  renderAutomation();
+}
+
+function renderNodeRows(nodes){
+  return (nodes || []).map(n => {
+    if(typeof n === "string") return `<div class="wf-row"><span class="wf-chip">STEP</span><span>${esc(n)}</span></div>`;
+    const chip = n.type === "condition" ? "IF" : String(n.type || "step").toUpperCase();
+    let html = `<div class="wf-row"><span class="wf-chip">${esc(chip)}</span><span>${esc(n.config || "")}</span></div>`;
+    if(n.type === "condition")
+      html += `<div class="wf-branch"><div class="wf-branch-label">YES</div>${renderNodeRows(n.yes)}<div class="wf-branch-label">NO</div>${renderNodeRows(n.no)}</div>`;
+    return html;
+  }).join("");
+}
+
+function renderWorkflowFlow(automations){
+  return (automations || []).map(a => {
+    if(typeof a === "string") return `<div class="wf-name">${esc(a)}</div>`;   // thin spec: name-only entry
+    const trig = a.trigger ? `<div class="wf-row"><span class="wf-chip">TRIGGER</span><span>${esc(a.trigger.type + (a.trigger.filters && Object.keys(a.trigger.filters).length ? " — " + JSON.stringify(a.trigger.filters) : ""))}</span></div>` : "";
+    return `<div class="wf-name">${esc(a.name || "")}</div>`
+      + (a.final_rule ? `<div class="wf-rule">${esc(a.final_rule)}</div>` : "")
+      + (a.nodes ? renderNodeRows(a.nodes) : trig + renderNodeRows(a.steps));   // typed nodes open with their own trigger node
+  }).join("");
+}
+
+function renderManifestLines(m){
+  if(!m) return "";
+  if(m.tbd) return `<div class="mf-line">⚠ <span class="mf-k">Tags/fields TBD</span> — engine not yet deepened; no manifest in the catalog. List and create them manually before building.</div>`;
+  const fields = (m.requires_fields || []).map(f => `${f.name} (${f.type})`);
+  return [
+    (m.creates_tags || []).length ? `<div class="mf-line"><span class="mf-k">Creates tags:</span> ${esc(m.creates_tags.join(" · "))}</div>` : "",
+    (m.requires_tags || []).length ? `<div class="mf-line"><span class="mf-k">Requires tags:</span> ${esc(m.requires_tags.join(" · "))}</div>` : "",
+    fields.length ? `<div class="mf-line"><span class="mf-k">Fields:</span> ${esc(fields.join(" · "))}</div>` : "",
+  ].join("");
+}
+
+function renderStepDepth(s, key){
+  if(!s.manifest && !s.workflow) return "";
+  const open = !!S.buildPlan.expanded[key];
+  return `<button class="depth-toggle" onclick="toggleStepDepth('${escAttr(key)}')">${open ? "▾" : "▸"} Node workflow &amp; manifest</button>`
+    + (open ? `<div class="depth-box">${renderManifestLines(s.manifest)}${s.workflow ? renderWorkflowFlow(s.workflow) : ""}</div>` : "");
+}
+
+// "Names surfaced UP FRONT" (locked requirement): the pre-build checklist card —
+// every tag/field the plan's engines need, unioned from the steps' manifests,
+// plus the engines whose manifests are TBD. Works on draft steps (attached) and
+// saved rows (persisted manifest column) alike.
+function renderManifestCard(steps){
+  const manifests = steps.filter(s => s.manifest && !s.manifest.tbd).map(s => s.manifest);
+  const tbdSteps = steps.filter(s => s.manifest && s.manifest.tbd);
+  if(!manifests.length && !tbdSteps.length) return "";
+  const tags = [...new Set(manifests.flatMap(m => [...(m.creates_tags || []), ...(m.requires_tags || [])]))];
+  const fieldByName = new Map();
+  manifests.flatMap(m => m.requires_fields || []).forEach(f => { if(!fieldByName.has(f.name)) fieldByName.set(f.name, f); });
+  const fields = [...fieldByName.values()].map(f => `${f.name} (${f.type})`);
+  const tbdTitles = [...new Set(tbdSteps.map(s => s.title))];
+  return `
+    <div class="card">
+      <div class="phase-h">Pre-build manifest — create these before building</div>
+      ${tags.length ? `<div class="mf-line"><span class="mf-k">Tags (${tags.length}):</span> ${esc(tags.join(" · "))}</div>` : ""}
+      ${fields.length ? `<div class="mf-line"><span class="mf-k">Fields (${fields.length}):</span> ${esc(fields.join(" · "))}</div>` : ""}
+      ${tbdTitles.length ? `<div class="mf-line">⚠ <span class="mf-k">TBD:</span> ${esc(tbdTitles.join(" · "))} — engine${tbdTitles.length === 1 ? "" : "s"} not yet deepened; tags/fields not generated.</div>` : ""}
+    </div>`;
 }
 
 // Parameterize steps carry the editable "changes made" note (the drop-in vs
@@ -2099,6 +2391,7 @@ function renderDraftStep(s, d){
         <div style="font-size:13px;margin:6px 0">${esc(s.detail)}</div>
         ${renderDraftChangesNote(s)}
         ${s.checklist.length ? `<div class="msg">${s.checklist.map(c => "☐ " + esc(c)).join("<br>")}</div>` : ""}
+        ${renderStepDepth(s, s.ref)}
       </div>
     </div>`;
 }
@@ -2118,6 +2411,7 @@ function renderDraftReview(){
         <div class="msg">${esc(d.summary)}</div>
         <div class="msg" style="margin-top:6px">${d.steps.length} steps · ~${hours}h internal cost-to-deliver</div>
       </div>`
+    + renderManifestCard(d.steps)
     + d.steps.map(s => renderDraftStep(s, d)).join("")
     + `<div class="btn-row" style="margin-top:14px">
         <button class="btn-primary" style="width:auto" onclick="saveBuildPlan()" ${S.buildPlan.saving?"disabled":""}>${S.buildPlan.saving?"Saving…":"Save plan"}</button>
@@ -2155,6 +2449,7 @@ function renderSavedStep(s){
         ${s.depends_on.length ? `<div class="msg" style="margin-bottom:6px">After: ${esc(savedDepLabel(s))}</div>` : ""}
         ${s.detail ? `<div style="font-size:13px;margin-bottom:8px">${esc(s.detail)}</div>` : ""}
         ${checklist ? `<div style="margin-bottom:8px">${checklist}</div>` : ""}
+        ${renderStepDepth(s, s.id)}
         <label>Notes</label>
         <textarea class="notes" onchange="saveStepNotes('${s.id}', this.value)">${esc(s.notes || "")}</textarea>
       </div>
@@ -2171,6 +2466,7 @@ function renderSavedPlan(){
       <div class="msg">${esc(p.summary || "")}</div>
       <div class="msg" style="margin-top:6px">${done} of ${steps.length} steps done</div>
     </div>`
+    + renderManifestCard(steps)
     + steps.map(renderSavedStep).join("");
 }
 

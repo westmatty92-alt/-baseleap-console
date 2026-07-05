@@ -1,0 +1,116 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1240" height="820" viewBox="0 0 1240 820" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#1A1A2E"/>
+    </marker>
+    <marker id="arrv" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#00A878"/>
+    </marker>
+  </defs>
+  <rect width="1240" height="820" fill="#F4F5F0"/>
+  <text x="40" y="48" font-size="24" font-weight="800" fill="#0D1F2D">Build-Plan Depth — manifest-driven setup + node workflow</text>
+  <text x="40" y="72" font-size="13" fill="#1A1A2E">Engines DECLARE (spec.manifest) → code COMPUTES setup (union + dedupe) → dependency edges make setup-before-automation automatic. Solid = built this phase · dashed = deepens later.</text>
+
+  <!-- ENGINE CATALOG column -->
+  <rect x="40" y="110" width="300" height="330" rx="12" fill="#FFFFFF" stroke="#0D1F2D" stroke-width="2"/>
+  <text x="60" y="140" font-size="15" font-weight="700" fill="#0D1F2D">engine_catalog · spec.manifest</text>
+  <text x="60" y="158" font-size="11" fill="#1A1A2E">requires_tags · creates_tags · requires_fields</text>
+  <g font-size="12.5" fill="#1A1A2E">
+    <rect x="60" y="172" width="260" height="28" rx="6" fill="#F4F5F0" stroke="#00A878" stroke-width="1.5"/><text x="72" y="190">payments_stripe ✓ manifest</text>
+    <rect x="60" y="206" width="260" height="28" rx="6" fill="#F4F5F0" stroke="#00A878" stroke-width="1.5"/><text x="72" y="224">lead_response ✓ manifest</text>
+    <rect x="60" y="240" width="260" height="28" rx="6" fill="#F4F5F0" stroke="#00A878" stroke-width="1.5"/><text x="72" y="258">booking ✓ manifest</text>
+    <rect x="60" y="274" width="260" height="28" rx="6" fill="#F4F5F0" stroke="#00A878" stroke-width="1.5"/><text x="72" y="292">membership ✓ manifest</text>
+    <rect x="60" y="308" width="260" height="28" rx="6" fill="#F4F5F0" stroke="#00A878" stroke-width="1.5"/><text x="72" y="326">referral ✓ manifest</text>
+    <rect x="60" y="342" width="260" height="28" rx="6" fill="#FFFFFF" stroke="#1A1A2E" stroke-width="1.2" stroke-dasharray="5 4"/><text x="72" y="360">missed_call · no_show · review ⚠ no manifest</text>
+  </g>
+  <text x="60" y="398" font-size="11" fill="#1A1A2E">updateEngineManifest() merges spec.manifest</text>
+  <text x="60" y="414" font-size="11" fill="#1A1A2E">(never fabricated for thin engines → TBD flag)</text>
+
+  <!-- FORMULATE box -->
+  <rect x="40" y="470" width="300" height="150" rx="12" fill="#FFFFFF" stroke="#0D1F2D" stroke-width="2"/>
+  <text x="60" y="500" font-size="15" font-weight="700" fill="#0D1F2D">FORMULATE (net-new engine)</text>
+  <text x="60" y="524" font-size="12" fill="#1A1A2E">emits final_rule sentence first, then</text>
+  <text x="60" y="542" font-size="12" fill="#1A1A2E">typed nodes: trigger·guard·wait·action·</text>
+  <text x="60" y="560" font-size="12" fill="#1A1A2E">update·condition·webhook·handoff·end</text>
+  <text x="60" y="584" font-size="12" font-weight="700" fill="#00A878">+ its own manifest (not buildable without)</text>
+  <text x="60" y="604" font-size="11" fill="#1A1A2E">design doctrine: tags = signals, fields = truth</text>
+
+  <!-- SWEEP node -->
+  <rect x="420" y="250" width="220" height="120" rx="12" fill="#0D1F2D"/>
+  <text x="440" y="282" font-size="15" font-weight="700" fill="#00D4A0">THE SWEEP</text>
+  <text x="440" y="304" font-size="12" fill="#F4F5F0">per accepted gap:</text>
+  <text x="440" y="322" font-size="12" fill="#F4F5F0">drop-in / parameterize / formulate</text>
+  <text x="440" y="344" font-size="12" fill="#00D4A0">→ manifest rides along per gap</text>
+
+  <!-- INJECT node -->
+  <rect x="420" y="430" width="220" height="150" rx="12" fill="#FFFFFF" stroke="#00A878" stroke-width="2.5"/>
+  <text x="440" y="460" font-size="14" font-weight="700" fill="#0D1F2D">injectManifestSetupSteps()</text>
+  <text x="440" y="482" font-size="12" fill="#1A1A2E">UNION of manifests, dedupe by</text>
+  <text x="440" y="500" font-size="12" fill="#1A1A2E">exact name — first engine to</text>
+  <text x="440" y="518" font-size="12" fill="#1A1A2E">mention an item creates it</text>
+  <text x="440" y="544" font-size="12" font-weight="700" fill="#00A878">completeness by construction</text>
+  <text x="440" y="562" font-size="11" fill="#1A1A2E">(BY CODE — never hand-listed by AI)</text>
+
+  <!-- PLAN column -->
+  <rect x="720" y="130" width="240" height="470" rx="12" fill="#FFFFFF" stroke="#0D1F2D" stroke-width="2"/>
+  <text x="740" y="160" font-size="15" font-weight="700" fill="#0D1F2D">Ordered plan (Kahn sort)</text>
+  <rect x="740" y="180" width="200" height="52" rx="8" fill="#F4F5F0" stroke="#0D1F2D" stroke-width="1.5"/>
+  <text x="752" y="201" font-size="12" font-weight="700" fill="#0D1F2D">Pre-build manifest card</text>
+  <text x="752" y="219" font-size="11" fill="#1A1A2E">all tags + fields, named up front</text>
+  <rect x="740" y="248" width="200" height="60" rx="8" fill="#00A878"/>
+  <text x="752" y="270" font-size="12" font-weight="700" fill="#FFFFFF">setup: create tags &amp; fields</text>
+  <text x="752" y="288" font-size="11" fill="#F4F5F0">per engine, from its manifest</text>
+  <rect x="740" y="340" width="200" height="88" rx="8" fill="#F4F5F0" stroke="#0D1F2D" stroke-width="1.5"/>
+  <text x="752" y="362" font-size="12" font-weight="700" fill="#0D1F2D">automation: engine live</text>
+  <text x="752" y="380" font-size="11" fill="#1A1A2E">depends_on ↑ its setup step(s)</text>
+  <text x="752" y="398" font-size="11" fill="#1A1A2E">+ cross-engine edges when one</text>
+  <text x="752" y="414" font-size="11" fill="#1A1A2E">engine creates what another reads</text>
+  <rect x="740" y="444" width="200" height="52" rx="8" fill="#FFFFFF" stroke="#1A1A2E" stroke-width="1.2" stroke-dasharray="5 4"/>
+  <text x="752" y="465" font-size="12" font-weight="700" fill="#1A1A2E">⚠ tags/fields TBD</text>
+  <text x="752" y="483" font-size="11" fill="#1A1A2E">manifest-less engine — visible flag</text>
+  <line x1="840" y1="308" x2="840" y2="338" stroke="#00A878" stroke-width="2.5" marker-end="url(#arrv)"/>
+  <text x="740" y="530" font-size="11" fill="#1A1A2E">coverage check: automation steps only</text>
+  <text x="740" y="548" font-size="11" fill="#1A1A2E">(an injected setup step can't mask a</text>
+  <text x="740" y="564" font-size="11" fill="#1A1A2E">missing engine step)</text>
+
+  <!-- PERSIST + UI -->
+  <rect x="1010" y="200" width="195" height="130" rx="12" fill="#FFFFFF" stroke="#0D1F2D" stroke-width="2"/>
+  <text x="1026" y="228" font-size="14" font-weight="700" fill="#0D1F2D">build_steps</text>
+  <text x="1026" y="252" font-size="12" fill="#00A878" font-weight="700">+ manifest JSONB</text>
+  <text x="1026" y="272" font-size="12" fill="#00A878" font-weight="700">+ workflow JSONB</text>
+  <text x="1026" y="296" font-size="11" fill="#1A1A2E">migration 008</text>
+  <text x="1026" y="314" font-size="11" fill="#1A1A2E">(run manually in Supabase)</text>
+
+  <rect x="1010" y="380" width="195" height="170" rx="12" fill="#0D1F2D"/>
+  <text x="1026" y="408" font-size="14" font-weight="700" fill="#00D4A0">Step card UI</text>
+  <text x="1026" y="432" font-size="12" fill="#F4F5F0">PM layer unchanged:</text>
+  <text x="1026" y="450" font-size="11" fill="#F4F5F0">status · checklist · hours · notes</text>
+  <text x="1026" y="478" font-size="12" fill="#00D4A0" font-weight="700">▸ Node workflow &amp; manifest</text>
+  <text x="1026" y="498" font-size="11" fill="#F4F5F0">expand-only (progressive</text>
+  <text x="1026" y="514" font-size="11" fill="#F4F5F0">disclosure — list stays lean;</text>
+  <text x="1026" y="530" font-size="11" fill="#F4F5F0">nodes feed the System Map later)</text>
+
+  <!-- edges -->
+  <line x1="340" y1="270" x2="418" y2="295" stroke="#1A1A2E" stroke-width="2" marker-end="url(#arr)"/>
+  <line x1="340" y1="545" x2="418" y2="520" stroke="#1A1A2E" stroke-width="2" marker-end="url(#arr)"/>
+  <line x1="530" y1="370" x2="530" y2="428" stroke="#00A878" stroke-width="2.5" marker-end="url(#arrv)"/>
+  <line x1="640" y1="310" x2="718" y2="290" stroke="#1A1A2E" stroke-width="2" marker-end="url(#arr)"/>
+  <line x1="640" y1="505" x2="718" y2="470" stroke="#00A878" stroke-width="2.5" marker-end="url(#arrv)"/>
+  <line x1="960" y1="265" x2="1008" y2="265" stroke="#1A1A2E" stroke-width="2" marker-end="url(#arr)"/>
+  <line x1="960" y1="440" x2="1008" y2="450" stroke="#1A1A2E" stroke-width="2" marker-end="url(#arr)"/>
+  <text x="655" y="288" font-size="10.5" fill="#1A1A2E">plan JSON</text>
+  <text x="648" y="452" font-size="10.5" fill="#00A878">inject + wire deps</text>
+  <text x="963" y="252" font-size="10.5" fill="#1A1A2E">persist</text>
+  <text x="963" y="428" font-size="10.5" fill="#1A1A2E">render</text>
+
+  <!-- next-step footnote -->
+  <rect x="420" y="650" width="785" height="120" rx="12" fill="#FFFFFF" stroke="#1A1A2E" stroke-width="1.2" stroke-dasharray="6 4"/>
+  <text x="440" y="680" font-size="13" font-weight="700" fill="#1A1A2E">Next (dashed — not this build)</text>
+  <text x="440" y="704" font-size="12" fill="#1A1A2E">1. Review engine → catalog with full structure (this feature's test case + fills review_request's manifest)</text>
+  <text x="440" y="724" font-size="12" fill="#1A1A2E">2. Parallel sweep calls (speed) — acceptance: parallel output matches the sequential baseline</text>
+  <text x="440" y="744" font-size="12" fill="#1A1A2E">3. Formulate-contract enrichment (must-not / testing / failure sections + Required Assets superset)</text>
+  <text x="40" y="700" font-size="12" font-weight="700" fill="#0D1F2D">Legend</text>
+  <line x1="40" y1="716" x2="80" y2="716" stroke="#0D1F2D" stroke-width="2"/><text x="88" y="720" font-size="11" fill="#1A1A2E">built / exists</text>
+  <line x1="40" y1="738" x2="80" y2="738" stroke="#1A1A2E" stroke-width="1.5" stroke-dasharray="5 4"/><text x="88" y="742" font-size="11" fill="#1A1A2E">planned / TBD</text>
+  <line x1="40" y1="760" x2="80" y2="760" stroke="#00A878" stroke-width="2.5"/><text x="88" y="764" font-size="11" fill="#1A1A2E">the new manifest path</text>
+</svg>

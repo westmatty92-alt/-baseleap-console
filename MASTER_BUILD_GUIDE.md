@@ -22,6 +22,17 @@
 - [ ] Large-output AI calls set an explicit adequate `max_tokens` AND were exercised live once, watching stop_reason/usage — mocked fixtures can't catch truncation (Bug #17, docs/BUG_LEDGER.md).
 - [ ] Tested after deploy: hard refresh, check console for errors.
 
+## Build-Plan Depth (manifest + node workflow — completeness by construction)
+Engines DECLARE their tags/fields in `spec.manifest`; the planner COMPUTES per-engine
+"create tags & fields" setup steps from the union of manifests (`injectManifestSetupSteps`)
+and wires the dependency edges — setup is never hand-listed by the AI. First engine to
+mention an item creates it (dedupe by exact name → keep manifest names BARE canonical
+strings). A routed engine with no manifest gets a visible `{"tbd":true}` flag — never
+fabricate a manifest from a thin spec. Formulate emits its own manifest + typed node
+workflow (`trigger|guard|wait|action|update|condition|webhook|handoff|end`; final_rule
+sentence first). Both persist on `build_steps.manifest`/`.workflow` (migration 008) and
+render behind the step's "Node workflow & manifest" expand — the PM layer never changes.
+
 ## Feasibility gate (the core business rule, enforced by data)
 Gaps are written by the Audit Assistant with `validation_status = 'pending'`. The Automation Agent
 sets `feasible`, `mechanism`, `estimated_hours`, and flips `validation_status` to `validated`.
