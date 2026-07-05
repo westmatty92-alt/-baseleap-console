@@ -37,6 +37,11 @@ opening an automation shows final_rule + nodes immediately, with a collapsed per
 Tests sub-section below (tests travel inside `workflow`, so a graduated engine carries its
 own test matrix). Formulate's tests validator is a lenient floor (≥ guards + conditions);
 the full coverage matrix is enforced in the prompt only.
+review_engine (seeded via upsertReviewEngine(), July 5 2026) is the FIRST PROVEN capture —
+a real production engine in full Build-Plan Depth structure (4 automations with typed
+nodes/final_rule/tests + manifest + deployment). It supersedes the thin review_request
+row (left in place, historical); the Automation Agent's catalog prompt emits the
+[engine_key: review_engine] so new assessments route retrieve, not formulate.
 Deployment guide / notes split (migration 009): the artifact step persists the full
 auto-generated deployment story on `build_steps.deployment`, rendered as a READ-ONLY
 collapsed "Deployment guide" section (review marker inline on the toggle → changes made

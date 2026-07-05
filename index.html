@@ -804,12 +804,12 @@ Approach rule (read current_stack first) — the build/replace boundary is about
 - integrate = a capable third-party tool already exists for this job (e.g. QuickBooks, Calendly) — connect/automate it rather than replace it.
 Rule of thumb: "they do it manually / nothing exists" → build. "they use a bad or fragmented tool" → replace. "they have a good tool, just wire it in" → integrate. Do NOT default to replace just because the client's process is informal — check current_stack for an actual named tool before choosing replace.
 
-Known engines (name | approach | templated | deploy hrs | band):
+Known engines (name | approach | templated | deploy hrs | band). When a line carries an [engine_key: …], emit that EXACT key as matched_engine — the build-planner routes by key:
 - Meta Lead Follow-Up Drip | build | yes | <1 day | standard
 - Booking Lifecycle (confirm/cancel/complete) | build | yes | <1 day | standard
 - Payment Processor Foundation (Stripe) | integrate | yes | <1 day | standard — foundational, build first; non-Stripe processors are net-new
 - Referral & Loyalty | build | yes | 1-3 days | complex
-- Review Engine (request + credit) | build | yes | <1 day | simple
+- Review Engine (request + credit) | build | yes | <1 day | simple [engine_key: review_engine]
 - Session Decrement | build | yes | <1 day | standard
 - Membership Booking-Lock | build | yes | <1 day | standard
 - Reactivation Gate (membership) | build | yes | <1 day | standard — state cleanup on re-pay, NOT a marketing win-back
@@ -1322,6 +1322,204 @@ async function updateEngineManifest(){
     "| creates:", m ? m.creates_tags.length : "—", "tags | fields:", m ? m.requires_fields.length : "—",
     "| deployment + original spec intact:", !!(ref && ref.spec && ref.spec.deployment && ref.spec.automations));
   return results;
+}
+
+/* ============================================================
+   REVIEW ENGINE — first PROVEN capture (Stay Radiant live build,
+   July 5 2026). Full Build-Plan Depth structure: automations with
+   typed nodes + final_rule + tests, spec.manifest, spec.deployment.
+   Supersedes the thin review_request row (left as-is — history).
+   Reward corrected to $15/review, $30 lifetime cap (legacy SOP
+   email copy says $20 — fixed at deploy, flagged in branding).
+============================================================ */
+const REVIEW_ENGINE = {
+  engine_key: "review_engine",
+  name: "Review Engine (request + verified credit)",
+  status: "proven", category: "automation",
+  summary: "Requests reviews after verified service completion (Showed — never Service Booking), with an optional verify-credit-redeem incentive program behind a Reward Enabled toggle. Core ask is universal; reward section deploys only for incentive clients. Hard guards against duplicate and excess credits; staff's ONLY manual action is verify-then-add-one-tag.",
+  spec: {
+    purpose: "Request reviews after verified service completion; optionally verify, credit, and redeem review incentives, with hard guards against duplicate/excess credits.",
+    applicability: "Core ask (automation 1) = universal, always deployed. Reward section (automations 2-4) = only clients running a review-incentive program (Reward Enabled toggle).",
+    manual_step: "Staff verifies the review live, then adds ONE tag (google_review_done / facebook_review_done) — the only manual action. Roadmap: review-confirmation auto-detection (reputation webhook) fires that tag automatically later; the credit engine already listens for it, clean drop-in.",
+    automations: [
+      {
+        name: "Review Request (Post-Service) — core",
+        trigger: { type: "Appointment Status = Showed", filters: { calendars: "normal service calendars — NOT Service Booking" } },
+        final_rule: "When an appointment is marked Showed, if the client wasn't already asked, wait a delay, then send the review ask by email (+ optional SMS) — never on cancellations/no-shows.",
+        nodes: [
+          { type: "trigger", config: "Appointment Status = Showed (normal calendars; NOT Service Booking)" },
+          { type: "guard",   config: "If tag review-requested OR review_credit_maxed present → end" },
+          { type: "update",  config: "Set field Last Review Request Date = now" },
+          { type: "update",  config: "Add tag review-requested" },
+          { type: "wait",    config: "2–12h (per-client delay)" },
+          { type: "action",  config: "Send review request email — primary + secondary platform links, one CTA" },
+          { type: "wait",    config: "Short delay (only when the optional SMS is enabled)" },
+          { type: "action",  config: "Send review request SMS (optional)" },
+          { type: "end",     config: "Stop" }
+        ],
+        tests: [
+          "Happy path: mark a test appointment Showed → after the delay the email (and SMS if enabled) arrives with the correct platform links; Last Review Request Date set; review-requested tag applied",
+          "Guard re-fire: mark the same contact Showed again → workflow ends at the guard, no second ask",
+          "Maxed guard: a contact carrying review_credit_maxed gets no ask",
+          "Exit condition: cancelled and no-show appointments never trigger the ask (Showed only)"
+        ]
+      },
+      {
+        name: "Google Review Verified → Apply Credit — reward section",
+        trigger: { type: "Tag added", filters: { tag: "google_review_done" } },
+        final_rule: "When google_review_done is added, if not already maxed and Google not already credited, mark Google complete, +$15 balance & lifetime, cap at $30, send thank-you coupon.",
+        nodes: [
+          { type: "trigger", config: "Tag added: google_review_done (staff-verified review)" },
+          { type: "guard",   config: "If tag review_credit_maxed present → end" },
+          { type: "guard",   config: "If field Google Review Completed = Yes → end (one credit per platform)" },
+          { type: "update",  config: "Set Google Review Completed = Yes" },
+          { type: "update",  config: "Review Credit Balance += $15" },
+          { type: "update",  config: "Review Credits Earned (Lifetime) += $15" },
+          { type: "condition", config: "Review Credits Earned (Lifetime) >= $30?",
+            yes: [
+              { type: "update", config: "Set Review Incentive Status = Maxed" },
+              { type: "update", config: "Add tag review_credit_maxed" },
+              { type: "action", config: "Send thank-you email with coupon (REVIEW15/REVIEW30)" },
+              { type: "end",    config: "Stop" }
+            ],
+            no: [
+              { type: "action", config: "Send thank-you email with coupon (REVIEW15/REVIEW30)" },
+              { type: "end",    config: "Stop" }
+            ] }
+        ],
+        tests: [
+          "Happy path: add google_review_done to an eligible contact → Google Review Completed = Yes, balance +$15, lifetime +$15, thank-you coupon email received",
+          "Guard re-fire: add google_review_done again → per-platform dedupe ends the workflow, no double credit",
+          "Maxed guard: a contact carrying review_credit_maxed gets no credit",
+          "Cap branch YES: lifetime reaches exactly $30 → Review Incentive Status = Maxed, review_credit_maxed added, thank-you email still sends",
+          "Cap branch NO: lifetime under $30 → no maxing, thank-you email sends"
+        ]
+      },
+      {
+        name: "Facebook Review Verified → Apply Credit — reward section",
+        trigger: { type: "Tag added", filters: { tag: "facebook_review_done" } },
+        final_rule: "When facebook_review_done is added, if not already maxed and Facebook not already credited, mark Facebook complete, +$15 balance & lifetime, cap at $30, send thank-you coupon.",
+        nodes: [
+          { type: "trigger", config: "Tag added: facebook_review_done (staff-verified review)" },
+          { type: "guard",   config: "If tag review_credit_maxed present → end" },
+          { type: "guard",   config: "If field Facebook Review Completed = Yes → end (one credit per platform)" },
+          { type: "update",  config: "Set Facebook Review Completed = Yes" },
+          { type: "update",  config: "Review Credit Balance += $15" },
+          { type: "update",  config: "Review Credits Earned (Lifetime) += $15" },
+          { type: "condition", config: "Review Credits Earned (Lifetime) >= $30?",
+            yes: [
+              { type: "update", config: "Set Review Incentive Status = Maxed" },
+              { type: "update", config: "Add tag review_credit_maxed" },
+              { type: "action", config: "Send thank-you email with coupon (REVIEW15/REVIEW30)" },
+              { type: "end",    config: "Stop" }
+            ],
+            no: [
+              { type: "action", config: "Send thank-you email with coupon (REVIEW15/REVIEW30)" },
+              { type: "end",    config: "Stop" }
+            ] }
+        ],
+        tests: [
+          "Happy path: add facebook_review_done to an eligible contact → Facebook Review Completed = Yes, balance +$15, lifetime +$15, thank-you coupon email received",
+          "Guard re-fire: add facebook_review_done again → per-platform dedupe ends the workflow, no double credit",
+          "Maxed guard: a contact carrying review_credit_maxed gets no credit",
+          "Cap branch YES: lifetime reaches exactly $30 → Review Incentive Status = Maxed, review_credit_maxed added, thank-you email still sends",
+          "Cap branch NO: lifetime under $30 → no maxing, thank-you email sends"
+        ]
+      },
+      {
+        name: "Coupon / Review Credit Redemption — reward section",
+        trigger: { type: "Inbound webhook", filters: { event: "checkout.session.completed with coupon applied (Stripe)" } },
+        final_rule: "When checkout completes with a review coupon, confirm the code, remove eligibility, decrement balance, log redemption, prevent reuse.",
+        nodes: [
+          { type: "trigger", config: "Inbound webhook: checkout.session.completed with coupon applied (Stripe)" },
+          { type: "guard",   config: "If coupon not REVIEW15/REVIEW30 OR tag Review Credit Eligible absent → end" },
+          { type: "update",  config: "Decrement Review Credit Balance by the redeemed amount" },
+          { type: "update",  config: "Remove tag Review Credit Eligible" },
+          { type: "update",  config: "Set Last Redemption Date = now" },
+          { type: "end",     config: "Stop — redemption logged, reuse prevented" }
+        ],
+        tests: [
+          "Happy path: checkout with REVIEW15 on an eligible contact → balance decremented once, Review Credit Eligible removed, Last Redemption Date set",
+          "Wrong coupon: checkout with a non-review coupon → guard ends the workflow, nothing changes",
+          "Reuse attempt: second redemption after eligibility was removed → guard blocks it",
+          "Round-trip: Stripe enforces the coupon, GHL enforces eligibility — verify both fire on the same test checkout"
+        ]
+      }
+    ],
+    manifest: {
+      requires_tags: ["google_review_done","facebook_review_done","Review Credit Eligible"],   // Review Credit Eligible is SHARED with payments_stripe — injection dedupe handles cross-engine ownership
+      creates_tags: ["review-requested","review_credit_maxed"],
+      requires_fields: [
+        { name: "Last Review Request Date",          type: "date" },
+        { name: "Google Review Completed",           type: "text" },
+        { name: "Facebook Review Completed",         type: "text" },
+        { name: "Review Credit Balance",             type: "currency" },
+        { name: "Review Credits Earned (Lifetime)",  type: "currency" },
+        { name: "Review Incentive Status",           type: "text" },
+        { name: "Last Redemption Date",              type: "date" }
+      ]
+    },
+    deployment: {
+      branding: {
+        review_platforms: "primary/secondary review platform + links — platform-agnostic (Google + FB default; can be Google + HomeStars/Yelp)",
+        message_copy: "review request email + SMS copy; thank-you email copy",
+        coupon_codes: "REVIEW15 / REVIEW30 (rename per client)",
+        reward_amount: "$15 per review, $30 lifetime cap — FIX legacy copy that says $20"
+      },
+      business_rules: {
+        reward_enabled: "master toggle — No = Automation 1 only (core ask); Yes = all 4 (full incentive program)",
+        math_operations: ["wait delay 2–12h","credit per review $15","hard lifetime cap $30","one credit per platform"]
+      },
+      never_touch: [
+        "ONLY adding the correct tag triggers credits — staff never adjust balances/coupons manually",
+        "the $30 cap + per-platform dedupe guards (removing them = credit abuse)",
+        "reviews trigger ONLY on Showed (never Service Booking)",
+        "guard-first on every workflow",
+        "Stripe enforces the coupon / GHL enforces eligibility — both stay wired"
+      ],
+      sop_note: "SOP 'Reviews' section attaches near-verbatim at deploy: staff verification workflow, weekly audit checklist, common mistakes, escalation, the 'Verify → add ONE tag → stop' rule."
+    }
+  },
+  client_parameters: {
+    review_platforms: "primary + secondary review platforms (Google + FB default)",
+    review_links:     "the client's live review URLs per platform",
+    email_copy:       "review request + thank-you email copy",
+    sms_copy:         "optional review request SMS copy",
+    coupon_codes:     "the Stripe coupon codes (REVIEW15/REVIEW30 pattern — must exist in Stripe first)",
+    reward_enabled:   "master toggle: No = core ask only, Yes = full incentive program",
+    request_delay:    "wait between Showed and the ask (2–12h)",
+    credit_per_review: "reward per verified review ($15 default)",
+    lifetime_cap:     "hard lifetime credit cap ($30 default)"
+  },
+  depends_on: ["booking","payments_stripe"]   // Showed comes from the booking lifecycle; redemption rides the Stripe coupon flow
+};
+
+// UPSERT the captured review engine — insert when missing; on re-run, merge spec
+// over the existing row (operator edits outside REVIEW_ENGINE's keys survive) and
+// never re-stamp operator_id (RLS). Run once from the browser console: upsertReviewEngine()
+async function upsertReviewEngine(){
+  const { data: existing, error: exErr } = await sb.from("engine_catalog")
+    .select("*").eq("engine_key", "review_engine").maybeSingle();
+  if(exErr){ console.error("upsertReviewEngine read failed:", exErr.message); return null; }
+  let data, error;
+  if(!existing){
+    ({ data, error } = await sb.from("engine_catalog")
+      .insert({ ...REVIEW_ENGINE, operator_id: S.user.id }).select().single());
+  } else {
+    const { engine_key: _k, ...fields } = REVIEW_ENGINE;
+    ({ data, error } = await sb.from("engine_catalog")
+      .update({ ...fields, spec: { ...(existing.spec || {}), ...REVIEW_ENGINE.spec }, updated_at: new Date().toISOString() })
+      .eq("engine_key", "review_engine").select().single());
+  }
+  if(error){ console.error("upsertReviewEngine failed:", error.message); return null; }
+  const m = data.spec.manifest, autos = data.spec.automations, dep = data.spec.deployment;
+  console.log((existing ? "review_engine updated (merge)" : "review_engine inserted"), "→", data.name, "[" + data.status + "]",
+    "\n| spec keys:", Object.keys(data.spec).join(", "),
+    "\n| automations:", autos.length, "(expect 4)",
+    "| manifest creates:", m.creates_tags.length, "requires:", m.requires_tags.length, "fields:", m.requires_fields.length,
+    "\n| deployment tiers:", ["branding","business_rules","never_touch"].every(k => dep && dep[k]) ? "all three present" : "MISSING A TIER",
+    "| catalog total:", (await listEngines()).length, "engines");
+  return data;
 }
 
 async function assessGap(gapId, silent){
