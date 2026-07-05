@@ -802,7 +802,7 @@ async function saveStack(){
 const KNOWN_ENGINE_KEYS = ["payments_stripe","lead_response","booking","membership","referral","missed_call_textback","no_show_reengagement","review_engine"];
 
 const AUTOMATION_CATALOG_PROMPT = `AUTOMATION ENGINE CATALOG (Baseleap):
-Two-number snapshot model: GHL automations, once built, are cloned (snapshot) into a new client's sub-account with only client-specific bits wired up. Cost-to-deliver has two numbers: first-build hours (build from scratch, one-time, higher) and deploy hours (snapshot + parameterize, repeats, much lower). For a TEMPLATED engine match, estimate DEPLOY hours — UNLESS approach is integrate/replace with genuine per-client wiring, then use the higher end. For a gap with no matching engine, estimate FIRST-BUILD hours and set is_new_template:true.
+Two-number snapshot model: GHL automations, once built, are cloned (snapshot) into a new client's sub-account with only client-specific bits wired up. Cost-to-deliver has two numbers: first-build hours (build from scratch, one-time, higher) and deploy hours (snapshot + parameterize, repeats, much lower). For a DEEP engine match, estimate DEPLOY hours — UNLESS approach is integrate/replace with genuine per-client wiring, then use the higher end. For a STUB engine match, estimate FIRST-BUILD hours with templated:false (the engine is designed fresh at build time; the stub only guides the design). For a gap with no matching engine, estimate FIRST-BUILD hours and set is_new_template:true.
 
 Approach rule (read current_stack first) — the build/replace boundary is about whether a real TOOL exists, not whether the client is disorganized:
 - build = NO automated system exists for this job. This INCLUDES the client doing it manually by hand, forwarding emails, texting themselves, or "just remembering" — manual effort is not a tool to replace, it's the absence of one. Net-new in GHL (or n8n if GHL can't do it).
@@ -810,17 +810,19 @@ Approach rule (read current_stack first) — the build/replace boundary is about
 - integrate = a capable third-party tool already exists for this job (e.g. QuickBooks, Calendly) — connect/automate it rather than replace it.
 Rule of thumb: "they do it manually / nothing exists" → build. "they use a bad or fragmented tool" → replace. "they have a good tool, just wire it in" → integrate. Do NOT default to replace just because the client's process is informal — check current_stack for an actual named tool before choosing replace.
 
-Known engines (name | approach | templated | deploy hrs | band). matched_engine MUST be the [engine_key: …] shown on the matched line — the EXACT key string, never the engine's display name; the build-planner routes by key and a name will silently fail to match:
-- Meta Lead Follow-Up Drip | build | yes | <1 day | standard [engine_key: lead_response]
-- Booking Lifecycle (confirm/cancel/complete) | build | yes | <1 day | standard [engine_key: booking]
-- Payment Processor Foundation (Stripe) | integrate | yes | <1 day | standard — foundational, build first; non-Stripe processors are net-new [engine_key: payments_stripe]
-- Referral & Loyalty | build | yes | 1-3 days | complex [engine_key: referral]
-- Review Engine (request + credit) | build | yes | <1 day | simple [engine_key: review_engine]
-- Missed Call Text-Back | build | yes | <1 day | simple [engine_key: missed_call_textback]
-- No-Show Re-Engagement | build | yes | <1 day | simple [engine_key: no_show_reengagement]
-- Session Decrement | build | yes | <1 day | standard [engine_key: membership]
-- Membership Booking-Lock | build | yes | <1 day | standard [engine_key: membership]
-- Reactivation Gate (membership) | build | yes | <1 day | standard — state cleanup on re-pay, NOT a marketing win-back [engine_key: membership]
+Matching rule (retrieve vs create): matched_engine is a CLAIM that the named engine's existing workflows deliver this gap AS-BUILT — parameter changes only, no new workflow design. The test: would a builder handed that engine's spec deliver this exact job without designing anything new? Yes → output that line's exact [engine_key] and name the covering workflow(s) in match_evidence. No engine's DOES scope genuinely covers the job → matched_engine=null. A null match is a GOOD outcome (the build-planner designs a full new engine); a wrong match ships the wrong build. Never pick the closest-sounding engine — adjacent domain is not coverage (invoicing is not payment processing; win-back is not reactivation).
+
+Known engines (name | approach | band [engine_key] — DOES / NOT FOR). matched_engine MUST be the [engine_key: …] shown on the matched line — the EXACT key string, never the engine's display name; the build-planner routes by key and a name will silently fail to match.
+DEEP engines (proven spec — a match deploys as-built, deploy hours):
+- Payment Processor Foundation (Stripe) | integrate | standard [engine_key: payments_stripe] — DOES: react to payments that already happen — Stripe success/failure/refund handling, coupon redemption, revenue logging; foundational, build first. NOT FOR: creating or sending invoices, invoice-milestone sequences (deposit→progress→final), estimates, or accounting workflows (QuickBooks/Xero jobs = integrate with matched_engine=null); non-Stripe processors are net-new.
+- Meta Lead Follow-Up Drip | build | standard [engine_key: lead_response] — DOES: Meta (FB/IG) instant-form lead capture → timeline-branched follow-up drip that stops on booking. NOT FOR: non-Meta lead sources (website forms, GMB, walk-ins), newsletters, or win-back of lapsed customers.
+- Review Engine (request + credit) | build | simple [engine_key: review_engine] — DOES: post-service review request after verified completion (Showed), optional verified review-credit incentive program. NOT FOR: reputation monitoring, review gating, or survey/feedback forms.
+STUB engines (documented pattern, not deepened — a match still gets DESIGNED FRESH at build time: first-build hours, templated:false):
+- Booking Lifecycle (confirm/cancel/complete) | build | standard [engine_key: booking] — DOES: booking confirmations + reminders, service tagging, manual-booking and manual-payment handling. NOT FOR: payment truth (payments_stripe owns it) or invoicing.
+- Membership: Session Decrement / Booking-Lock / Reactivation Gate | build | standard [engine_key: membership] — DOES: Stripe SUBSCRIPTION lifecycle — past-due enforcement, session counts, cancellation cleanup, booking lock; reactivation = state cleanup on re-pay. NOT FOR: one-time payments (payments_stripe) or marketing win-back drips (formulate).
+- Referral & Loyalty | build | complex [engine_key: referral] — DOES: post-visit referral invites with attribution, points/loyalty balances, ambassador commissions. NOT FOR: review requests (review_engine) or generic discount campaigns.
+- Missed Call Text-Back | build | simple [engine_key: missed_call_textback] — DOES: missed inbound call → instant SMS back to the caller, optional internal alert. NOT FOR: voicemail transcription, call routing/IVR, or outbound call campaigns.
+- No-Show Re-Engagement | build | simple [engine_key: no_show_reengagement] — DOES: appointment marked no-show → re-engagement sequence with rebook link. NOT FOR: pre-appointment reminders (booking) or lapsed-customer win-back.
 
 Not-yet-templated: a marketing win-back drip for lapsed customers is a common gap with no engine yet — model on the Meta timeline pattern, standard band, first-build. Any gap with no matching engine: matched_engine=null, is_new_template=true, first-build hours.
 
@@ -831,9 +833,9 @@ function automationSystemPrompt(){
     + "You qualify one gap the Audit Assistant already identified; you never invent new gaps. "
     + "Given the gap and the client's current tool stack, assess feasibility, name the mechanism, estimate cost-to-deliver, and tag an approach.\n\n"
     + AUTOMATION_CATALOG_PROMPT
-    + "\n\nMatch the gap to a known engine where possible. The approach MUST be informed by current_stack: if the client already runs a capable tool for this job, prefer integrate; if current_stack names an actual bad/fragmented tool or artifact doing this job, consider replace; if current_stack shows nothing for this job — including purely manual handling — that is build, never replace.\n\n"
+    + "\n\nApply the Matching rule strictly: matched_engine only when an engine's DOES scope covers the gap as-built — otherwise null. The approach MUST be informed by current_stack: if the client already runs a capable tool for this job, prefer integrate; if current_stack names an actual bad/fragmented tool or artifact doing this job, consider replace; if current_stack shows nothing for this job — including purely manual handling — that is build, never replace.\n\n"
     + "Respond ONLY with valid JSON, no markdown, in exactly this shape:\n"
-    + '{"feasible":true,"approach":"build|integrate|replace","mechanism":"one-line how","estimated_hours":0,"band":"simple|standard|complex","templated":true,"is_new_template":false,"matched_engine":"the matched line\'s exact [engine_key] or null","rationale":"1-2 sentences"}';
+    + '{"feasible":true,"approach":"build|integrate|replace","mechanism":"one-line how","estimated_hours":0,"band":"simple|standard|complex","templated":true,"is_new_template":false,"matched_engine":"the matched line\'s exact [engine_key] or null","match_evidence":"the specific engine workflow(s) that deliver this gap — null when matched_engine is null","rationale":"1-2 sentences"}';
 }
 
 function parseAssessResponse(raw){
@@ -848,12 +850,17 @@ function parseAssessResponse(raw){
     && typeof parsed.templated === "boolean"
     && typeof parsed.is_new_template === "boolean"
     && (parsed.matched_engine === null || typeof parsed.matched_engine === "string")
+    && (parsed.match_evidence == null || typeof parsed.match_evidence === "string")
     && typeof parsed.rationale === "string";
   if(!shapeOk) throw new Error("AI response did not match the expected shape — try again.");
   // Routing enum (Bug #18): a display name here silently formulates at sweep time.
   // Enum membership is a shape check, same class as approach/band above.
   if(parsed.matched_engine !== null && !KNOWN_ENGINE_KEYS.includes(parsed.matched_engine))
     throw new Error(`matched_engine "${parsed.matched_engine}" is not a catalog engine_key — expected one of ${KNOWN_ENGINE_KEYS.join(", ")} or null. Try again.`);
+  // Retrieve-vs-create gate: a match is a coverage CLAIM — it must name the
+  // engine workflow(s) that deliver the gap, or it doesn't stand.
+  if(parsed.matched_engine !== null && (typeof parsed.match_evidence !== "string" || !parsed.match_evidence.trim()))
+    throw new Error("matched_engine is set but match_evidence is empty — name the engine workflow(s) that deliver this gap, or set matched_engine to null. Try again.");
   return parsed;
 }
 
@@ -1555,7 +1562,9 @@ async function assessGap(gapId, silent){
       feasible: parsed.feasible, approach: parsed.approach, mechanism: parsed.mechanism.trim(),
       estimated_hours: parsed.estimated_hours, band: parsed.band, templated: parsed.templated,
       is_new_template: parsed.is_new_template, matched_engine: parsed.matched_engine || "",
-      rationale: parsed.rationale.trim(),
+      // match_evidence rides inside rationale (display/persistence — no schema change)
+      rationale: parsed.rationale.trim()
+        + (parsed.matched_engine && parsed.match_evidence ? ` [Evidence: ${parsed.match_evidence.trim()}]` : ""),
     };
     if(!silent) setAutomationMsg("Assessed — review before validating.");
   }catch(e){
@@ -1792,13 +1801,32 @@ Field rules:
 - deployment: the three-tier guide for FUTURE clients of this engine — branding (names/copy/links), business_rules incl. math_operations (the most-forgotten tier), never_touch (the architecture).
 - This engine is DESIGNED, NOT PROVEN — tests must name what to verify live before trusting it.`;
 
-// Deterministic three-way router — no AI, no re-judging.
+// DEPTH GUARD (retrieve-vs-create gate): an engine qualifies for a retrieve
+// route only when its spec carries BOTH a manifest and real workflow content —
+// every automation an object with steps/nodes, not title strings or a pattern
+// one-liner. Enforced in data, not prompt: however confidently the assessment
+// matched, a thin stub can never be retrieved. Evaluated against the LIVE
+// catalog row, so deepening a spec flips its route with zero code change.
+function isDeepEngine(e){
+  const spec = e && e.spec;
+  return !!(spec && spec.manifest
+    && Array.isArray(spec.automations) && spec.automations.length
+    && spec.automations.every(a => a && typeof a === "object"
+        && (Array.isArray(a.steps) || Array.isArray(a.nodes))));
+}
+
+// Deterministic three-way router — no AI, no re-judging. A matched engine that
+// fails the depth guard routes to formulate SEEDED with the stub — its curated
+// summary/manifest/deployment feed the design prompt as constraints.
+// gaps.matched_engine stays as persisted (honest pattern metadata); only the
+// route is decided here.
 function classifyGapRoute(g, catalogByKey){
   const engine = g.matched_engine ? catalogByKey.get(g.matched_engine) : null;
-  if(!engine) return { route: "formulate", engine: null };
+  if(!engine) return { route: "formulate", engine: null, seed: null };
+  if(!isDeepEngine(engine)) return { route: "formulate", engine: null, seed: engine };
   return Object.keys(engine.client_parameters || {}).length
-    ? { route: "parameterize", engine }
-    : { route: "dropin", engine };
+    ? { route: "parameterize", engine, seed: null }
+    : { route: "dropin", engine, seed: null };
 }
 
 // Shared retry-once wiring for the sweep's per-gap AI calls (same doctrine as
@@ -1935,15 +1963,42 @@ function validateFormulation(f){
   if(!Array.isArray(d.never_touch) || !d.never_touch.length) throw new Error("deployment.never_touch empty");
 }
 
-// FORMULATE: no catalog row — AI designs BOTH halves (spec + three-tier
-// deployment guide) from the GHL grammar. Never written to engine_catalog here;
+// The catalog stub handed to a seeded formulate: constraints, not a spec. The
+// curated knowledge (summary, pattern, manifest, deployment, declared knobs)
+// flows into the design; the AI still designs the FULL workflow, validated by
+// the untouched validateFormulation.
+function catalogSeedBlock(seed){
+  const spec = seed.spec || {};
+  const lines = [
+    `CATALOG SEED — catalog engine "${seed.name}" (${seed.engine_key}) matches this gap's pattern but is not deepened to a buildable spec, so you design it in full. Everything below is CONSTRAINTS your design must honor — not a spec to copy:`,
+    `Summary: ${seed.summary || "—"}`,
+  ];
+  if(spec.pattern) lines.push(`Known pattern: ${spec.pattern}`);
+  if(Array.isArray(spec.automations) && spec.automations.length)
+    lines.push(`Documented automations (titles only — design each in full): ${spec.automations.map(a => typeof a === "string" ? a : a.name).join(" · ")}`);
+  if(spec.core_rule) lines.push(`Core rule (architectural — must hold): ${spec.core_rule}`);
+  if(Array.isArray(spec.interacts_with) && spec.interacts_with.length)
+    lines.push(`Interacts with: ${spec.interacts_with.join(" · ")}`);
+  if(spec.manifest)
+    lines.push(`Curated manifest — use these tags/fields EXACTLY as named (add if needed, never rename):\n${JSON.stringify(spec.manifest, null, 1)}`);
+  if(spec.deployment)
+    lines.push(`Curated deployment guide — your deployment output must stay consistent with it; its never_touch entries are architecture:\n${JSON.stringify(spec.deployment, null, 1)}`);
+  if(Object.keys(seed.client_parameters || {}).length)
+    lines.push(`Declared client knobs — the design must expose each as an adaptable point:\n${JSON.stringify(seed.client_parameters, null, 1)}`);
+  return lines.join("\n");
+}
+
+// FORMULATE: no retrievable catalog row — AI designs BOTH halves (spec + three-
+// tier deployment guide) from the GHL grammar; a thin-engine match passes its
+// stub in as seed (depth guard). Never written to engine_catalog here;
 // graduation is the operator's call after a real build (separate step, deferred).
-async function formulateEngine(gap){
+async function formulateEngine(gap, seed){
   const system = "You design a NEW GHL automation engine from scratch for an agency build plan. It has no proven template — design conservatively and testably.\n\n"
     + DESIGN_DOCTRINE_PROMPT + "\n\n" + GHL_GRAMMAR_PROMPT + "\n\n" + FORMULATE_CONTRACT_PROMPT;
   const userMsg = sweepClientContext()
     + `\n\nGap to deliver:\nTitle: ${gap.title}\nProblem: ${gap.problem || "—"}`
     + `\nValidated mechanism: ${gap.mechanism || "?"} | approach: ${gap.approach || "?"} | severity: ${gap.severity || "medium"}`
+    + (seed ? `\n\n${catalogSeedBlock(seed)}` : "")
     + `\n\nDesign the engine now.`;
   return aiJsonWithRetry({ system, userMsg, max_tokens: 32000,   // full spec + deployment guide — match generatePlanDraft's budget
     validate: validateFormulation, what: `formulate (${gap.title})` });
@@ -1981,7 +2036,7 @@ async function sweepAcceptedGaps(gaps){
   const worker = async () => {
     while(queue.length){
       const i = queue.shift();
-      const { route, engine } = routed[i];
+      const { route, engine, seed } = routed[i];
       const g = gaps[i];
       try{
         if(route === "parameterize"){
@@ -1992,8 +2047,12 @@ async function sweepAcceptedGaps(gaps){
             parameter_values: a.parameter_values, deployment_overrides: a.deployment_overrides || null,
             changes_note: a.changes_made };
         } else {
-          const f = await formulateEngine(g);
-          results[i] = { route, engine_key: null, depends_on: [],
+          const f = await formulateEngine(g, seed);
+          // engine_key stays null on a seeded formulate — acceptedKeys/foundation
+          // logic must never count a stub as a delivered engine. seeded_from is
+          // provenance only; the stub's real prerequisites ARE inherited.
+          results[i] = { route, engine_key: null, seeded_from: seed ? seed.engine_key : null,
+            depends_on: seed ? (seed.depends_on || []) : [],
             spec: f.spec, deployment: f.deployment, manifest: f.manifest, changes_note: null };
         }
       }catch(e){ failures.push(`"${g.title}": ${e.message}`); }
@@ -2041,6 +2100,7 @@ function composeStepDeployment(sw, changesNote){
   const { automations: _a, deployment: _d, manifest: _m, ...specExtras } = sw.spec || {};
   const d = {
     route: sw.route,
+    seeded_from: sw.seeded_from || null,   // depth guard: the thin stub this formulation was seeded with
     needs_review: (sw.route === "parameterize" || sw.route === "formulate") ? sw.route : null,
     changes_note: changesNote ?? sw.changes_note ?? null,
     parameter_values: sw.parameter_values || null,
@@ -2083,6 +2143,8 @@ function gapRouteLine(sw, acceptedKeys){
       ? `DROP-IN (catalog engine ${sw.engine_key} — deploy as-is; mode retrieve)`
     : sw.route === "parameterize"
       ? `PARAMETERIZE (catalog engine ${sw.engine_key} — adapted to this client; mode retrieve; spec + changes note attached by code)`
+    : sw.seeded_from
+      ? `FORMULATE (seeded from catalog stub ${sw.seeded_from} — engine not deepened, depth guard routed to design; new spec + deployment designed; mode formulate; attached by code)`
       : `FORMULATE (no catalog engine — new spec + deployment designed; mode formulate; attached by code)`;
   const prereqs = (sw.depends_on || []).map(k =>
     acceptedKeys.has(k) ? `${k} (accepted — add a dependency edge to its steps)` : `${k} (NOT accepted — scope flag, name both)`);
@@ -2686,7 +2748,7 @@ function renderStepDeployment(dep, key){
   const dKey = key + ":d";
   const open = !!S.buildPlan.expanded[dKey];
   const flag = dep.needs_review === "parameterize" ? `<span class="dep-review">⚠ REVIEW — parameterized: confirm changes</span>`
-             : dep.needs_review === "formulate"    ? `<span class="dep-review">⚠ REVIEW — formulated: unproven</span>` : "";
+             : dep.needs_review === "formulate"    ? `<span class="dep-review">⚠ REVIEW — formulated: unproven${dep.seeded_from ? " (seeded from " + esc(dep.seeded_from) + " stub)" : ""}</span>` : "";
   return `<button class="depth-toggle" onclick="toggleStepDepth('${escAttr(dKey)}')">${open ? "▾" : "▸"} Deployment guide ${flag}</button>`
     + (open ? `<div class="depth-box">${renderDeploymentBody(dep)}</div>` : "");
 }

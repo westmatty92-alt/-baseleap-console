@@ -4,6 +4,41 @@ Numbered incidents and the lesson each one bought. Numbering continues the bug
 history in the Notion Console spec; entries land here when the lesson should sit
 next to the code. Newest first.
 
+## Bug #19 — retrieve-vs-create failure: nearest-sounding engine matched instead of judged (July 5 2026)
+
+**Symptom:** on the 123 Business plan, (a) "Manual invoice creation /
+invoice-milestone sequences" (a QuickBooks invoicing workflow) confidently
+RETRIEVED `payments_stripe` — a payment-PROCESSING engine that does no
+invoicing; (b) "No-show re-engagement" and "missed call text-back" matched thin
+catalog stubs (no `spec.manifest`, no real workflow) and retrieved EMPTY step
+bodies flagged "⚠ tags/fields TBD, build manually."
+
+**Root cause:** two holes behind one behavior — the assessment answered "which
+engine is closest?" instead of "does an engine actually do this job?".
+(1) Scope hole: the prompt said "match to a known engine where possible", null
+was only a fallback clause, and catalog lines carried name+band with no
+boundaries — so an invoicing gap latched onto the nearest payment-sounding key.
+(2) Depth hole: `classifyGapRoute` never consulted engine depth; any stub with
+`client_parameters` routed "parameterize" and shipped an empty retrieve.
+
+**Fix (`same session`):** layered gate. In DATA: `isDeepEngine` depth guard in
+`classifyGapRoute` — retrieve requires the live row to carry `spec.manifest` AND
+real workflow content; anything less routes to formulate SEEDED with the stub
+(`catalogSeedBlock`: summary/pattern/manifest/deployment/knobs as constraints),
+`engine_key` stays null, `seeded_from` persists on `build_steps.deployment`. In
+PROMPT: retrieve-vs-create Matching rule (a match is a coverage CLAIM; null is a
+good outcome), per-engine DOES / NOT FOR scope lines, stub lines marked
+first-build hours, and a required `match_evidence` field enforced by
+`parseAssessResponse` whenever matched_engine is set. Operational: re-assess the
+three mis-matched 123 Business gaps and regenerate the plan.
+
+**The lesson:** a catalog prompt that lists names invites nearest-neighbor
+matching — selection must be framed as a coverage claim with explicit NOT-FOR
+boundaries and required evidence. And any property the prompt can get wrong but
+the data can decide (an engine's retrieve-worthiness) belongs in a code guard on
+the data, where a wrong match degrades to a safe formulate instead of an empty
+or wrong build.
+
 ## Bug #18 — matched_engine name/key contract mismatch: every catalog gap formulated (July 5 2026)
 
 **Symptom:** a client's "Post-job Google review request" gap FORMULATED instead

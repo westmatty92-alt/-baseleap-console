@@ -29,8 +29,7 @@ Engines DECLARE their tags/fields in `spec.manifest`; the planner COMPUTES per-e
 "create tags & fields" setup steps from the union of manifests (`injectManifestSetupSteps`)
 and wires the dependency edges — setup is never hand-listed by the AI. First engine to
 mention an item creates it (dedupe by exact name → keep manifest names BARE canonical
-strings). A routed engine with no manifest gets a visible `{"tbd":true}` flag — never
-fabricate a manifest from a thin spec. Formulate emits its own manifest + typed node
+strings). Formulate emits its own manifest + typed node
 workflow (`trigger|guard|wait|action|update|condition|webhook|handoff|end`; final_rule
 sentence first). Both persist on `build_steps.manifest`/`.workflow` (migration 008) and
 render behind the step's "Node workflow & manifest" expand — the PM layer never changes.
@@ -49,6 +48,22 @@ auto-generated deployment story on `build_steps.deployment`, rendered as a READ-
 collapsed "Deployment guide" section (review marker inline on the toggle → changes made
 → parameter values → three tiers → overrides → engine-spec extras). `notes` = operator
 text only on new plans; old plans keep their historical dump untouched.
+
+Retrieve-vs-create gate (July 5 2026): `matched_engine` no longer implies retrieve — it is
+pattern metadata; the route is decided in data by the DEPTH GUARD (`isDeepEngine`): retrieve
+requires the LIVE catalog row to carry `spec.manifest` AND real workflow content (every
+automation an object with steps/nodes). An engine failing the guard routes to SEEDED
+FORMULATE — the stub's summary/pattern/manifest/deployment/client_parameters feed the
+formulate prompt as constraints (`catalogSeedBlock`), the sweep result keeps
+`engine_key: null` (a stub never counts as a delivered engine for foundation logic),
+carries `seeded_from` for provenance (persisted in `build_steps.deployment`), and inherits
+the stub's `depends_on`. Consequence: new plans can no longer produce `{"tbd":true}`
+manifests (the flag renders only on historical rows); deepening a catalog spec flips its
+route to retrieve with zero code change. Assessment side: the catalog prompt carries
+per-engine DOES / NOT FOR scope and a retrieve-vs-create Matching rule; `match_evidence`
+is required in the JSON whenever `matched_engine` is set (enforced in
+`parseAssessResponse`, folded into rationale — no schema change); stub matches estimate
+FIRST-BUILD hours with `templated:false`.
 
 Sweep concurrency (July 5 2026): parameterize/formulate AI calls run through a bounded
 pool (SWEEP_CONCURRENCY = 5), results assigned by gap index so completion order never
