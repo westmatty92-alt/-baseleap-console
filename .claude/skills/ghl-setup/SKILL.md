@@ -155,7 +155,8 @@ application/json` on writes). The Setup Agent codes against THIS table only.
 | Custom value create | `POST /locations/{loc}/customValues` | `{name, value}` | 201 `{customValue:{id,fieldKey:"{{ custom_values.<slug> }}",...}}` |
 | Calendars list | `GET /calendars/?locationId={loc}` | — | 200 `{calendars:[...]}` |
 | Calendar create | `POST /calendars/` | `{locationId, name}` minimum | 201 — defaults: `calendarType:"event"`, classic widget, 30-min slots |
-| Pipelines list/create | `GET/POST /opportunities/pipelines` | — | ⚠ UNVERIFIED — token lacked the Opportunities scope both runs; re-probe before relying on it. If create doesn't exist in v2, pipelines are human-checklist work. |
+| Pipelines list | `GET /opportunities/pipelines?locationId={loc}` | — | 200 `{pipelines:[{id,name,stages:[{id,name,position,stageWinProbability,...}]}]}` |
+| Pipeline create | `POST /opportunities/pipelines` | `{locationId, name, stages:[{name, position}]}` — stages inline in the create payload (no separate stage call); `position` (number) REQUIRED per stage, else 422 | 201 `{pipeline:{id, stages:[{id,...}], locationId}}` — stage ids returned inline |
 
 **Auth/scope facts (learned from live failures):**
 - A PIT is bound to ONE location. Wrong location → 403/401 "token does not
@@ -165,7 +166,11 @@ application/json` on writes). The Setup Agent codes against THIS table only.
   from Settings → Business Profile / the sub-account URL — NOT a UUID. A UUID
   "location id" is a wrong value from somewhere else.
 - Scopes verified working for the full write set: contacts, custom fields,
-  custom values, calendars, tags. Opportunities/pipelines scope still to verify.
+  custom values, calendars, tags, pipelines. Pipelines have their OWN dedicated
+  scope section in the Private Integration UI (read + create as separate
+  ticks) — NOT gated by opportunities.* even though the endpoint lives under
+  `/opportunities/pipelines`. All five setup-item kinds are agent-creatable:
+  nothing demotes to the human checklist for API reasons.
 
 **Idempotency facts (the safety valve's backstops):**
 - List-after-create can lag a few seconds (a tag created then immediately

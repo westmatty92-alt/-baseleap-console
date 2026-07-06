@@ -5,8 +5,9 @@
 // The per-client Private Integration Token is NOT stored here: it lives on the
 // client's Supabase row (RLS) and rides in per request. Never log it.
 // Whitelist matches the verified write matrix in .claude/skills/ghl-setup
-// (probed live 2026-07-06). Pipelines intentionally absent until the
-// Opportunities-scope probe verifies create exists in API v2.
+// (probed live 2026-07-06). bodyLocation: the endpoint takes locationId in the
+// POST payload instead of the path — the proxy forces it in from the request's
+// own locationId field.
 
 const ACTIONS = {
   list_tags:           { method: "GET",  path: (l) => `/locations/${l}/tags` },
@@ -16,7 +17,9 @@ const ACTIONS = {
   list_custom_values:  { method: "GET",  path: (l) => `/locations/${l}/customValues` },
   create_custom_value: { method: "POST", path: (l) => `/locations/${l}/customValues` },
   list_calendars:      { method: "GET",  path: (l) => `/calendars/?locationId=${l}` },
-  create_calendar:     { method: "POST", path: () => `/calendars/` }, // locationId forced into payload below
+  create_calendar:     { method: "POST", path: () => `/calendars/`, bodyLocation: true },
+  list_pipelines:      { method: "GET",  path: (l) => `/opportunities/pipelines?locationId=${l}` },
+  create_pipeline:     { method: "POST", path: () => `/opportunities/pipelines`, bodyLocation: true },
 };
 
 export default async function handler(req, res) {
@@ -41,7 +44,7 @@ export default async function handler(req, res) {
     // locationId always comes from the request's own field — a payload can never
     // point a write at a different sub-account.
     const body = isPost
-      ? JSON.stringify(action === "create_calendar" ? { ...(payload || {}), locationId } : (payload || {}))
+      ? JSON.stringify(spec.bodyLocation ? { ...(payload || {}), locationId } : (payload || {}))
       : undefined;
 
     const upstream = await fetch("https://services.leadconnectorhq.com" + spec.path(locationId), {
