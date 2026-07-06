@@ -135,3 +135,47 @@ email domain-auth.
    the expected result, the result is documented, and unresolved risks are
    disclosed.** Configured ≠ complete. (LaunchPad nudges are support hints, never
    proof a step is done.)
+
+## API appendix — verified GHL API v2 write matrix (probed live 2026-07-06)
+
+Every row below was exercised against the test sub-account "123 business"
+(locationId `7bl9sB3WRRtUvOyQvkiR`) with a sub-account Private Integration
+Token. Base URL `https://services.leadconnectorhq.com`; headers on every call:
+`Authorization: Bearer <PIT>` + `Version: 2021-07-28` (+ `Content-Type:
+application/json` on writes). The Setup Agent codes against THIS table only.
+
+| Item | Endpoint | Verified payload | Result |
+|---|---|---|---|
+| Tags list | `GET /locations/{loc}/tags` | — | 200 `{tags:[{id,name,locationId}]}` |
+| Tag create | `POST /locations/{loc}/tags` | `{name}` | 201 `{tag:{id,...}}` |
+| Fields list | `GET /locations/{loc}/customFields` | — | 200 `{customFields:[{id,name,model,fieldKey,dataType,...}]}` — includes standard fields |
+| Field create (contact) | `POST /locations/{loc}/customFields` | `{name, dataType:"TEXT", model:"contact"}` | 201 `{customField:{id,fieldKey:"contact.<slug>",...}}` |
+| Field create (opportunity) | same | `{name, dataType, model:"opportunity"}` | 201 — `model` maps 1:1 to the manifest field `object` (default contact) |
+| Custom values list | `GET /locations/{loc}/customValues` | — | 200 `{customValues:[{id,name,fieldKey,value?}]}` |
+| Custom value create | `POST /locations/{loc}/customValues` | `{name, value}` | 201 `{customValue:{id,fieldKey:"{{ custom_values.<slug> }}",...}}` |
+| Calendars list | `GET /calendars/?locationId={loc}` | — | 200 `{calendars:[...]}` |
+| Calendar create | `POST /calendars/` | `{locationId, name}` minimum | 201 — defaults: `calendarType:"event"`, classic widget, 30-min slots |
+| Pipelines list/create | `GET/POST /opportunities/pipelines` | — | ⚠ UNVERIFIED — token lacked the Opportunities scope both runs; re-probe before relying on it. If create doesn't exist in v2, pipelines are human-checklist work. |
+
+**Auth/scope facts (learned from live failures):**
+- A PIT is bound to ONE location. Wrong location → 403/401 "token does not
+  have access to this location" even with correct scopes. Location-access and
+  scope checks are SEPARATE: "not authorized for this scope" = scope unticked.
+- The locationId is the ~20-char alphanumeric id (e.g. `7bl9sB3WRRtUvOyQvkiR`)
+  from Settings → Business Profile / the sub-account URL — NOT a UUID. A UUID
+  "location id" is a wrong value from somewhere else.
+- Scopes verified working for the full write set: contacts, custom fields,
+  custom values, calendars, tags. Opportunities/pipelines scope still to verify.
+
+**Idempotency facts (the safety valve's backstops):**
+- List-after-create can lag a few seconds (a tag created then immediately
+  re-listed was missing; visible ~2 min later). Preflight inventory once,
+  before the run — never re-list mid-run to verify a write landed.
+- Duplicate tag create → 400 "The tag name is already exist." (API-level
+  double-create protection).
+- Duplicate field create → 400 with **`meta.existingId`** carrying the existing
+  fieldId — on conflict, recover the id from the error body and record it as
+  "found". fieldKey slug is derived from the name (`contact.<snake_case>`).
+- Field values map by **fieldId, not name** — persist every returned id
+  (clients.ghl_map) at creation time; the create response is the only cheap
+  moment to capture it.
