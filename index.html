@@ -1258,6 +1258,9 @@ async function updateEngineDeployment(){
 // commentary; "[X]" marks a per-client parameterized scheme. Only the 5 deep
 // engines: the thin Runbase engines get NO manifest by design (an invented one
 // would be a misleading guess) — the planner flags their steps "tags/fields TBD".
+// Field entries may carry an optional object: "contact" | "opportunity"; omitted
+// = contact (the overwhelming default). The Setup Agent needs it — the GHL
+// customFields API requires the model — and field dedupe is by object:name.
 const ENGINE_MANIFEST = {
   payments_stripe: {
     requires_tags: ["Review Credit Eligible"],   // coupon flow reads/removes; membership guard reads MEM state tags (parameterized — declared by membership)
@@ -1836,12 +1839,12 @@ const DESIGN_DOCTRINE_PROMPT = `AUTOMATION DESIGN DOCTRINE (how you decide the n
 8. Delays are timing, not logic: never "wait and hope" — wait, re-find, then branch on what exists. Every delay has a reason.`;
 
 const FORMULATE_CONTRACT_PROMPT = `OUTPUT — respond ONLY with valid JSON, no markdown, exactly this shape:
-{"spec":{"purpose":"one sentence","automations":[{"name":"workflow name","trigger":{"type":"exact GHL trigger","filters":{}},"final_rule":"When [trigger] happens, if [guard passes], update [state], then [action], unless [failure condition].","nodes":[{"type":"trigger","config":"exact trigger + filters"}],"tests":["test matrix items"]}]},"manifest":{"requires_tags":["tags this engine reads/branches on"],"creates_tags":["tags it sets"],"requires_fields":[{"name":"field name","type":"text|number|currency|date"}]},"deployment":{"branding":{"<area>":"what changes per client"},"business_rules":{"math_operations":["every hardcoded number that changes per client"]},"never_touch":["architectural rules that break the engine if edited"]}}
+{"spec":{"purpose":"one sentence","automations":[{"name":"workflow name","trigger":{"type":"exact GHL trigger","filters":{}},"final_rule":"When [trigger] happens, if [guard passes], update [state], then [action], unless [failure condition].","nodes":[{"type":"trigger","config":"exact trigger + filters"}],"tests":["test matrix items"]}]},"manifest":{"requires_tags":["tags this engine reads/branches on"],"creates_tags":["tags it sets"],"requires_fields":[{"name":"field name","type":"text|number|currency|date","object":"contact|opportunity"}]},"deployment":{"branding":{"<area>":"what changes per client"},"business_rules":{"math_operations":["every hardcoded number that changes per client"]},"never_touch":["architectural rules that break the engine if edited"]}}
 Field rules:
 - spec: catalog-grade — a builder executes it without more research. Trigger semantics match the business event exactly; design every trigger for re-entry/duplicates (processed-state tags, find-before-create); value-awarding steps gate on Payment Received.
 - final_rule: fill the template with THIS automation's specifics — it is the spine the nodes expand from.
 - nodes: the ordered node-by-node workflow exactly as assembled in the GHL builder. Each node = {"type","config"}; type is one of trigger|guard|wait|action|update|condition|webhook|handoff|end (webhook = external webhook-out call — never fold it into action; update = field/tag/record state change). The first node is always the trigger; the second is the guard (doctrine rule 3). condition nodes add "yes":[nodes] and "no":[nodes] branch arrays (branches may end with an end node). config is one precise sentence of settings.
-- manifest: classify by doctrine rule 2 — every tag the engine reads or sets and every custom field it needs, named exactly as the nodes reference them. The engine is not buildable until it declares these.
+- manifest: classify by doctrine rule 2 — every tag the engine reads or sets and every custom field it needs, named exactly as the nodes reference them. The engine is not buildable until it declares these. A field's "object" = which GHL record it lives on: omit it for contact fields (the default); set "opportunity" only when the field genuinely belongs on the deal/opportunity record.
 - tests: the REAL test matrix for THIS automation, not generic phrases. One entry each for: the happy path end-to-end; EVERY guard (prove the duplicate-prevention actually blocks a re-fire); EVERY condition branch — the YES and the NO separately; each webhook ROUND-TRIP (it fires AND the response writes back the expected field); the exit condition (the automation stops on the right tag/state). Each test names the setup, the action, and the expected observable result.
 - deployment: the three-tier guide for FUTURE clients of this engine — branding (names/copy/links), business_rules incl. math_operations (the most-forgotten tier), never_touch (the architecture).
 - This engine is DESIGNED, NOT PROVEN — tests must name what to verify live before trusting it.`;
@@ -1985,6 +1988,8 @@ function validateManifest(m, at){
   m.requires_fields.forEach((f, i) => {
     if(!f || typeof f.name !== "string" || !f.name.trim() || typeof f.type !== "string" || !f.type.trim())
       throw new Error(`${at}.requires_fields[${i}] needs name and type`);
+    if(f.object !== undefined && f.object !== "contact" && f.object !== "opportunity")
+      throw new Error(`${at}.requires_fields[${i}].object must be "contact" or "opportunity"`);
   });
 }
 
@@ -2294,17 +2299,22 @@ function orderPlanSteps(steps, gaps){
 // hand-listed by the AI (hand-listing is what missed review-received). Runs between
 // shape validation and the topological sort, so injected refs order like any step.
 // Each unique tag/field is created by the FIRST gap whose manifest mentions it
-// (dedupe by exact name); every automation step then depends on each injected step
+// (tags dedupe by exact name, fields by object:name); every automation step then depends on each injected step
 // that owns one of its gap's items — setup-before-automation made automatic, with
 // cross-engine edges when one engine creates a tag another requires. A routed
 // engine with NO manifest gets {tbd:true} — visible, never silently setup-free.
+// A manifest field's GHL record target — object is optional; absent = contact.
+function fieldObject(f){ return f.object === "opportunity" ? "opportunity" : "contact"; }
+function fieldKey(f){ return "field:" + fieldObject(f) + ":" + f.name; }
+function fieldLabel(f){ return `${f.name} (${f.type}${fieldObject(f) === "opportunity" ? ", opportunity" : ""})`; }
+
 function manifestItemKeys(m){
   return [...new Set([...(m.creates_tags || []), ...(m.requires_tags || [])])].map(t => "tag:" + t)
-    .concat((m.requires_fields || []).map(f => "field:" + f.name));
+    .concat((m.requires_fields || []).map(fieldKey));
 }
 
 function injectManifestSetupSteps(p, gaps, sweep){
-  const owner = new Map();   // "tag:X" / "field:Y" → ref of the injected step that creates it
+  const owner = new Map();   // "tag:X" / "field:<object>:Y" → ref of the injected step that creates it
   const injected = [];
   const taken = new Set(p.steps.map(s => s.ref));
   sweep.forEach((sw, i) => {
@@ -2321,7 +2331,7 @@ function injectManifestSetupSteps(p, gaps, sweep){
       detail: `Generated from the engine's manifest: these ${mine.length} tag/field item${mine.length === 1 ? "" : "s"} must exist before the engine's workflows are built.`,
       checklist: mine.map(k => k.startsWith("tag:")
         ? "Create tag: " + k.slice(4)
-        : (fld => `Create field: ${fld.name} (${fld.type})`)((sw.manifest.requires_fields || []).find(f => "field:" + f.name === k)))
+        : "Create field: " + fieldLabel((sw.manifest.requires_fields || []).find(f => fieldKey(f) === k)))
         .concat(["Verify each item exists on a test contact"]),
       estimated_hours: 0.5, depends_on: [], manifest: sw.manifest,
     });
@@ -2743,7 +2753,7 @@ function renderAutomationList(automations, key){
 function renderManifestLines(m){
   if(!m) return "";
   if(m.tbd) return `<div class="mf-line">⚠ <span class="mf-k">Tags/fields TBD</span> — engine not yet deepened; no manifest in the catalog. List and create them manually before building.</div>`;
-  const fields = (m.requires_fields || []).map(f => `${f.name} (${f.type})`);
+  const fields = (m.requires_fields || []).map(fieldLabel);
   return [
     (m.creates_tags || []).length ? `<div class="mf-line"><span class="mf-k">Creates tags:</span> ${esc(m.creates_tags.join(" · "))}</div>` : "",
     (m.requires_tags || []).length ? `<div class="mf-line"><span class="mf-k">Requires tags:</span> ${esc(m.requires_tags.join(" · "))}</div>` : "",
@@ -2807,9 +2817,9 @@ function renderManifestCard(steps){
   const tbdSteps = steps.filter(s => s.manifest && s.manifest.tbd);
   if(!manifests.length && !tbdSteps.length) return "";
   const tags = [...new Set(manifests.flatMap(m => [...(m.creates_tags || []), ...(m.requires_tags || [])]))];
-  const fieldByName = new Map();
-  manifests.flatMap(m => m.requires_fields || []).forEach(f => { if(!fieldByName.has(f.name)) fieldByName.set(f.name, f); });
-  const fields = [...fieldByName.values()].map(f => `${f.name} (${f.type})`);
+  const fieldByKey = new Map();
+  manifests.flatMap(m => m.requires_fields || []).forEach(f => { const k = fieldKey(f); if(!fieldByKey.has(k)) fieldByKey.set(k, f); });
+  const fields = [...fieldByKey.values()].map(fieldLabel);
   const tbdTitles = [...new Set(tbdSteps.map(s => s.title))];
   return `
     <div class="card">
