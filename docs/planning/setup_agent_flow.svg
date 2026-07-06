@@ -1,0 +1,161 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1240" height="880" viewBox="0 0 1240 880" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#1A1A2E"/>
+    </marker>
+    <marker id="arrv" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#00A878"/>
+    </marker>
+  </defs>
+  <rect width="1240" height="880" fill="#F4F5F0"/>
+  <text x="40" y="48" font-size="24" font-weight="800" fill="#0D1F2D">Setup Agent — GHL API execution arm (Phase 1: manual trigger)</text>
+  <text x="40" y="72" font-size="13" fill="#1A1A2E">Build plan manifests → union → idempotent creates via api/ghl.js → GHL sub-account. Solid = exists today · dashed = this build · grey = Phase 2 (out of scope).</text>
+
+  <!-- COL 1: EXISTS TODAY -->
+  <rect x="40" y="110" width="280" height="240" rx="12" fill="#FFFFFF" stroke="#0D1F2D" stroke-width="2"/>
+  <text x="60" y="140" font-size="15" font-weight="700" fill="#0D1F2D">clients row</text>
+  <g font-size="12" fill="#1A1A2E">
+    <rect x="60" y="156" width="240" height="26" rx="6" fill="#F4F5F0" stroke="#0D1F2D" stroke-width="1.2"/><text x="72" y="173">business_name · current_stack · …</text>
+    <rect x="60" y="188" width="240" height="26" rx="6" fill="#FFFFFF" stroke="#00A878" stroke-width="1.5" stroke-dasharray="5 4"/><text x="72" y="205">+ ghl_location_id (migration 010)</text>
+    <rect x="60" y="220" width="240" height="26" rx="6" fill="#FFFFFF" stroke="#00A878" stroke-width="1.5" stroke-dasharray="5 4"/><text x="72" y="237">+ ghl_pit_token (RLS, never in list select)</text>
+    <rect x="60" y="252" width="240" height="26" rx="6" fill="#FFFFFF" stroke="#00A878" stroke-width="1.5" stroke-dasharray="5 4"/><text x="72" y="269">+ paid_at (manual mark, Phase 1)</text>
+    <rect x="60" y="284" width="240" height="26" rx="6" fill="#FFFFFF" stroke="#00A878" stroke-width="1.5" stroke-dasharray="5 4"/><text x="72" y="301">+ ghl_map (name → GHL id registry)</text>
+  </g>
+  <text x="60" y="334" font-size="11" fill="#1A1A2E">token entered once in GHL settings panel</text>
+
+  <rect x="40" y="390" width="280" height="200" rx="12" fill="#FFFFFF" stroke="#0D1F2D" stroke-width="2"/>
+  <text x="60" y="420" font-size="15" font-weight="700" fill="#0D1F2D">Saved build plan</text>
+  <text x="60" y="440" font-size="12" fill="#1A1A2E">build_steps.manifest (migration 008)</text>
+  <g font-size="12" fill="#1A1A2E">
+    <rect x="60" y="454" width="240" height="26" rx="6" fill="#F4F5F0" stroke="#0D1F2D" stroke-width="1.2"/><text x="72" y="471">requires_tags · creates_tags</text>
+    <rect x="60" y="486" width="240" height="26" rx="6" fill="#F4F5F0" stroke="#0D1F2D" stroke-width="1.2"/><text x="72" y="503">requires_fields { name, type }</text>
+    <rect x="60" y="518" width="240" height="26" rx="6" fill="#FFFFFF" stroke="#00A878" stroke-width="1.5" stroke-dasharray="5 4"/><text x="72" y="535">+ object: contact | opportunity</text>
+  </g>
+  <text x="60" y="566" font-size="11" fill="#1A1A2E">optional, default contact — GHL field create</text>
+  <text x="60" y="580" font-size="11" fill="#1A1A2E">requires the model; dedupe key gains object</text>
+
+  <!-- COL 2: SETUP AGENT TAB -->
+  <rect x="380" y="110" width="290" height="640" rx="12" fill="#FFFFFF" stroke="#00A878" stroke-width="2.5" stroke-dasharray="7 5"/>
+  <text x="400" y="140" font-size="15" font-weight="700" fill="#0D1F2D">Setup Agent tab (new module)</text>
+
+  <rect x="400" y="156" width="250" height="64" rx="8" fill="#F4F5F0" stroke="#00A878" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <text x="412" y="176" font-size="12" font-weight="700" fill="#0D1F2D">GHL settings panel</text>
+  <text x="412" y="193" font-size="11" fill="#1A1A2E">location id · PIT token · Mark invoice paid</text>
+  <text x="412" y="209" font-size="11" fill="#1A1A2E">every UPDATE .select().single()-verified</text>
+
+  <rect x="400" y="234" width="250" height="56" rx="8" fill="#0D1F2D"/>
+  <text x="412" y="255" font-size="12" font-weight="700" fill="#00D4A0">GATE — Run GHL setup</text>
+  <text x="412" y="272" font-size="11" fill="#F4F5F0">paid_at + location id + token + saved plan</text>
+  <text x="412" y="285" font-size="10" fill="#F4F5F0">disabled state names each missing prereq</text>
+
+  <rect x="400" y="304" width="250" height="60" rx="8" fill="#F4F5F0" stroke="#00A878" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <text x="412" y="324" font-size="12" font-weight="700" fill="#0D1F2D">Manifest UNION</text>
+  <text x="412" y="341" font-size="11" fill="#1A1A2E">tags ∪ fields across all plan steps —</text>
+  <text x="412" y="356" font-size="11" fill="#1A1A2E">same dedupe as injectManifestSetupSteps</text>
+
+  <rect x="400" y="378" width="250" height="74" rx="8" fill="#F4F5F0" stroke="#00A878" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <text x="412" y="398" font-size="12" font-weight="700" fill="#0D1F2D">Preflight + dry-run preview</text>
+  <text x="412" y="415" font-size="11" fill="#1A1A2E">GET full inventory first → diff →</text>
+  <text x="412" y="430" font-size="11" fill="#1A1A2E">"will create N · M already exist"</text>
+  <text x="412" y="445" font-size="11" font-weight="700" fill="#00A878">operator confirms before any write</text>
+
+  <rect x="400" y="466" width="250" height="92" rx="8" fill="#F4F5F0" stroke="#00A878" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <text x="412" y="486" font-size="12" font-weight="700" fill="#0D1F2D">Sequential create loop</text>
+  <text x="412" y="503" font-size="11" fill="#1A1A2E">find-before-create, never double-create</text>
+  <text x="412" y="518" font-size="11" fill="#1A1A2E">each success logged with returned GHL id</text>
+  <text x="412" y="536" font-size="11" font-weight="700" fill="#0D1F2D">FAIL-STOP: any error halts the run —</text>
+  <text x="412" y="551" font-size="11" fill="#1A1A2E">exact succeeded / failed / why · re-run skips</text>
+
+  <rect x="400" y="574" width="250" height="90" rx="8" fill="#F4F5F0" stroke="#00A878" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <text x="412" y="594" font-size="12" font-weight="700" fill="#0D1F2D">Human-only checklist</text>
+  <text x="412" y="611" font-size="11" fill="#1A1A2E">subdomain/DNS · A2P · Stripe/QuickBooks/</text>
+  <text x="412" y="626" font-size="11" fill="#1A1A2E">Google/FB · email auth (+ API demotions)</text>
+  <text x="412" y="643" font-size="11" fill="#1A1A2E">deterministic template, links, state persists</text>
+  <text x="412" y="658" font-size="11" fill="#1A1A2E">on setup_runs.checklist</text>
+
+  <text x="400" y="690" font-size="11" fill="#1A1A2E">per-client state → resetClientState()</text>
+  <text x="400" y="706" font-size="11" fill="#1A1A2E">scoped to active client's location id,</text>
+  <text x="400" y="720" font-size="11" fill="#1A1A2E">fetched fresh at run start</text>
+
+  <!-- COL 3: PROXY + GHL -->
+  <rect x="730" y="234" width="230" height="130" rx="12" fill="#FFFFFF" stroke="#00A878" stroke-width="2.5" stroke-dasharray="7 5"/>
+  <text x="750" y="262" font-size="14" font-weight="700" fill="#0D1F2D">api/ghl.js proxy (new)</text>
+  <text x="750" y="284" font-size="11" fill="#1A1A2E">whitelisted actions only (get/create</text>
+  <text x="750" y="299" font-size="11" fill="#1A1A2E">per item kind) · Bearer token per</text>
+  <text x="750" y="314" font-size="11" fill="#1A1A2E">request · Version header · no logging</text>
+  <text x="750" y="336" font-size="11" font-weight="700" fill="#00A878">mirrors api/ai.js — one audited</text>
+  <text x="750" y="351" font-size="11" font-weight="700" fill="#00A878">egress point, GHL blocks browser CORS</text>
+
+  <rect x="730" y="430" width="230" height="230" rx="12" fill="#0D1F2D"/>
+  <text x="750" y="458" font-size="14" font-weight="700" fill="#00D4A0">GHL sub-account (client)</text>
+  <text x="750" y="480" font-size="12" fill="#F4F5F0">✓ tags</text>
+  <text x="750" y="498" font-size="12" fill="#F4F5F0">✓ custom fields → returns fieldId</text>
+  <text x="750" y="516" font-size="12" fill="#F4F5F0">✓ custom values</text>
+  <text x="750" y="534" font-size="12" fill="#F4F5F0">✓ calendars</text>
+  <text x="750" y="552" font-size="12" fill="#00D4A0">⚠ pipelines — verify create exists</text>
+  <text x="750" y="566" font-size="11" fill="#F4F5F0">   in API v2 (Milestone 1), else human list</text>
+  <line x1="748" y1="580" x2="942" y2="580" stroke="#00A878" stroke-width="1"/>
+  <text x="750" y="600" font-size="11" font-weight="700" fill="#00D4A0">BOUNDARY: workflows/automations</text>
+  <text x="750" y="615" font-size="11" fill="#F4F5F0">NOT exposed by the API — agent creates</text>
+  <text x="750" y="630" font-size="11" fill="#F4F5F0">the ingredients; automations stay</text>
+  <text x="750" y="645" font-size="11" fill="#F4F5F0">hand-built (ghl-setup skill)</text>
+
+  <text x="750" y="146" font-size="12" font-weight="700" fill="#0D1F2D">Milestone 1 (before agent code):</text>
+  <text x="750" y="163" font-size="11" fill="#1A1A2E">PIT token on test sub-account "123 business"</text>
+  <text x="750" y="178" font-size="11" fill="#1A1A2E">→ create 1 tag + 1 field, capture fieldId,</text>
+  <text x="750" y="193" font-size="11" fill="#1A1A2E">verify scopes/endpoints → skill appendix</text>
+
+  <!-- COL 4: PERSISTENCE + PHASE 2 -->
+  <rect x="1000" y="234" width="205" height="150" rx="12" fill="#FFFFFF" stroke="#00A878" stroke-width="2.5" stroke-dasharray="7 5"/>
+  <text x="1016" y="262" font-size="14" font-weight="700" fill="#0D1F2D">setup_runs (new table)</text>
+  <text x="1016" y="284" font-size="11" fill="#1A1A2E">status running|complete|failed</text>
+  <text x="1016" y="300" font-size="11" fill="#1A1A2E">log: per item — kind · object ·</text>
+  <text x="1016" y="315" font-size="11" fill="#1A1A2E">name · found|created|error · ghl_id</text>
+  <text x="1016" y="331" font-size="11" fill="#1A1A2E">checklist state JSONB</text>
+  <text x="1016" y="351" font-size="11" font-weight="700" fill="#00A878">RLS · operator_id stamped</text>
+  <text x="1016" y="367" font-size="11" fill="#1A1A2E">full audit trail per run</text>
+
+  <rect x="1000" y="430" width="205" height="120" rx="12" fill="#FFFFFF" stroke="#00A878" stroke-width="2.5" stroke-dasharray="7 5"/>
+  <text x="1016" y="458" font-size="14" font-weight="700" fill="#0D1F2D">clients.ghl_map</text>
+  <text x="1016" y="480" font-size="11" fill="#1A1A2E">merged name → GHL id registry</text>
+  <text x="1016" y="496" font-size="11" fill="#1A1A2E">fields keyed object:name</text>
+  <text x="1016" y="518" font-size="11" font-weight="700" fill="#00A878">functionally required — GHL sets</text>
+  <text x="1016" y="533" font-size="11" font-weight="700" fill="#00A878">field values by fieldId, not name</text>
+
+  <rect x="1000" y="590" width="205" height="120" rx="12" fill="#FFFFFF" stroke="#9AA0A6" stroke-width="1.5" stroke-dasharray="4 4"/>
+  <text x="1016" y="616" font-size="13" font-weight="700" fill="#9AA0A6">Phase 2 (own DoD)</text>
+  <text x="1016" y="636" font-size="11" fill="#9AA0A6">GHL invoice-paid webhook →</text>
+  <text x="1016" y="651" font-size="11" fill="#9AA0A6">api/ghl-webhook.js flips paid_at,</text>
+  <text x="1016" y="666" font-size="11" fill="#9AA0A6">queues setup · one-click operator</text>
+  <text x="1016" y="681" font-size="11" fill="#9AA0A6">confirm · out of scope this build</text>
+
+  <!-- ARROWS -->
+  <line x1="320" y1="200" x2="396" y2="188" stroke="#1A1A2E" stroke-width="2" marker-end="url(#arr)"/>
+  <line x1="320" y1="480" x2="396" y2="334" stroke="#1A1A2E" stroke-width="2" marker-end="url(#arr)"/>
+  <text x="330" y="420" font-size="10" fill="#1A1A2E" transform="rotate(-30 330 420)">manifests</text>
+  <line x1="525" y1="220" x2="525" y2="232" stroke="#00A878" stroke-width="2" marker-end="url(#arrv)"/>
+  <line x1="525" y1="290" x2="525" y2="302" stroke="#00A878" stroke-width="2" marker-end="url(#arrv)"/>
+  <line x1="525" y1="364" x2="525" y2="376" stroke="#00A878" stroke-width="2" marker-end="url(#arrv)"/>
+  <line x1="525" y1="452" x2="525" y2="464" stroke="#00A878" stroke-width="2" marker-end="url(#arrv)"/>
+  <line x1="650" y1="415" x2="726" y2="330" stroke="#00A878" stroke-width="2.5" marker-end="url(#arrv)"/>
+  <line x1="650" y1="512" x2="726" y2="480" stroke="#00A878" stroke-width="2.5" marker-end="url(#arrv)"/>
+  <text x="660" y="360" font-size="10" fill="#00A878" font-weight="700">GET inventory</text>
+  <text x="660" y="465" font-size="10" fill="#00A878" font-weight="700">POST creates</text>
+  <line x1="845" y1="364" x2="845" y2="426" stroke="#00A878" stroke-width="2.5" marker-end="url(#arrv)"/>
+  <line x1="960" y1="300" x2="996" y2="300" stroke="#1A1A2E" stroke-width="2" marker-end="url(#arr)"/>
+  <text x="948" y="288" font-size="10" fill="#1A1A2E">log</text>
+  <line x1="960" y1="490" x2="996" y2="490" stroke="#1A1A2E" stroke-width="2" marker-end="url(#arr)"/>
+  <text x="944" y="478" font-size="10" fill="#1A1A2E">fieldIds</text>
+
+  <!-- LEGEND -->
+  <rect x="40" y="790" width="1165" height="56" rx="10" fill="#FFFFFF" stroke="#0D1F2D" stroke-width="1.5"/>
+  <rect x="60" y="808" width="34" height="20" rx="5" fill="#F4F5F0" stroke="#0D1F2D" stroke-width="1.8"/>
+  <text x="104" y="822" font-size="12" fill="#1A1A2E">exists today</text>
+  <rect x="210" y="808" width="34" height="20" rx="5" fill="#FFFFFF" stroke="#00A878" stroke-width="1.8" stroke-dasharray="5 4"/>
+  <text x="254" y="822" font-size="12" fill="#1A1A2E">new in this build</text>
+  <rect x="390" y="808" width="34" height="20" rx="5" fill="#FFFFFF" stroke="#9AA0A6" stroke-width="1.5" stroke-dasharray="4 4"/>
+  <text x="434" y="822" font-size="12" fill="#1A1A2E">Phase 2 — out of scope</text>
+  <rect x="590" y="808" width="34" height="20" rx="5" fill="#0D1F2D"/>
+  <text x="634" y="822" font-size="12" fill="#1A1A2E">hard gate / external system</text>
+  <text x="810" y="822" font-size="12" fill="#1A1A2E">Safety valve: preflight → dry-run → confirm → sequential → fail-stop → audit log</text>
+</svg>
