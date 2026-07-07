@@ -149,7 +149,7 @@ application/json` on writes). The Setup Agent codes against THIS table only.
 | Tags list | `GET /locations/{loc}/tags` | — | 200 `{tags:[{id,name,locationId}]}` |
 | Tag create | `POST /locations/{loc}/tags` | `{name}` | 201 `{tag:{id,...}}` |
 | Fields list | `GET /locations/{loc}/customFields` | — | 200 `{customFields:[{id,name,model,fieldKey,dataType,...}]}` — includes standard fields |
-| Field create (contact) | `POST /locations/{loc}/customFields` | `{name, dataType:"TEXT", model:"contact"}` | 201 `{customField:{id,fieldKey:"contact.<slug>",...}}` |
+| Field create (contact) | `POST /locations/{loc}/customFields` | `{name, dataType, model:"contact"}` — dataType verified: `TEXT`, `NUMERICAL`, `MONETORY` (GHL's spelling), `DATE` (manifest map: text/number/currency/date) | 201 `{customField:{id,fieldKey:"contact.<slug>",...}}` |
 | Field create (opportunity) | same | `{name, dataType, model:"opportunity"}` | 201 — `model` maps 1:1 to the manifest field `object` (default contact) |
 | Custom values list | `GET /locations/{loc}/customValues` | — | 200 `{customValues:[{id,name,fieldKey,value?}]}` |
 | Custom value create | `POST /locations/{loc}/customValues` | `{name, value}` | 201 `{customValue:{id,fieldKey:"{{ custom_values.<slug> }}",...}}` |

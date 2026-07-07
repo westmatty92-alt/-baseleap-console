@@ -193,6 +193,7 @@
     <button class="nav-item" data-mod="automation" onclick="switchModule('automation')">Automation agent</button>
     <button class="nav-item" data-mod="report" onclick="switchModule('report')">Gap report</button>
     <button class="nav-item" data-mod="proposal" onclick="switchModule('proposal')">Proposal</button>
+    <button class="nav-item" data-mod="setup" onclick="switchModule('setup')">Setup agent</button>
     <div class="nav-spacer"></div>
     <button class="signout" onclick="signOut()">Sign out</button>
   </nav>
@@ -239,6 +240,7 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 function freshAudit(){ return { tab:"guide", guideNotes:{}, captureText:"", summary:null, sessionId:null, loaded:false, analyzing:false, msg:"", stackForm:null, stackOtherFlags:{}, extracting:false }; }
 function freshAutomation(){ return { tab:"gaps", loaded:false, msg:"", gaps:[], drafts:{}, assessing:{}, errors:{}, assessingAll:false, validatingAll:false, progress:"", finBusy:{}, finBulkBusy:false, finMsg:"" }; }
 function freshBuildPlan(){ return { loaded:false, msg:"", plan:null, steps:[], draft:null, draftGaps:null, generating:false, saving:false, expanded:{} }; }
+function freshSetup(){ return { loaded:false, msg:"", run:null, preflight:null, diff:null, running:false, busy:false }; }
 
 const S = {
   user: null,
@@ -253,6 +255,7 @@ const S = {
   buildPlan: freshBuildPlan(),
   report: null,
   proposal: null,
+  setup: freshSetup(),
 };
 
 function resetClientState(){
@@ -264,6 +267,7 @@ function resetClientState(){
   S.buildPlan = freshBuildPlan();
   S.report = null;
   S.proposal = null;
+  S.setup = freshSetup();
 }
 
 /* ============================================================
@@ -386,6 +390,7 @@ const MODULES = {
   automation:{ title: "Automation agent", sub: "Feasibility gate — confirm each gap is buildable." },
   report:    { title: "Gap report",       sub: "The client-facing report, built from validated gaps." },
   proposal:  { title: "Proposal",         sub: "Scoped proposal from the gap report and a package." },
+  setup:     { title: "Setup agent",      sub: "GHL sub-account provisioning — creates the plan's tags & fields via API." },
 };
 
 function render(){
@@ -399,6 +404,7 @@ function render(){
   setStatus(S.activeClient.business_name + (S.activeClient.industry ? " · " + S.activeClient.industry : ""));
   if(S.module === "audit"){ renderAudit(); return; }
   if(S.module === "automation"){ renderAutomation(); return; }
+  if(S.module === "setup"){ renderSetup(); return; }
   content.innerHTML = `
     <div class="panel-title">${m.title}</div>
     <div class="panel-sub">${m.sub}</div>
@@ -2961,6 +2967,379 @@ async function saveStepNotes(stepId, text){
   if(error){ setBuildPlanMsg("Notes save failed: " + error.message); return; }
   Object.assign(s, data);
   setBuildPlanMsg("Notes saved ✓");   // no rerender — keeps focus/scroll; local row already mirrors the DB
+}
+
+/* ============================================================
+   MODULE — SETUP AGENT (GHL API execution arm, Phase 1 manual)
+   Creates the saved build plan's manifest items (tags + fields)
+   in the client's GHL sub-account via /api/ghl. Custom values,
+   calendars, pipelines: preflighted read-only (manifests don't
+   declare them yet). Safety valve: preflight → dry-run → confirm
+   → sequential find-before-create → fail-stop → audit log.
+============================================================ */
+
+// All GHL calls go through /api/ghl (whitelisted actions) — the browser never
+// calls services.leadconnectorhq.com directly. Token + locationId come from
+// the active client's row unless ctx pins them (the run loop pins both at run
+// start so a mid-run client switch can never cross sub-accounts).
+async function ghl(action, payload, ctx){
+  const c = ctx || S.activeClient || {};
+  const res = await fetch("/api/ghl", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token: c.ghl_pit_token, locationId: c.ghl_location_id, action, payload }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if(!res.ok){
+    const msg = Array.isArray(data.message) ? data.message.join("; ") : (data.message || data.error || ("HTTP " + res.status));
+    const err = new Error(msg); err.status = res.status; err.meta = data.meta || null;
+    throw err;
+  }
+  return data;
+}
+
+// manifest field type → GHL customFields dataType (contact/opportunity create)
+const GHL_DATATYPE = { text: "TEXT", number: "NUMERICAL", currency: "MONETORY", date: "DATE" };
+
+function setSetupMsg(t){ S.setup.msg = t; const el = document.getElementById("setup-msg"); if(el) el.textContent = t; }
+
+function renderSetup(){
+  document.getElementById("content").innerHTML = `
+    <div class="panel-title">${MODULES.setup.title}</div>
+    <div class="panel-sub">${esc(S.activeClient.business_name)} — ${MODULES.setup.sub}</div>
+    <div id="setup-body"></div>`;
+  renderSetupBody();
+}
+
+function renderSetupBody(){
+  const el = document.getElementById("setup-body"); if(!el) return;
+  if(!S.setup.loaded){
+    el.innerHTML = `<div class="msg">Loading…</div>`;
+    loadSetupData(S.activeClientId);
+    return;
+  }
+  el.innerHTML = renderSetupSettings() + renderSetupRunCard() + renderSetupLogCard() + renderSetupChecklist()
+    + `<div class="msg" id="setup-msg">${esc(S.setup.msg)}</div>`;
+}
+
+async function loadSetupData(cid){
+  try{
+    const { data: runs, error } = await sb.from("setup_runs").select("*")
+      .eq("client_id", cid).order("created_at", { ascending: false }).limit(1);
+    if(error) throw new Error(error.message);
+    S.setup.run = (runs && runs[0]) || null;
+    await ensureBuildPlanLoaded(cid);
+  }catch(e){ S.setup.msg = "Load failed: " + e.message; }
+  S.setup.loaded = true;
+  if(S.activeClientId === cid && S.module === "setup") renderSetupBody();
+}
+
+// Same data as loadBuildPlanData but WITHOUT its renderAutomation() tail —
+// calling that from here would stomp the setup view. Fills the shared
+// S.buildPlan slice so the automation module sees the same truth.
+async function ensureBuildPlanLoaded(cid){
+  if(S.buildPlan.loaded) return;
+  const { data: plans, error } = await sb.from("build_plans").select("*")
+    .eq("client_id", cid).order("created_at", { ascending: false }).limit(1);
+  if(error) throw new Error(error.message);
+  S.buildPlan.plan = (plans && plans[0]) || null;
+  S.buildPlan.steps = [];
+  if(S.buildPlan.plan){
+    const { data: steps, error: e2 } = await sb.from("build_steps").select("*")
+      .eq("build_plan_id", S.buildPlan.plan.id).order("position");
+    if(e2) throw new Error(e2.message);
+    S.buildPlan.steps = steps || [];
+  }
+  S.buildPlan.loaded = true;
+}
+
+/* ---- Card 1: GHL connection settings ---- */
+function renderSetupSettings(){
+  const c = S.activeClient, tokenSet = !!c.ghl_pit_token;
+  return `
+    <div class="card">
+      <div class="phase-h">GHL connection</div>
+      <div class="stack-row"><label>Location ID</label>
+        <input id="setup-loc" value="${escAttr(c.ghl_location_id || "")}" placeholder="sub-account Settings → Business Profile (~20 chars, not a UUID)"></div>
+      <div class="stack-row"><label>Integration token</label>
+        <input id="setup-token" type="password" placeholder="${tokenSet ? "token set — enter a new value to replace" : "pit-… created INSIDE the client's sub-account"}"></div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button class="btn-primary" style="width:auto" onclick="saveSetupSettings()">Save connection</button>
+        ${tokenSet ? `<button class="btn-ghost" onclick="disconnectGhl()">Disconnect GHL</button>` : ""}
+        ${c.paid_at
+          ? `<span class="msg">Invoice paid ${esc(new Date(c.paid_at).toLocaleDateString())}</span>`
+          : `<button class="btn-ghost" onclick="markInvoicePaid()">Mark invoice paid</button>`}
+      </div>
+      ${tokenSet ? "" : `<div class="msg" style="margin-top:8px">A Private Integration Token is bound to ONE sub-account — create it inside the client's account with contacts, custom fields, custom values, calendars, tags and BOTH Pipelines scopes (own section) ticked.</div>`}
+    </div>`;
+}
+
+async function saveSetupSettings(){
+  const loc = document.getElementById("setup-loc").value.trim();
+  const tok = document.getElementById("setup-token").value.trim();
+  const patch = { ghl_location_id: loc || null };
+  if(tok) patch.ghl_pit_token = tok;   // empty input = keep the existing token
+  const { data, error } = await sb.from("clients").update(patch).eq("id", S.activeClientId).select().single();
+  if(error){ setSetupMsg("Save failed: " + error.message); return; }
+  S.activeClient = data;
+  S.setup.preflight = null; S.setup.diff = null;   // connection changed — stale inventory
+  setSetupMsg("Connection saved ✓");
+  renderSetupBody();
+}
+
+async function markInvoicePaid(){
+  const { data, error } = await sb.from("clients").update({ paid_at: new Date().toISOString() }).eq("id", S.activeClientId).select().single();
+  if(error){ setSetupMsg("Mark paid failed: " + error.message); return; }
+  S.activeClient = data;
+  setSetupMsg("Invoice marked paid ✓");
+  renderSetupBody();
+}
+
+async function disconnectGhl(){
+  const { data, error } = await sb.from("clients").update({ ghl_pit_token: null }).eq("id", S.activeClientId).select().single();
+  if(error){ setSetupMsg("Disconnect failed: " + error.message); return; }
+  S.activeClient = data;
+  S.setup.preflight = null; S.setup.diff = null;
+  setSetupMsg("Token cleared from the console. Also revoke the integration inside GHL (sub-account Settings → Private Integrations) to fully de-authorize. Location ID and the created-item map are kept.");
+  renderSetupBody();
+}
+
+/* ---- Card 2: gate + manifest union + preflight + dry-run ---- */
+function setupGateMissing(){
+  const c = S.activeClient, missing = [];
+  if(!c.paid_at) missing.push("invoice not marked paid");
+  if(!c.ghl_location_id) missing.push("no GHL location ID");
+  if(!c.ghl_pit_token) missing.push("no Private Integration Token");
+  if(!S.buildPlan.plan) missing.push("no saved build plan");
+  return missing;
+}
+
+// Union of every saved step manifest — same dedupe rules as the planner:
+// tags by exact string, fields by object:name (fieldKey). "[…]" names are
+// per-client parameterized schemes (documented convention) — never created
+// literally; surfaced separately for hand-naming.
+function setupManifestUnion(steps){
+  const tags = new Set(), fields = new Map();
+  steps.filter(s => s.manifest && !s.manifest.tbd).forEach(s => {
+    const m = s.manifest;
+    [...(m.creates_tags || []), ...(m.requires_tags || [])].forEach(t => tags.add(t));
+    (m.requires_fields || []).forEach(f => { const k = fieldKey(f); if(!fields.has(k)) fields.set(k, f); });
+  });
+  const all = [...tags], allF = [...fields.values()];
+  return {
+    tags: all.filter(t => !t.startsWith("[")),
+    fields: allF.filter(f => !f.name.startsWith("[")),
+    paramItems: all.filter(t => t.startsWith("[")).concat(allF.filter(f => f.name.startsWith("[")).map(fieldLabel)),
+  };
+}
+
+async function preflightSetup(){
+  const missing = setupGateMissing();
+  if(missing.length){ setSetupMsg("Blocked — " + missing.join(" · ")); return; }
+  S.setup.busy = true; S.setup.msg = "Preflighting — reading the live sub-account inventory…"; renderSetupBody();
+  try{
+    const [tags, fields, cvs, cals, pipes] = await Promise.all([
+      ghl("list_tags"), ghl("list_fields"), ghl("list_custom_values"), ghl("list_calendars"), ghl("list_pipelines"),
+    ]);
+    S.setup.preflight = {
+      tags: tags.tags || [], fields: fields.customFields || [],
+      customValues: cvs.customValues || [], calendars: cals.calendars || [], pipelines: pipes.pipelines || [],
+    };
+    S.setup.diff = computeSetupDiff();
+    S.setup.msg = "";
+  }catch(e){ S.setup.preflight = null; S.setup.diff = null; S.setup.msg = "Preflight failed: " + e.message; }
+  S.setup.busy = false;
+  renderSetupBody();
+}
+
+function computeSetupDiff(){
+  const pf = S.setup.preflight;
+  const u = setupManifestUnion(S.buildPlan.steps);
+  const tagNames = new Set(pf.tags.map(t => (t.name || "").toLowerCase()));
+  const fKeys = new Set(pf.fields.map(f => (f.model || "contact") + ":" + (f.name || "").toLowerCase()));
+  const tagsToCreate = u.tags.filter(t => !tagNames.has(t.toLowerCase()));
+  const fieldsToCreate = u.fields.filter(f => !fKeys.has(fieldObject(f) + ":" + f.name.toLowerCase()));
+  return { union: u, tagsToCreate, fieldsToCreate,
+    tagsExisting: u.tags.length - tagsToCreate.length, fieldsExisting: u.fields.length - fieldsToCreate.length };
+}
+
+function renderSetupRunCard(){
+  const missing = setupGateMissing();
+  let inner;
+  if(missing.length){
+    inner = `<button class="btn-primary" style="width:auto" disabled>Run GHL setup</button>
+      <div class="msg" style="margin-top:6px">Blocked — ${missing.map(esc).join(" · ")}</div>`;
+  } else if(!S.setup.preflight){
+    inner = `<button class="btn-primary" style="width:auto" onclick="preflightSetup()" ${S.setup.busy ? "disabled" : ""}>Preflight &amp; preview</button>
+      <div class="msg" style="margin-top:6px">Reads the live sub-account inventory first — nothing is written until you confirm the preview.</div>`;
+  } else {
+    const d = S.setup.diff, n = d.tagsToCreate.length + d.fieldsToCreate.length;
+    inner = renderSetupDiff(d) + `
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="btn-primary" style="width:auto" onclick="confirmRunSetup()" ${S.setup.running ? "disabled" : ""}>
+          ${S.setup.running ? "Running…" : (n ? `Confirm — create ${n} item${n === 1 ? "" : "s"}` : "Record inventory & start checklist (0 to create)")}</button>
+        <button class="btn-ghost" onclick="preflightSetup()" ${S.setup.running || S.setup.busy ? "disabled" : ""}>Refresh preview</button>
+      </div>`;
+  }
+  return `<div class="card"><div class="phase-h">Run GHL setup — ${esc((S.buildPlan.plan && S.buildPlan.plan.title) || "build plan")}</div>${inner}</div>`;
+}
+
+function renderSetupDiff(d){
+  const pf = S.setup.preflight;
+  return [
+    `<div class="mf-line"><span class="mf-k">Tags:</span> ${d.tagsToCreate.length} to create · ${d.tagsExisting} already exist${d.tagsToCreate.length ? " — " + esc(d.tagsToCreate.join(" · ")) : ""}</div>`,
+    `<div class="mf-line"><span class="mf-k">Fields:</span> ${d.fieldsToCreate.length} to create · ${d.fieldsExisting} already exist${d.fieldsToCreate.length ? " — " + esc(d.fieldsToCreate.map(fieldLabel).join(" · ")) : ""}</div>`,
+    d.union.paramItems.length ? `<div class="mf-line">⚠ <span class="mf-k">Parameterized schemes (name per client, by hand):</span> ${esc(d.union.paramItems.join(" · "))}</div>` : "",
+    `<div class="mf-line"><span class="mf-k">Inventory (read-only):</span> ${pf.customValues.length} custom values · ${pf.calendars.length} calendars · ${pf.pipelines.length} pipelines — manifests don't declare these yet; create by hand where the plan needs them</div>`,
+  ].join("");
+}
+
+/* ---- Card 3: sequential execution loop — fail-stop, live log ---- */
+async function confirmRunSetup(){
+  if(S.setup.running || !S.setup.diff) return;
+  const cid = S.activeClientId;
+  const ctx = { ghl_location_id: S.activeClient.ghl_location_id, ghl_pit_token: S.activeClient.ghl_pit_token };
+  const baseMap = S.activeClient.ghl_map || {};
+  const d = S.setup.diff, pf = S.setup.preflight;
+  S.setup.running = true; renderSetupBody();
+
+  // an interrupted run from a dead session stays 'running' forever — close it out
+  if(S.setup.run && S.setup.run.status === "running")
+    await sb.from("setup_runs").update({ status: "failed", finished_at: new Date().toISOString() }).eq("id", S.setup.run.id).select().single();
+
+  const { data: run, error: insErr } = await sb.from("setup_runs").insert({
+    operator_id: S.user.id, client_id: cid, build_plan_id: S.buildPlan.plan.id,
+    status: "running", log: [], checklist: humanChecklistTemplate(S.buildPlan.steps, ctx.ghl_location_id),
+  }).select().single();
+  if(insErr){ setSetupMsg("Could not start run: " + insErr.message); S.setup.running = false; renderSetupBody(); return; }
+  S.setup.run = run;
+
+  const tagByName = new Map(pf.tags.map(t => [(t.name || "").toLowerCase(), t]));
+  const fieldByKey = new Map(pf.fields.map(f => [(f.model || "contact") + ":" + (f.name || "").toLowerCase(), f]));
+  const log = [];
+  const push = async (entry) => {
+    log.push({ ...entry, ts: new Date().toISOString() });
+    const { data } = await sb.from("setup_runs").update({ log }).eq("id", run.id).select().single();
+    if(data) S.setup.run = data;
+    if(S.activeClientId === cid && S.module === "setup") renderSetupBody();
+  };
+
+  const items = [
+    ...d.union.tags.map(t => ({ kind: "tag", name: t })),
+    ...d.union.fields.map(f => ({ kind: "field", name: f.name, object: fieldObject(f), f })),
+  ];
+  let failed = false;
+  for(const it of items){
+    if(S.activeClientId !== cid){ S.setup.running = false; return; }   // client switched — abort; row stays 'running' → shown as interrupted
+    try{
+      if(it.kind === "tag") await setupTagItem(it, tagByName, push, ctx);
+      else await setupFieldItem(it, fieldByKey, push, ctx);
+    }catch(e){
+      await push({ kind: it.kind, object: it.object, name: it.name, action: "error", error: e.message });
+      failed = true;
+      break;   // FAIL-STOP: nothing past the first error
+    }
+  }
+
+  await mergeGhlMap(cid, baseMap, log);
+  const { data: fin } = await sb.from("setup_runs").update({
+    status: failed ? "failed" : "complete", finished_at: new Date().toISOString(),
+  }).eq("id", run.id).select().single();
+  if(fin) S.setup.run = fin;
+  S.setup.running = false;
+  S.setup.preflight = null; S.setup.diff = null;   // any re-run starts from a fresh preflight
+  S.setup.msg = failed
+    ? "Run FAILED — the log shows exactly what succeeded and what stopped it. Fix the cause and re-run: existing items skip (idempotent)."
+    : "Setup run complete ✓ — created items and their GHL ids are recorded on the client.";
+  if(S.activeClientId === cid && S.module === "setup") renderSetupBody();
+}
+
+async function setupTagItem(it, tagByName, push, ctx){
+  const hit = tagByName.get(it.name.toLowerCase());
+  if(hit){ await push({ kind: "tag", name: it.name, action: "found", ghl_id: hit.id || null }); return; }
+  try{
+    const r = await ghl("create_tag", { name: it.name }, ctx);
+    await push({ kind: "tag", name: it.name, action: "created", ghl_id: (r.tag && r.tag.id) || null });
+  }catch(e){
+    if(e.status === 400 && /already exist/i.test(e.message)) await push({ kind: "tag", name: it.name, action: "found", ghl_id: null });
+    else throw e;
+  }
+}
+
+async function setupFieldItem(it, fieldByKey, push, ctx){
+  const hit = fieldByKey.get(it.object + ":" + it.name.toLowerCase());
+  if(hit){ await push({ kind: "field", object: it.object, name: it.name, action: "found", ghl_id: hit.id || null }); return; }
+  try{
+    const r = await ghl("create_field", { name: it.name, dataType: GHL_DATATYPE[it.f.type] || "TEXT", model: it.object }, ctx);
+    await push({ kind: "field", object: it.object, name: it.name, action: "created", ghl_id: (r.customField && r.customField.id) || null });
+  }catch(e){
+    if(e.status === 400 && e.meta && e.meta.existingId) await push({ kind: "field", object: it.object, name: it.name, action: "found", ghl_id: e.meta.existingId });
+    else throw e;
+  }
+}
+
+// name → GHL id registry (fields set values by fieldId, not name). Deep-merge,
+// never overwrite: partial/failed runs still keep every id that landed.
+async function mergeGhlMap(cid, baseMap, log){
+  const map = { ...baseMap, tags: { ...(baseMap.tags || {}) }, fields: { ...(baseMap.fields || {}) } };
+  log.forEach(e => {
+    if(e.action === "error" || !e.ghl_id) return;
+    if(e.kind === "tag") map.tags[e.name] = e.ghl_id;
+    if(e.kind === "field") map.fields[e.object + ":" + e.name] = e.ghl_id;
+  });
+  const { data } = await sb.from("clients").update({ ghl_map: map }).eq("id", cid).select().single();
+  if(data && S.activeClientId === cid) S.activeClient = data;
+}
+
+function renderSetupLogCard(){
+  const run = S.setup.run;
+  if(!run) return "";
+  const interrupted = run.status === "running" && !S.setup.running;
+  const rows = (run.log || []).map(e => `
+    <div class="mf-line">${e.action === "created" ? "＋" : e.action === "found" ? "→" : "✗"}
+      ${esc(e.kind)}${e.object === "opportunity" ? " (opportunity)" : ""} · <span class="mf-k">${esc(e.name)}</span> —
+      ${e.action === "error" ? `<span style="color:#C0392B">${esc(e.error)}</span>` : esc(e.action) + (e.ghl_id ? " · " + esc(e.ghl_id) : "")}
+    </div>`).join("");
+  return `<div class="card">
+    <div class="phase-h">Last run · ${esc(interrupted ? "interrupted — safe to re-run (idempotent)" : run.status)} · ${esc(new Date(run.created_at).toLocaleString())}</div>
+    ${rows || `<div class="msg">No items logged yet.</div>`}
+  </div>`;
+}
+
+/* ---- Card 4: human-only checklist (deterministic — never AI) ---- */
+function humanChecklistTemplate(steps, loc){
+  const base = `https://app.gohighlevel.com/v2/location/${loc}/settings/`;
+  const hasPayments = steps.some(s => /payment|stripe/i.test((s.matched_engine || "") + " " + (s.title || "")));
+  return [
+    { text: "Connect the client's subdomain + DNS records for funnels/links", url: base + "domain" },
+    { text: "A2P 10DLC registration (brand + campaign) — SMS won't send without it", url: base + "phone_number" },
+    ...(hasPayments ? [{ text: "Connect Stripe (live keys, not test mode)", url: base + "payments" }] : []),
+    { text: "Connect QuickBooks (if the client invoices through it)", url: base + "integrations" },
+    { text: "Connect Google (Business Profile + Calendar) and Facebook/Instagram", url: base + "integrations" },
+    { text: "Email authentication: dedicated sending domain, DKIM/SPF verified", url: base + "email_services" },
+  ].map(i => ({ ...i, done: false }));
+}
+
+function renderSetupChecklist(){
+  const run = S.setup.run;
+  const inner = !run
+    ? `<div class="msg">Materializes with the first setup run.</div>`
+    : (run.checklist || []).map((c, i) => `
+      <label style="display:block;font-size:13px;margin:3px 0">
+        <input type="checkbox" ${c.done ? "checked" : ""} onchange="toggleSetupChecklist(${i})">
+        ${c.done ? `<s>${esc(c.text)}</s>` : esc(c.text)}
+        ${c.url ? ` <a href="${escAttr(c.url)}" target="_blank" rel="noopener">open ↗</a>` : ""}
+      </label>`).join("");
+  return `<div class="card"><div class="phase-h">Human-only checklist — what the API can't do</div>${inner}</div>`;
+}
+
+async function toggleSetupChecklist(i){
+  const run = S.setup.run; if(!run) return;
+  const list = (run.checklist || []).map((c, x) => x === i ? { ...c, done: !c.done } : c);
+  const { data, error } = await sb.from("setup_runs").update({ checklist: list }).eq("id", run.id).select().single();
+  if(error){ setSetupMsg("Checklist update failed: " + error.message); renderSetupBody(); return; }   // rerender snaps the checkbox back
+  S.setup.run = data;
+  renderSetupBody();
 }
 
 /* ============================================================
