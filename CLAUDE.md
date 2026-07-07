@@ -15,6 +15,15 @@ Before writing any code:
 ## 🗺️ PLAN VISUALLY
 For any architecture or structural decision (a data model, a new module's data flow, a pipeline, how components connect), produce a visual map as part of the plan — SVG + PNG, not just prose. Show components as nodes, the connections between them, and built-vs-planned (solid = exists, dashed = planned). Keep the source files in `docs/planning/` and embed the PNG in the relevant Notion spec. Anything with structure or multiple connected pieces earns a map.
 
+## Lessons from session review — read every session
+- When a test result gates a commit approval, write the pass/fail lines explicitly in your response text — don't rely solely on a tool-result block, which can get truncated/collapsed when relayed for review.
+- When a third-party API's scope/permission name doesn't resolve after one attempt, check the provider's actual permission UI directly — don't infer the scope name from the endpoint's URL structure.
+- When you notice a gap between "the API/proxy technically supports X" and "nothing in our data model actually declares X yet," say so explicitly rather than building past it or assuming it away. This matters most for the catalog/manifest system, where declaring more than the data model supports would produce silently wrong behavior later.
+- Test your own new code's rejection paths (unknown actions, malformed input, invalid payloads) as reflexively as its happy path — before considering it verified.
+- Comments on security-relevant lines should state the property being protected ("X can never happen because Y"), not just describe the mechanism.
+
+Full reasoning and evidence for these lives in the Notion Baseleap Orchestrator doctrine (§3.3), added July 6 2026.
+
 ---
 
 ## WHAT THIS IS
