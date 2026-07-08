@@ -43,6 +43,12 @@
   .nav-spacer{flex:1}
   .signout{color:#7C8B92;font-size:12px;background:none;border:none;text-align:left;padding:10px 12px}
   .signout:hover{color:#fff}
+  /* Collapsible sidebar — app-global UI pref (localStorage), NOT per-client state.
+     Kept out of resetClientState() on purpose so a client switch never resets it. */
+  #app.nav-collapsed{grid-template-columns:1fr}
+  #app.nav-collapsed .sidebar{display:none}
+  .nav-toggle{background:var(--surface);border:1px solid var(--line);color:var(--ink);padding:8px 11px;border-radius:var(--radius);font-size:14px;line-height:1}
+  .nav-toggle:hover{border-color:var(--volt)}
 
   .main{display:flex;flex-direction:column;overflow:hidden}
   .topbar{display:flex;align-items:center;gap:12px;padding:14px 20px;background:var(--surface);border-bottom:1px solid var(--line)}
@@ -200,6 +206,7 @@
 
   <div class="main">
     <div class="topbar">
+      <button class="nav-toggle" onclick="toggleNav()" title="Toggle sidebar" aria-label="Toggle sidebar">☰</button>
       <div class="client-switch">
         <label>Client</label>
         <select id="client-select" onchange="loadClient(this.value)"></select>
@@ -318,8 +325,21 @@ async function initApp(){
   S.user = session.user;
   document.getElementById("auth").style.display = "none";
   document.getElementById("app").style.display = "grid";
+  initNavCollapse();   // apply persisted sidebar pref before first paint (no flash)
   await loadClients();
   render();
+}
+
+/* Sidebar collapse — app-global UI preference, persisted across reload AND client
+   switch. Deliberately NOT in resetClientState(): it is not per-client state. */
+const NAV_COLLAPSE_KEY = "bl_nav_collapsed";
+function initNavCollapse(){
+  const collapsed = localStorage.getItem(NAV_COLLAPSE_KEY) === "1";
+  document.getElementById("app").classList.toggle("nav-collapsed", collapsed);
+}
+function toggleNav(){
+  const collapsed = document.getElementById("app").classList.toggle("nav-collapsed");
+  localStorage.setItem(NAV_COLLAPSE_KEY, collapsed ? "1" : "0");
 }
 
 /* ============================================================
