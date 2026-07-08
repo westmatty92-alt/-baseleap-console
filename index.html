@@ -134,31 +134,48 @@
   .dep-review{color:#EF9F27;font-weight:700}
 
   /* Build Plan — track-grouped PM table + right slide-over */
-  .bp-section{margin-bottom:16px}
-  .bp-sec-head{display:flex;align-items:center;gap:10px;width:100%;background:none;border:none;text-align:left;padding:10px 12px;border-radius:8px;font-size:14px;font-weight:700;color:var(--depth)}
-  .bp-sec-head:hover{background:rgba(0,0,0,.03)}
+  .bp-section{margin-bottom:18px}
+  /* section header as a status pill — tinted by the group's rollup state */
+  .bp-pill{display:flex;align-items:center;gap:8px;background:var(--canvas);border-radius:var(--radius);padding:2px 10px 2px 4px;margin-bottom:8px}
+  .bp-pill-done{background:rgba(0,168,120,.10)}
+  .bp-pill-prog{background:rgba(239,159,39,.12)}
+  .bp-pill-toggle{flex:1;display:flex;align-items:center;gap:9px;background:none;border:none;text-align:left;padding:9px 6px;font-size:14px;font-weight:700;color:var(--depth);cursor:pointer}
+  .bp-pill-dot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--muted)}
+  .bp-pill-done .bp-pill-dot{background:#00A878}
+  .bp-pill-prog .bp-pill-dot{background:#EF9F27}
   .bp-sec-roll{margin-left:auto;font-size:12px;font-weight:600;color:var(--muted)}
-  .bp-setup-badge{font-size:11px;font-weight:600;padding:3px 10px;border-radius:10px;border:1px solid var(--line);background:var(--surface)}
+  .bp-setup-badge{font-size:11px;font-weight:600;padding:4px 11px;border-radius:20px;border:1px solid var(--line);background:var(--surface);flex:none;cursor:pointer}
   .bp-setup-ok{color:#00A878;border-color:rgba(0,168,120,.4)}
   .bp-setup-no{color:var(--muted)}
-  .bp-setup-list{margin:2px 0 8px 18px;border-left:2px solid var(--line);padding-left:10px}
-  .bp-setup-item{display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--depth);padding:3px 0}
+  .bp-setup-list{margin:0 0 10px;border:1px solid var(--line);border-radius:var(--radius);padding:6px 12px;background:var(--surface)}
+  .bp-setup-item{display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--depth);padding:4px 0}
   .bp-setup-item span{flex:1}
-  .bp-row{display:flex;align-items:center;gap:12px;padding:9px 12px;border:1px solid var(--line);border-left:3px solid transparent;border-radius:8px;margin:4px 0;background:var(--surface)}
+  /* clean table */
+  .bp-table{border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;background:var(--surface)}
+  .bp-thead,.bp-row{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,2.2fr) 150px 56px auto;gap:14px}
+  .bp-thead{padding:8px 14px;background:var(--canvas);border-bottom:1px solid var(--line);font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
+  .bp-row{align-items:center;padding:12px 14px;border-bottom:1px solid var(--line);border-left:3px solid transparent}
+  .bp-row:last-child{border-bottom:none}
+  .bp-row:hover{background:rgba(0,0,0,.015)}
   .bp-row.actionable{border-left-color:var(--volt)}
-  .bp-row-name{flex:1;font-size:13.5px;font-weight:600;color:var(--depth);text-align:left;background:none;border:none;cursor:pointer;padding:0}
+  .bp-c-task{display:flex;flex-direction:column;gap:5px;min-width:0}
+  .bp-row-name{font-size:13.5px;font-weight:600;color:var(--depth);text-align:left;background:none;border:none;cursor:pointer;padding:0;line-height:1.35}
   .bp-row-name:hover{color:var(--run)}
-  .bp-bar{display:flex;gap:2px;width:56px;flex:none}
-  .bp-bar i{height:6px;flex:1;border-radius:2px;background:var(--line)}
-  .bp-row.st-done .bp-bar i.on{background:#00A878}
-  .bp-row.st-building .bp-bar i.on,.bp-row.st-testing .bp-bar i.on{background:#EF9F27}
-  .bp-row.st-queued .bp-bar i.on{background:var(--muted)}
-  .bp-stage{font-size:11px;color:var(--muted);width:52px;flex:none;text-transform:capitalize}
-  .bp-hours{font-size:11px;color:var(--muted);flex:none}
-  .bp-blocked{font-size:11px;color:#E24B4A;background:rgba(226,75,74,.08);padding:2px 8px;border-radius:10px;white-space:nowrap}
-  .bp-status-sel{font-size:12px;padding:4px 6px;border:1px solid var(--line);border-radius:6px;background:var(--surface);flex:none}
-  .bp-subrow{display:flex;align-items:center;gap:8px;padding:6px 12px 6px 30px;font-size:12.5px;color:var(--depth);cursor:pointer;border-left:2px solid var(--line);margin:0 0 0 16px}
-  .bp-subrow:hover{background:rgba(0,0,0,.03)}
+  .bp-desc{font-size:12.5px;color:var(--muted);line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .bp-c-prog{display:flex;flex-direction:column;gap:5px;min-width:0}
+  /* 4-stage bar: gradient fill snapped to 4 positions; ::after ticks keep it reading as discrete, not a continuous % */
+  .bp-bar{position:relative;width:100%;height:7px;border-radius:20px;background:var(--line);overflow:hidden}
+  .bp-bar i{display:block;height:100%;border-radius:20px}
+  .bp-bar::after{content:"";position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(90deg,transparent 0 calc(25% - 1px),var(--surface) calc(25% - 1px) 25%)}
+  .bp-row.st-done .bp-bar i{background:linear-gradient(90deg,var(--run),var(--volt))}
+  .bp-row.st-building .bp-bar i,.bp-row.st-testing .bp-bar i{background:linear-gradient(90deg,#E8A13A,#EF9F27)}
+  .bp-row.st-queued .bp-bar i{background:var(--muted)}
+  .bp-stage{font-size:11px;color:var(--muted);text-transform:capitalize}
+  .bp-hours{font-size:12px;color:var(--muted);white-space:nowrap}
+  .bp-blocked{font-size:11px;color:#E24B4A;background:rgba(226,75,74,.08);padding:2px 8px;border-radius:10px;white-space:nowrap;align-self:flex-start}
+  .bp-status-sel{font-size:12px;padding:5px 7px;border:1px solid var(--line);border-radius:6px;background:var(--surface);justify-self:start}
+  .bp-subrow{display:flex;align-items:center;gap:8px;padding:8px 14px 8px 32px;font-size:12.5px;color:var(--depth);cursor:pointer;border-bottom:1px solid var(--line);background:var(--canvas)}
+  .bp-subrow:hover{background:rgba(0,0,0,.04)}
   .bp-detail{padding:4px 2px}
   .bp-back{background:none;border:none;color:var(--run);font-size:13px;font-weight:600;cursor:pointer;padding:6px 0;margin-bottom:8px}
   .bp-back:hover{color:var(--volt)}
@@ -3017,15 +3034,22 @@ function renderPlanSection(track, allSteps){
     ? `<button class="bp-setup-badge ${setupOk ? "bp-setup-ok" : "bp-setup-no"}" onclick="event.stopPropagation();toggleStepDepth('${escAttr(sKey)}')">Setup ${setupOk ? "✓" : "○"} ${setupDone}/${setupSteps.length}</button>`
     : "";
   const engineRows = allSteps.filter(s => s.agent !== "setup");
+  // pill tint reflects the group's rollup: all done / in progress / not started
+  const secState = !allSteps.length ? "empty" : done === allSteps.length ? "done" : done > 0 ? "prog" : "todo";
+  const thead = `<div class="bp-thead"><span>Task</span><span>Description</span><span>Progress</span><span>Hrs</span><span>Status</span></div>`;
   return `
     <div class="bp-section">
-      <button class="bp-sec-head" onclick="toggleStepDepth('${escAttr(cKey)}')">
-        <span>${open ? "▾" : "▸"} ${esc(TRACK_LABELS[track] || track)}</span>
-        <span class="bp-sec-roll">${done}/${allSteps.length} complete</span>
+      <div class="bp-pill bp-pill-${secState}">
+        <button class="bp-pill-toggle" onclick="toggleStepDepth('${escAttr(cKey)}')">
+          <span>${open ? "▾" : "▸"}</span>
+          <span class="bp-pill-dot"></span>
+          <span>${esc(TRACK_LABELS[track] || track)}</span>
+          <span class="bp-sec-roll">${done}/${allSteps.length} complete</span>
+        </button>
         ${setupBadge}
-      </button>
+      </div>
       ${open && setupOpen && setupSteps.length ? renderSetupMini(setupSteps) : ""}
-      ${open ? engineRows.map(renderEngineRow).join("") : ""}
+      ${open && engineRows.length ? `<div class="bp-table">${thead}${engineRows.map(renderEngineRow).join("")}</div>` : ""}
     </div>`;
 }
 
@@ -3039,8 +3063,7 @@ function renderSetupMini(setupSteps){
 
 function renderEngineRow(s){
   const stage = STATUS_STAGE[s.status] != null ? STATUS_STAGE[s.status] : 0;
-  const fill = Math.round(stage / 3 * 4);   // 4-segment bar: queued 0, building 1, testing 3, done 4
-  const bars = [0,1,2,3].map(i => `<i class="${i < fill ? "on" : ""}"></i>`).join("");
+  const pct = [0, 25, 75, 100][stage] || 0;   // 4 discrete stages (queued/building/testing/done); ticks in CSS keep it from reading as a continuous %
   const blockers = (s.depends_on || []).map(byIdStep).filter(t => t && t.status !== "done");
   const blocked = blockers.length ? `<span class="bp-blocked">blocked by: ${esc(blockers.map(b => b.title).join(", "))}</span>` : "";
   const actionable = s.status === "queued" && blockers.length === 0;   // unblocked + not started = do next
@@ -3048,11 +3071,16 @@ function renderEngineRow(s){
   const rowKey = "eng:" + s.id, expanded = !!S.buildPlan.expanded[rowKey];
   return `
     <div class="bp-row st-${esc(s.status)}${actionable ? " actionable" : ""}">
-      <button class="bp-row-name" onclick="toggleStepDepth('${escAttr(rowKey)}')">${hasAutos ? (expanded ? "▾ " : "▸ ") : ""}${esc(s.title)}</button>
-      <span class="bp-bar">${bars}</span>
-      <span class="bp-stage">${esc(s.status)}</span>
-      ${s.estimated_hours != null ? `<span class="bp-hours">${esc(String(s.estimated_hours))}h</span>` : ""}
-      ${blocked}
+      <div class="bp-c-task">
+        <button class="bp-row-name" onclick="toggleStepDepth('${escAttr(rowKey)}')">${hasAutos ? (expanded ? "▾ " : "▸ ") : ""}${esc(s.title)}</button>
+        ${blocked}
+      </div>
+      <div class="bp-desc">${s.detail ? esc(s.detail) : "—"}</div>
+      <div class="bp-c-prog">
+        <div class="bp-bar"><i style="width:${pct}%"></i></div>
+        <span class="bp-stage">${esc(s.status)}</span>
+      </div>
+      <span class="bp-hours">${s.estimated_hours != null ? esc(String(s.estimated_hours)) + "h" : ""}</span>
       <select class="bp-status-sel" onchange="setStepStatus('${s.id}', this.value)">${statusOptions(s.status)}</select>
     </div>`
     + (expanded && hasAutos ? renderEngineSubRows(s) : "");
