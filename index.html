@@ -14,6 +14,8 @@
     --d-bg:#0A1622;
     --d-line:rgba(255,255,255,.09); --d-text:rgba(237,239,242,.88); --d-text-strong:#EDEFF2; --d-muted:#9AA3AD;
     --ok:#22C55E; --err:#EF4444; --info:#6366F1;
+    /* node-type accents (Build Plan detail workflow) — Volt/Run brand tokens + 3 accents mapped to meaning */
+    --node-guard:#E75A7C; --node-wait:#4C86D6; --node-cond:#7A5FD0;
     --radius:10px; --font:"Garet","Segoe UI",system-ui,-apple-system,sans-serif;
   }
   *{box-sizing:border-box;margin:0;padding:0}
@@ -164,6 +166,23 @@
   .bp-detail-title{font-size:16px;font-weight:700;color:var(--depth)}
   .bp-detail-sub{font-size:12px;color:var(--muted);font-weight:500;margin-top:2px}
   .bp-detail h4{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--run);margin:16px 0 6px}
+  .bp-detail-grid{display:grid;grid-template-columns:minmax(0,2.1fr) minmax(0,1fr);gap:20px;margin-top:4px}
+  @media(max-width:900px){.bp-detail-grid{grid-template-columns:1fr}}
+  .bp-lead{font-size:14.5px;color:var(--muted);line-height:1.55;margin:6px 0 14px}
+  .bp-side{display:flex;flex-direction:column;gap:12px}
+  .bp-side-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px}
+  .bp-side-card h4{margin-top:0}
+  /* node cards — colored left border by type; SCOPED to the detail view so the shared
+     renderNodeRows markup (also used by draft-review) is visually unchanged elsewhere */
+  .bp-detail .wf-row{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--line);border-radius:var(--radius);padding:8px 10px;margin:6px 0;align-items:center}
+  .bp-detail .wf-t-trigger{border-left-color:var(--volt)}
+  .bp-detail .wf-t-action{border-left-color:var(--run)}
+  .bp-detail .wf-t-guard{border-left-color:var(--node-guard)}
+  .bp-detail .wf-t-wait{border-left-color:var(--node-wait)}
+  .bp-detail .wf-t-condition{border-left-color:var(--node-cond)}
+  .bp-detail .wf-branch{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:6px 0 0;border-left:none;padding-left:0}
+  .bp-detail .wf-br{background:var(--bg);border:1px solid var(--line);border-radius:var(--radius);padding:8px 10px}
+  .bp-detail .wf-br .wf-branch-label{margin:0 0 4px}
 
   /* Finalize — dark decision surface (scoped to the Finalize subtab) */
   .fin-surface{margin:0 -24px -24px;padding:28px 24px 64px;background:var(--d-bg);min-height:calc(100vh - 168px);box-shadow:inset 0 14px 18px -16px rgba(0,0,0,.7),inset 14px 0 18px -16px rgba(0,0,0,.7)}
@@ -1794,6 +1813,7 @@ function renderAutomation(){
   const content = document.getElementById("content");
   const tabs = [["gaps","Feasibility"],["finalize","Finalize"],["plan","Build plan"]];
   content.innerHTML = `
+    ${(S.automation.tab === "plan" && S.buildPlan.panel) ? `<button class="bp-back" onclick="closeEnginePanel()">← Back to plan</button>` : ""}
     <div class="panel-title">Automation agent</div>
     <div class="panel-sub">${esc(S.activeClient.business_name)} — feasibility gate, then the build plan.</div>
     <div class="subtabs">
@@ -2764,12 +2784,14 @@ function toggleStepDepth(key){
 }
 
 function renderNodeRows(nodes){
+  // wf-t-<type> class + wrapped branch cards are inert hooks: no color/grid CSS
+  // matches them outside .bp-detail, so draft-review renders exactly as before.
   return (nodes || []).map(n => {
-    if(typeof n === "string") return `<div class="wf-row"><span class="wf-chip">STEP</span><span>${esc(n)}</span></div>`;
+    if(typeof n === "string") return `<div class="wf-row wf-t-step"><span class="wf-chip">STEP</span><span>${esc(n)}</span></div>`;
     const chip = n.type === "condition" ? "IF" : String(n.type || "step").toUpperCase();
-    let html = `<div class="wf-row"><span class="wf-chip">${esc(chip)}</span><span>${esc(n.config || "")}</span></div>`;
+    let html = `<div class="wf-row wf-t-${esc(n.type || "step")}"><span class="wf-chip">${esc(chip)}</span><span>${esc(n.config || "")}</span></div>`;
     if(n.type === "condition")
-      html += `<div class="wf-branch"><div class="wf-branch-label">YES</div>${renderNodeRows(n.yes)}<div class="wf-branch-label">NO</div>${renderNodeRows(n.no)}</div>`;
+      html += `<div class="wf-branch"><div class="wf-br"><div class="wf-branch-label">YES</div>${renderNodeRows(n.yes)}</div><div class="wf-br"><div class="wf-branch-label">NO</div>${renderNodeRows(n.no)}</div></div>`;
     return html;
   }).join("");
 }
@@ -2957,7 +2979,7 @@ function discardDraft(){
    row; agent='setup' → summarized in the section Setup badge (status still
    editable via its disclosure) and counted in the rollup, never an engine row.
 ============================================================ */
-const TRACK_LABELS = { automation: "CRM (Automation + Setup)", app: "App", agent: "Agent Builder" };
+const TRACK_LABELS = { automation: "Stack Setup", app: "App", agent: "Agent Builder" };   // display only; internal track value stays 'automation'
 const TRACK_ORDER = ["automation", "app", "agent"];
 const STATUS_STAGE = { queued: 0, building: 1, testing: 2, done: 3 };
 const STATUS_VALUES = ["queued","building","testing","done"];
@@ -3052,36 +3074,50 @@ function renderEngineSubRows(s){
 function openEnginePanel(stepId, autoIndex){ S.buildPlan.panel = { stepId, autoIndex }; renderAutomation(); }
 function closeEnginePanel(){ S.buildPlan.panel = null; renderAutomation(); }
 
-// Automation detail — a full-page view that REPLACES the table (not an overlay).
-// Content is identical to the former slide-over: same reused renderers verbatim,
-// only the wrapper differs (inline flow + "← Back to plan" instead of backdrop/✕).
+// Automation detail — full-page two-column view that REPLACES the table.
+// Main column: automation title + engine name, final_rule lead, node-workflow
+// cards (left border colored by type), tests. Sidebar: manifest/deployment/
+// checklist/notes cards. Reuses renderNodeRows / renderAutomationTests /
+// renderManifestLines / renderDeploymentBody verbatim — no new content logic.
+// The "← Back to plan" control renders above the module headline (renderAutomation).
 function renderEngineDetail(){
   const pv = S.buildPlan.panel; if(!pv) return "";
   const s = byIdStep(pv.stepId);
   // Stale panel (step gone) must not blank the tab now that detail replaces the table.
-  if(!s) return `<div class="bp-detail"><button class="bp-back" onclick="closeEnginePanel()">← Back to plan</button><div class="msg">This step is no longer in the plan.</div></div>`;
+  if(!s) return `<div class="bp-detail"><div class="msg">This step is no longer in the plan.</div></div>`;
   const a = (s.workflow || [])[pv.autoIndex];
+  const isObj = a && typeof a === "object";
   const autoName = a ? (typeof a === "string" ? a : (a.name || "Untitled automation")) : "";
   const key = "panel:" + s.id + ":" + pv.autoIndex;   // isolated expand namespace for the Tests toggle
-  const content = (a && typeof a === "object") ? renderAutomationBody(a, key)
-    : `<div class="msg">${esc(autoName)} — no structured detail.</div>`;
+  // Same node-flow expression as renderAutomationBody, inlined so final_rule / nodes /
+  // tests can be placed separately; the trigger row carries its type class for coloring.
+  const trig = isObj && a.trigger ? `<div class="wf-row wf-t-trigger"><span class="wf-chip">TRIGGER</span><span>${esc(a.trigger.type + (a.trigger.filters && Object.keys(a.trigger.filters).length ? " — " + JSON.stringify(a.trigger.filters) : ""))}</span></div>` : "";
+  const nodes = isObj ? (a.nodes ? renderNodeRows(a.nodes) : trig + renderNodeRows(a.steps)) : "";
+  const lead = isObj && a.final_rule ? `<div class="bp-lead">${esc(a.final_rule)}</div>` : "";
+  const flow = isObj ? (lead + nodes + renderAutomationTests(a, key)) : `<div class="msg">${esc(autoName)} — no structured detail.</div>`;
   const checklist = (s.checklist || []).map((c, i) => `
     <label style="display:block;font-size:13px;margin:2px 0">
       <input type="checkbox" ${c.done?"checked":""} onchange="toggleStepChecklist('${s.id}',${i})"> ${c.done ? `<s>${esc(c.text)}</s>` : esc(c.text)}
     </label>`).join("");
   return `
     <div class="bp-detail">
-      <button class="bp-back" onclick="closeEnginePanel()">← Back to plan</button>
-      <div class="bp-detail-head">
-        <div class="bp-detail-title">${esc(s.title)}</div>
-        <div class="bp-detail-sub">${esc(autoName)}</div>
+      <div class="bp-detail-grid">
+        <div class="bp-main">
+          <div class="bp-detail-head">
+            <div class="bp-detail-title">${esc(autoName)}</div>
+            <div class="bp-detail-sub">${esc(s.title)}</div>
+          </div>
+          ${flow}
+        </div>
+        <aside class="bp-side">
+          ${s.manifest ? `<div class="bp-side-card"><h4>Manifest</h4>${renderManifestLines(s.manifest)}</div>` : ""}
+          ${s.deployment ? `<div class="bp-side-card"><h4>Deployment</h4>${renderDeploymentBody(s.deployment)}</div>` : ""}
+          <div class="bp-side-card"><h4>Checklist</h4>${checklist || `<div class="msg">No checklist items.</div>`}</div>
+          <div class="bp-side-card"><h4>Notes</h4>
+            <textarea class="notes" oninput="this.style.height='auto';this.style.height=(this.scrollHeight+2)+'px'" onchange="saveStepNotes('${s.id}', this.value)">${esc(s.notes || "")}</textarea>
+          </div>
+        </aside>
       </div>
-      <div>${content}</div>
-      ${s.manifest ? `<h4>Manifest</h4>${renderManifestLines(s.manifest)}` : ""}
-      ${s.deployment ? `<h4>Deployment</h4>${renderDeploymentBody(s.deployment)}` : ""}
-      <h4>Checklist</h4>${checklist || `<div class="msg">No checklist items.</div>`}
-      <h4>Notes</h4>
-      <textarea class="notes" oninput="this.style.height='auto';this.style.height=(this.scrollHeight+2)+'px'" onchange="saveStepNotes('${s.id}', this.value)">${esc(s.notes || "")}</textarea>
     </div>`;
 }
 
