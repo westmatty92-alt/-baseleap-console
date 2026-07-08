@@ -176,30 +176,44 @@
   .bp-status-sel{font-size:12px;padding:5px 7px;border:1px solid var(--line);border-radius:6px;background:var(--surface);justify-self:start}
   .bp-subrow{display:flex;align-items:center;gap:8px;padding:8px 14px 8px 32px;font-size:12.5px;color:var(--depth);cursor:pointer;border-bottom:1px solid var(--line);background:var(--canvas)}
   .bp-subrow:hover{background:rgba(0,0,0,.04)}
-  .bp-detail{padding:4px 2px}
+  /* Automation detail — dark decision-surface (same --d-* tokens as Finalize) */
+  .bp-detail{margin:0 -24px -24px;padding:24px 24px 64px;background:var(--d-bg);min-height:calc(100vh - 168px);color:var(--d-text);box-shadow:inset 0 14px 18px -16px rgba(0,0,0,.7)}
   .bp-back{background:none;border:none;color:var(--run);font-size:13px;font-weight:600;cursor:pointer;padding:6px 0;margin-bottom:8px}
   .bp-back:hover{color:var(--volt)}
-  .bp-detail-head{margin-bottom:8px}
-  .bp-detail-title{font-size:16px;font-weight:700;color:var(--depth)}
-  .bp-detail-sub{font-size:12px;color:var(--muted);font-weight:500;margin-top:2px}
-  .bp-detail h4{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--run);margin:16px 0 6px}
-  .bp-detail-grid{display:grid;grid-template-columns:minmax(0,2.1fr) minmax(0,1fr);gap:20px;margin-top:4px}
+  .bp-detail-head{margin-bottom:16px}
+  .bp-detail-title{font-size:18px;font-weight:800;color:var(--d-text-strong)}
+  .bp-detail-sub{font-size:12px;color:var(--d-muted);font-weight:500;margin-top:3px}
+  .bp-detail-grid{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:16px;align-items:start}
   @media(max-width:900px){.bp-detail-grid{grid-template-columns:1fr}}
-  .bp-lead{font-size:14.5px;color:var(--muted);line-height:1.55;margin:6px 0 14px}
-  .bp-side{display:flex;flex-direction:column;gap:12px}
-  .bp-side-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px}
-  .bp-side-card h4{margin-top:0}
-  /* node cards — colored left border by type; SCOPED to the detail view so the shared
-     renderNodeRows markup (also used by draft-review) is visually unchanged elsewhere */
-  .bp-detail .wf-row{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--line);border-radius:var(--radius);padding:8px 10px;margin:6px 0;align-items:center}
+  .bp-main,.bp-side{display:flex;flex-direction:column;gap:16px;min-width:0}
+  .bp-card{background:var(--depth);border:1px solid var(--d-line);border-radius:12px;padding:16px 18px;box-shadow:0 2px 10px rgba(0,0,0,.3),inset 0 1px 0 rgba(255,255,255,.04)}
+  .bp-card h4{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--volt);margin:0 0 10px}
+  .bp-lead{font-size:14px;color:var(--d-muted);line-height:1.55;margin:0 0 12px}
+  .bp-detail .msg{color:var(--d-muted)}
+  .bp-detail .mf-line{color:var(--d-text)}
+  .bp-detail .mf-k{color:var(--d-text-strong)}
+  .bp-detail .depth-toggle{color:var(--volt)}
+  .bp-detail .wf-test{color:var(--d-text)}
+  .bp-detail textarea.notes{background:rgba(255,255,255,.04);border:1px solid var(--d-line);color:var(--d-text)}
+  .bp-detail textarea.notes:focus{border-color:var(--volt)}
+  /* node cards — colored left border by type; dark treatment SCOPED to the detail
+     view so the shared renderNodeRows markup (draft-review) is unchanged elsewhere */
+  .bp-detail .wf-row{background:rgba(255,255,255,.03);border:1px solid var(--d-line);border-left:3px solid var(--d-line);border-radius:var(--radius);padding:9px 11px;margin:6px 0;align-items:center}
   .bp-detail .wf-t-trigger{border-left-color:var(--volt)}
   .bp-detail .wf-t-action{border-left-color:var(--run)}
   .bp-detail .wf-t-guard{border-left-color:var(--node-guard)}
   .bp-detail .wf-t-wait{border-left-color:var(--node-wait)}
   .bp-detail .wf-t-condition{border-left-color:var(--node-cond)}
   .bp-detail .wf-branch{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:6px 0 0;border-left:none;padding-left:0}
-  .bp-detail .wf-br{background:var(--bg);border:1px solid var(--line);border-radius:var(--radius);padding:8px 10px}
-  .bp-detail .wf-br .wf-branch-label{margin:0 0 4px}
+  .bp-detail .wf-br{background:rgba(255,255,255,.02);border:1px solid var(--d-line);border-radius:var(--radius);padding:8px 10px}
+  .bp-detail .wf-br .wf-branch-label{margin:0 0 4px;color:var(--d-muted)}
+  /* deployment card — one collapsible row per section, collapsed by default */
+  .bp-dep-sec{border-top:1px solid var(--d-line)}
+  .bp-dep-sec:first-of-type{border-top:none}
+  .bp-dep-toggle{width:100%;text-align:left;background:none;border:none;padding:9px 2px;font-size:12.5px;font-weight:600;color:var(--d-text);cursor:pointer}
+  .bp-dep-toggle:hover{color:var(--volt)}
+  .bp-dep-body{padding:2px 2px 12px}
+  .bp-detail .dep-review{font-size:11px}
 
   /* Finalize — dark decision surface (scoped to the Finalize subtab) */
   .fin-surface{margin:0 -24px -24px;padding:28px 24px 64px;background:var(--d-bg);min-height:calc(100vh - 168px);box-shadow:inset 0 14px 18px -16px rgba(0,0,0,.7),inset 14px 0 18px -16px rgba(0,0,0,.7)}
@@ -3102,12 +3116,13 @@ function renderEngineSubRows(s){
 function openEnginePanel(stepId, autoIndex){ S.buildPlan.panel = { stepId, autoIndex }; renderAutomation(); }
 function closeEnginePanel(){ S.buildPlan.panel = null; renderAutomation(); }
 
-// Automation detail — full-page two-column view that REPLACES the table.
-// Main column: automation title + engine name, final_rule lead, node-workflow
-// cards (left border colored by type), tests. Sidebar: manifest/deployment/
-// checklist/notes cards. Reuses renderNodeRows / renderAutomationTests /
-// renderManifestLines / renderDeploymentBody verbatim — no new content logic.
-// The "← Back to plan" control renders above the module headline (renderAutomation).
+// Automation detail — dark card dashboard (decision-surface tokens, as Finalize).
+// Main: Workflow card (typed node flow) → Tests card → Deployment card whose
+// sections are individually collapsible (collapsed by default — the fix for the
+// three-screens-of-prose sidebar). Side: Checklist + Notes (editable, on top,
+// never buried) + Manifest. Content comes from the same renderers
+// (renderNodeRows / renderAutomationTests / renderManifestLines /
+// renderDeploymentLines) — layout and theme only.
 function renderEngineDetail(){
   const pv = S.buildPlan.panel; if(!pv) return "";
   const s = byIdStep(pv.stepId);
@@ -3116,37 +3131,61 @@ function renderEngineDetail(){
   const a = (s.workflow || [])[pv.autoIndex];
   const isObj = a && typeof a === "object";
   const autoName = a ? (typeof a === "string" ? a : (a.name || "Untitled automation")) : "";
-  const key = "panel:" + s.id + ":" + pv.autoIndex;   // isolated expand namespace for the Tests toggle
-  // Same node-flow expression as renderAutomationBody, inlined so final_rule / nodes /
-  // tests can be placed separately; the trigger row carries its type class for coloring.
+  const key = "panel:" + s.id + ":" + pv.autoIndex;   // isolated expand namespace for Tests + deployment sections
   const trig = isObj && a.trigger ? `<div class="wf-row wf-t-trigger"><span class="wf-chip">TRIGGER</span><span>${esc(a.trigger.type + (a.trigger.filters && Object.keys(a.trigger.filters).length ? " — " + JSON.stringify(a.trigger.filters) : ""))}</span></div>` : "";
-  const nodes = isObj ? (a.nodes ? renderNodeRows(a.nodes) : trig + renderNodeRows(a.steps)) : "";
+  const nodes = isObj ? (a.nodes ? renderNodeRows(a.nodes) : trig + renderNodeRows(a.steps)) : `<div class="msg">${esc(autoName)} — no structured detail.</div>`;
   const lead = isObj && a.final_rule ? `<div class="bp-lead">${esc(a.final_rule)}</div>` : "";
-  const flow = isObj ? (lead + nodes + renderAutomationTests(a, key)) : `<div class="msg">${esc(autoName)} — no structured detail.</div>`;
+  const tests = isObj ? renderAutomationTests(a, key) : "";
   const checklist = (s.checklist || []).map((c, i) => `
     <label style="display:block;font-size:13px;margin:2px 0">
       <input type="checkbox" ${c.done?"checked":""} onchange="toggleStepChecklist('${s.id}',${i})"> ${c.done ? `<s>${esc(c.text)}</s>` : esc(c.text)}
     </label>`).join("");
   return `
     <div class="bp-detail">
+      <div class="bp-detail-head">
+        <div class="bp-detail-title">${esc(autoName)}</div>
+        <div class="bp-detail-sub">${esc(s.title)}</div>
+      </div>
       <div class="bp-detail-grid">
         <div class="bp-main">
-          <div class="bp-detail-head">
-            <div class="bp-detail-title">${esc(autoName)}</div>
-            <div class="bp-detail-sub">${esc(s.title)}</div>
-          </div>
-          ${flow}
+          <div class="bp-card"><h4>Workflow</h4>${lead}${nodes}</div>
+          ${tests ? `<div class="bp-card">${tests}</div>` : ""}
+          ${s.deployment ? renderDeploymentCard(s.deployment, key) : ""}
         </div>
         <aside class="bp-side">
-          ${s.manifest ? `<div class="bp-side-card"><h4>Manifest</h4>${renderManifestLines(s.manifest)}</div>` : ""}
-          ${s.deployment ? `<div class="bp-side-card"><h4>Deployment</h4>${renderDeploymentBody(s.deployment)}</div>` : ""}
-          <div class="bp-side-card"><h4>Checklist</h4>${checklist || `<div class="msg">No checklist items.</div>`}</div>
-          <div class="bp-side-card"><h4>Notes</h4>
+          <div class="bp-card"><h4>Checklist</h4>${checklist || `<div class="msg">No checklist items.</div>`}</div>
+          <div class="bp-card"><h4>Notes</h4>
             <textarea class="notes" oninput="this.style.height='auto';this.style.height=(this.scrollHeight+2)+'px'" onchange="saveStepNotes('${s.id}', this.value)">${esc(s.notes || "")}</textarea>
           </div>
+          ${s.manifest ? `<div class="bp-card"><h4>Manifest</h4>${renderManifestLines(s.manifest)}</div>` : ""}
         </aside>
       </div>
     </div>`;
+}
+
+// Deployment card: each block of the deployment story is its own collapsible
+// row (collapsed by default) instead of one always-open wall of prose. Bodies
+// reuse renderDeploymentLines verbatim; the ⚠ REVIEW flag stays visible on the
+// card header without opening anything.
+function renderDeploymentCard(dep, key){
+  const flag = dep.needs_review === "parameterize" ? `<span class="dep-review">⚠ REVIEW — parameterized: confirm changes</span>`
+             : dep.needs_review === "formulate"    ? `<span class="dep-review">⚠ REVIEW — formulated: unproven${dep.seeded_from ? " (seeded from " + esc(dep.seeded_from) + " stub)" : ""}</span>` : "";
+  const sections = [
+    ["Changes made", dep.changes_note], ["Parameter values", dep.parameter_values],
+    ["Branding", dep.tiers && dep.tiers.branding], ["Business rules", dep.tiers && dep.tiers.business_rules],
+    ["Never touch", dep.tiers && dep.tiers.never_touch], ["Client overrides", dep.overrides],
+    ["Engine spec", dep.spec_extras],
+  ].filter(([, v]) => v != null);
+  const rows = sections.map(([label, v], i) => {
+    const dKey = `${key}:dep${i}`, open = !!S.buildPlan.expanded[dKey];
+    return `<div class="bp-dep-sec">
+      <button class="bp-dep-toggle" onclick="toggleStepDepth('${escAttr(dKey)}')">${open ? "▾" : "▸"} ${esc(label)}</button>
+      ${open ? `<div class="bp-dep-body">${renderDeploymentLines(v)}</div>` : ""}
+    </div>`;
+  }).join("");
+  return `<div class="bp-card"><h4>Deployment ${flag}</h4>
+    ${dep.route === "dropin" ? `<div class="mf-line">Drop-in engine — deploy as-is.</div>` : ""}
+    ${rows || `<div class="msg">No deployment details.</div>`}</div>`;
 }
 
 async function setStepStatus(stepId, status){
