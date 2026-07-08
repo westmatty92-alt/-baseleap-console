@@ -131,6 +131,41 @@
   .dep-tier{font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--run);margin:8px 0 2px}
   .dep-review{color:#EF9F27;font-weight:700}
 
+  /* Build Plan — track-grouped PM table + right slide-over */
+  .bp-section{margin-bottom:16px}
+  .bp-sec-head{display:flex;align-items:center;gap:10px;width:100%;background:none;border:none;text-align:left;padding:10px 12px;border-radius:8px;font-size:14px;font-weight:700;color:var(--depth)}
+  .bp-sec-head:hover{background:rgba(0,0,0,.03)}
+  .bp-sec-roll{margin-left:auto;font-size:12px;font-weight:600;color:var(--muted)}
+  .bp-setup-badge{font-size:11px;font-weight:600;padding:3px 10px;border-radius:10px;border:1px solid var(--line);background:var(--surface)}
+  .bp-setup-ok{color:#00A878;border-color:rgba(0,168,120,.4)}
+  .bp-setup-no{color:var(--muted)}
+  .bp-setup-list{margin:2px 0 8px 18px;border-left:2px solid var(--line);padding-left:10px}
+  .bp-setup-item{display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--depth);padding:3px 0}
+  .bp-setup-item span{flex:1}
+  .bp-row{display:flex;align-items:center;gap:12px;padding:9px 12px;border:1px solid var(--line);border-left:3px solid transparent;border-radius:8px;margin:4px 0;background:var(--surface)}
+  .bp-row.actionable{border-left-color:var(--volt)}
+  .bp-row-name{flex:1;font-size:13.5px;font-weight:600;color:var(--depth);text-align:left;background:none;border:none;cursor:pointer;padding:0}
+  .bp-row-name:hover{color:var(--run)}
+  .bp-bar{display:flex;gap:2px;width:56px;flex:none}
+  .bp-bar i{height:6px;flex:1;border-radius:2px;background:var(--line)}
+  .bp-row.st-done .bp-bar i.on{background:#00A878}
+  .bp-row.st-building .bp-bar i.on,.bp-row.st-testing .bp-bar i.on{background:#EF9F27}
+  .bp-row.st-queued .bp-bar i.on{background:var(--muted)}
+  .bp-stage{font-size:11px;color:var(--muted);width:52px;flex:none;text-transform:capitalize}
+  .bp-hours{font-size:11px;color:var(--muted);flex:none}
+  .bp-blocked{font-size:11px;color:#E24B4A;background:rgba(226,75,74,.08);padding:2px 8px;border-radius:10px;white-space:nowrap}
+  .bp-status-sel{font-size:12px;padding:4px 6px;border:1px solid var(--line);border-radius:6px;background:var(--surface);flex:none}
+  .bp-subrow{display:flex;align-items:center;gap:8px;padding:6px 12px 6px 30px;font-size:12.5px;color:var(--depth);cursor:pointer;border-left:2px solid var(--line);margin:0 0 0 16px}
+  .bp-subrow:hover{background:rgba(0,0,0,.03)}
+  .bp-panel-back{position:fixed;inset:0;background:rgba(13,31,45,.45);z-index:60;display:flex;justify-content:flex-end}
+  .bp-panel{width:min(520px,92vw);height:100%;background:#FFFFFF;box-shadow:-8px 0 30px rgba(0,0,0,.25);overflow-y:auto;padding:20px 22px;animation:bp-slide .18s ease}
+  @keyframes bp-slide{from{transform:translateX(30px);opacity:.6}to{transform:translateX(0);opacity:1}}
+  .bp-panel-head{display:flex;align-items:flex-start;gap:10px;margin-bottom:8px}
+  .bp-panel-title{flex:1;font-size:15px;font-weight:700;color:var(--depth)}
+  .bp-panel-sub{font-size:12px;color:var(--muted);font-weight:500;margin-top:2px}
+  .bp-panel-close{background:none;border:none;font-size:22px;line-height:1;color:var(--muted);cursor:pointer;padding:0}
+  .bp-panel h4{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--run);margin:16px 0 6px}
+
   /* Finalize — dark decision surface (scoped to the Finalize subtab) */
   .fin-surface{margin:0 -24px -24px;padding:28px 24px 64px;background:var(--d-bg);min-height:calc(100vh - 168px);box-shadow:inset 0 14px 18px -16px rgba(0,0,0,.7),inset 14px 0 18px -16px rgba(0,0,0,.7)}
   .fin-col{max-width:860px;margin:0 auto}
@@ -246,7 +281,7 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 ============================================================ */
 function freshAudit(){ return { tab:"guide", guideNotes:{}, captureText:"", summary:null, sessionId:null, loaded:false, analyzing:false, msg:"", stackForm:null, stackOtherFlags:{}, extracting:false }; }
 function freshAutomation(){ return { tab:"gaps", loaded:false, msg:"", gaps:[], drafts:{}, assessing:{}, errors:{}, assessingAll:false, validatingAll:false, progress:"", finBusy:{}, finBulkBusy:false, finMsg:"" }; }
-function freshBuildPlan(){ return { loaded:false, msg:"", plan:null, steps:[], draft:null, draftGaps:null, generating:false, saving:false, expanded:{} }; }
+function freshBuildPlan(){ return { loaded:false, msg:"", plan:null, steps:[], draft:null, draftGaps:null, generating:false, saving:false, expanded:{}, panel:null }; }
 function freshSetup(){ return { loaded:false, msg:"", run:null, preflight:null, diff:null, running:false, busy:false }; }
 
 const S = {
@@ -2916,49 +2951,134 @@ function discardDraft(){
   renderAutomation();
 }
 
-/* -- saved plan: per-step status / checklist / notes, every write verified -- */
-function savedDepLabel(s){
-  const byId = new Map(S.buildPlan.steps.map(x => [x.id, x]));
-  return s.depends_on.map(id => { const t = byId.get(id); return t ? `#${t.position + 1}${t.status === "done" ? " ✓" : ""}` : "?"; }).join(", ");
-}
-
-function renderSavedStep(s){
-  const statusOpts = ["queued","building","testing","done"].map(v => `<option value="${v}" ${s.status===v?"selected":""}>${v}</option>`).join("");
-  const checklist = (s.checklist || []).map((c, i) => `
-    <label style="display:block;font-size:13px;margin:2px 0">
-      <input type="checkbox" ${c.done?"checked":""} onchange="toggleStepChecklist('${s.id}',${i})"> ${c.done ? `<s>${esc(c.text)}</s>` : esc(c.text)}
-    </label>`).join("");
-  return `
-    <div class="gap-card">
-      <div class="gap-top">
-        <div style="flex:1;font-size:14px;font-weight:600">${s.position + 1}. ${esc(s.title)}</div>
-        ${stepBadges(s)}
-        <select onchange="setStepStatus('${s.id}', this.value)">${statusOpts}</select>
-      </div>
-      <div class="gap-body">
-        ${s.depends_on.length ? `<div class="msg" style="margin-bottom:6px">After: ${esc(savedDepLabel(s))}</div>` : ""}
-        ${s.detail ? `<div style="font-size:13px;margin-bottom:8px">${esc(s.detail)}</div>` : ""}
-        ${checklist ? `<div style="margin-bottom:8px">${checklist}</div>` : ""}
-        ${renderStepDepth(s, s.id)}
-        ${renderStepDeployment(s.deployment, s.id)}
-        <label>Notes</label>
-        <textarea class="notes" oninput="this.style.height='auto';this.style.height=(this.scrollHeight+2)+'px'" onchange="saveStepNotes('${s.id}', this.value)">${esc(s.notes || "")}</textarea>
-      </div>
-    </div>`;
-}
+/* ============================================================
+   SAVED PLAN — track-grouped PM table + right slide-over.
+   Presentation/interaction only, no build_steps writes change here.
+   Row model: one build_steps row = one row. agent='automation' → engine
+   row; agent='setup' → summarized in the section Setup badge (status still
+   editable via its disclosure) and counted in the rollup, never an engine row.
+============================================================ */
+const TRACK_LABELS = { automation: "CRM (Automation + Setup)", app: "App", agent: "Agent Builder" };
+const TRACK_ORDER = ["automation", "app", "agent"];
+const STATUS_STAGE = { queued: 0, building: 1, testing: 2, done: 3 };
+const STATUS_VALUES = ["queued","building","testing","done"];
+function stepTrack(s){ return s.track || "automation"; }   // null → CRM (migration 011 default)
+function byIdStep(id){ return S.buildPlan.steps.find(x => x.id === id) || null; }
+function statusOptions(status){ return STATUS_VALUES.map(v => `<option value="${v}" ${status===v?"selected":""}>${v}</option>`).join(""); }
 
 function renderSavedPlan(){
   const p = S.buildPlan.plan, steps = S.buildPlan.steps;
   const done = steps.filter(s => s.status === "done").length;
-  return `
+  const head = `
     <div class="card">
       <div class="phase-h">Build plan · ${esc(p.status || "")}</div>
       <div class="phase-t">${esc(p.title || "Untitled plan")}</div>
       <div class="msg">${esc(p.summary || "")}</div>
       <div class="msg" style="margin-top:6px">${done} of ${steps.length} steps done</div>
+    </div>`;
+  // CRM always shown; App / Agent Builder only when steps of that track exist.
+  const sections = TRACK_ORDER
+    .filter(tr => tr === "automation" || steps.some(s => stepTrack(s) === tr))
+    .map(tr => renderPlanSection(tr, steps.filter(s => stepTrack(s) === tr)))
+    .join("");
+  return head + renderManifestCard(steps) + sections + renderEnginePanel();
+}
+
+function renderPlanSection(track, allSteps){
+  const cKey = "seccol:" + track, open = !S.buildPlan.expanded[cKey];   // default open
+  const done = allSteps.filter(s => s.status === "done").length;
+  const setupSteps = allSteps.filter(s => s.agent === "setup");
+  const setupDone = setupSteps.filter(s => s.status === "done").length;
+  const setupOk = setupSteps.length > 0 && setupDone === setupSteps.length;
+  const sKey = "secsetup:" + track, setupOpen = !!S.buildPlan.expanded[sKey];
+  const setupBadge = setupSteps.length
+    ? `<button class="bp-setup-badge ${setupOk ? "bp-setup-ok" : "bp-setup-no"}" onclick="event.stopPropagation();toggleStepDepth('${escAttr(sKey)}')">Setup ${setupOk ? "✓" : "○"} ${setupDone}/${setupSteps.length}</button>`
+    : "";
+  const engineRows = allSteps.filter(s => s.agent !== "setup");
+  return `
+    <div class="bp-section">
+      <button class="bp-sec-head" onclick="toggleStepDepth('${escAttr(cKey)}')">
+        <span>${open ? "▾" : "▸"} ${esc(TRACK_LABELS[track] || track)}</span>
+        <span class="bp-sec-roll">${done}/${allSteps.length} complete</span>
+        ${setupBadge}
+      </button>
+      ${open && setupOpen && setupSteps.length ? renderSetupMini(setupSteps) : ""}
+      ${open ? engineRows.map(renderEngineRow).join("") : ""}
+    </div>`;
+}
+
+// Setup steps are not engine rows; this compact editable list (revealed by the
+// Setup badge) is the only place their status is advanced, so Setup ✓ can be reached.
+function renderSetupMini(setupSteps){
+  return `<div class="bp-setup-list">` + setupSteps.map(s =>
+    `<div class="bp-setup-item"><span>${esc(s.title)}</span><select class="bp-status-sel" onchange="setStepStatus('${s.id}', this.value)">${statusOptions(s.status)}</select></div>`
+  ).join("") + `</div>`;
+}
+
+function renderEngineRow(s){
+  const stage = STATUS_STAGE[s.status] != null ? STATUS_STAGE[s.status] : 0;
+  const fill = Math.round(stage / 3 * 4);   // 4-segment bar: queued 0, building 1, testing 3, done 4
+  const bars = [0,1,2,3].map(i => `<i class="${i < fill ? "on" : ""}"></i>`).join("");
+  const blockers = (s.depends_on || []).map(byIdStep).filter(t => t && t.status !== "done");
+  const blocked = blockers.length ? `<span class="bp-blocked">blocked by: ${esc(blockers.map(b => b.title).join(", "))}</span>` : "";
+  const actionable = s.status === "queued" && blockers.length === 0;   // unblocked + not started = do next
+  const hasAutos = Array.isArray(s.workflow) && s.workflow.length;
+  const rowKey = "eng:" + s.id, expanded = !!S.buildPlan.expanded[rowKey];
+  return `
+    <div class="bp-row st-${esc(s.status)}${actionable ? " actionable" : ""}">
+      <button class="bp-row-name" onclick="toggleStepDepth('${escAttr(rowKey)}')">${hasAutos ? (expanded ? "▾ " : "▸ ") : ""}${esc(s.title)}</button>
+      <span class="bp-bar">${bars}</span>
+      <span class="bp-stage">${esc(s.status)}</span>
+      ${s.estimated_hours != null ? `<span class="bp-hours">${esc(String(s.estimated_hours))}h</span>` : ""}
+      ${blocked}
+      <select class="bp-status-sel" onchange="setStepStatus('${s.id}', this.value)">${statusOptions(s.status)}</select>
     </div>`
-    + renderManifestCard(steps)
-    + steps.map(renderSavedStep).join("");
+    + (expanded && hasAutos ? renderEngineSubRows(s) : "");
+}
+
+// Inline indented sub-rows = the step's workflow automations (statusless — there
+// is no per-automation status). Click one to open its content in the slide-over.
+function renderEngineSubRows(s){
+  return (s.workflow || []).map((a, i) => {
+    const name = typeof a === "string" ? a : (a.name || "Untitled automation");
+    return `<div class="bp-subrow" onclick="openEnginePanel('${s.id}', ${i})"><span class="auto-num">${String(i + 1).padStart(2, "0")}</span> ${esc(name)}</div>`;
+  }).join("");
+}
+
+/* Right slide-over — reuses the existing per-automation content renderers
+   verbatim (renderAutomationBody / renderManifestLines / renderDeploymentBody).
+   panel state = {stepId, autoIndex}, lives in freshBuildPlan so a client switch
+   clears it. Rendered as part of the tab body; a null panel renders nothing. */
+function openEnginePanel(stepId, autoIndex){ S.buildPlan.panel = { stepId, autoIndex }; renderAutomation(); }
+function closeEnginePanel(){ S.buildPlan.panel = null; renderAutomation(); }
+
+function renderEnginePanel(){
+  const pv = S.buildPlan.panel; if(!pv) return "";
+  const s = byIdStep(pv.stepId); if(!s) return "";
+  const a = (s.workflow || [])[pv.autoIndex];
+  const autoName = a ? (typeof a === "string" ? a : (a.name || "Untitled automation")) : "";
+  const key = "panel:" + s.id + ":" + pv.autoIndex;   // isolated expand namespace for the in-panel Tests toggle
+  const content = (a && typeof a === "object") ? renderAutomationBody(a, key)
+    : `<div class="msg">${esc(autoName)} — no structured detail.</div>`;
+  const checklist = (s.checklist || []).map((c, i) => `
+    <label style="display:block;font-size:13px;margin:2px 0">
+      <input type="checkbox" ${c.done?"checked":""} onchange="toggleStepChecklist('${s.id}',${i})"> ${c.done ? `<s>${esc(c.text)}</s>` : esc(c.text)}
+    </label>`).join("");
+  return `
+    <div class="bp-panel-back" onclick="if(event.target===this)closeEnginePanel()">
+      <div class="bp-panel">
+        <div class="bp-panel-head">
+          <div class="bp-panel-title">${esc(s.title)}<div class="bp-panel-sub">${esc(autoName)}</div></div>
+          <button class="bp-panel-close" onclick="closeEnginePanel()" aria-label="Close">×</button>
+        </div>
+        <div>${content}</div>
+        ${s.manifest ? `<h4>Manifest</h4>${renderManifestLines(s.manifest)}` : ""}
+        ${s.deployment ? `<h4>Deployment</h4>${renderDeploymentBody(s.deployment)}` : ""}
+        <h4>Checklist</h4>${checklist || `<div class="msg">No checklist items.</div>`}
+        <h4>Notes</h4>
+        <textarea class="notes" oninput="this.style.height='auto';this.style.height=(this.scrollHeight+2)+'px'" onchange="saveStepNotes('${s.id}', this.value)">${esc(s.notes || "")}</textarea>
+      </div>
+    </div>`;
 }
 
 async function setStepStatus(stepId, status){
@@ -3366,6 +3486,7 @@ async function toggleSetupChecklist(i){
    BOOT
 ============================================================ */
 sb.auth.onAuthStateChange((_e, session) => { if(session && document.getElementById("app").style.display === "none") initApp(); });
+document.addEventListener("keydown", e => { if(e.key === "Escape" && S.buildPlan && S.buildPlan.panel) closeEnginePanel(); });
 initApp();
 </script>
 </body>
