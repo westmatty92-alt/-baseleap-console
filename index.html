@@ -1531,14 +1531,20 @@ const REVIEW_ENGINE = {
         trigger: { type: "Client completion signal (client_parameter completion_trigger): Appointment Status = Showed OR Pipeline Stage changed to [completion stage]", filters: { rule: "the client's verified-completion event only — never a booking/intent event; appointment shape excludes Service Booking calendars" } },
         final_rule: "When the client's completion signal fires (appointment marked Showed, or pipeline stage moved to Job Complete), if the client wasn't already asked, wait a delay, then send the review ask by email (+ optional SMS) — never on booking, cancellation, or no-show events.",
         nodes: [
-          { type: "trigger", config: "Client completion signal (per completion_trigger): appointment businesses = Appointment Status Showed (normal calendars; NOT Service Booking) · pipeline businesses = Pipeline Stage changed to the client's completion stage" },
-          { type: "guard",   config: "If tag review-requested OR review_credit_maxed present → end" },
+          { type: "trigger", config: "Client completion signal (per completion_trigger): appointment businesses = Appointment Status Showed (normal calendars; NOT Service Booking) · pipeline businesses = Pipeline Stage changed to the client's completion stage",
+            deploy: { input: "Wire to THIS client's completion event — Appointment Status = Showed (appointment businesses; normal service calendars, NOT Service Booking) OR Pipeline Stage changed to their completion stage (e.g. Job Complete / Won for contractors).", guardrail: "Fire ONLY on the verified completion signal — never on a booking, intent, cancellation, or no-show event." } },
+          { type: "guard",   config: "If tag review-requested OR review_credit_maxed present → end",
+            deploy: { guardrail: "Dedupe + cap guard — blocks a second ask and any maxed contact. Keep guard-first; never remove." } },
           { type: "update",  config: "Set field Last Review Request Date = now" },
           { type: "update",  config: "Add tag review-requested" },
-          { type: "wait",    config: "2–12h (per-client delay)" },
-          { type: "action",  config: "Send review request email — primary + secondary platform links, one CTA" },
-          { type: "wait",    config: "Short delay (only when the optional SMS is enabled)" },
-          { type: "action",  config: "Send review request SMS (optional)" },
+          { type: "wait",    config: "2–12h (per-client delay)",
+            deploy: { input: "Set the delay between the completion signal and the ask (2–12h for this client)." } },
+          { type: "action",  config: "Send review request email — primary + secondary platform links, one CTA",
+            deploy: { input: "Insert this client's live review links (primary + secondary platform — Google + Facebook default, or Google + HomeStars / Yelp).", assets: "Attach the client's review-request email copy; send from their authenticated subdomain; keep it to one CTA (the review link as the primary action).", guardrail: "One ask per completion — don't add extra sends here." } },
+          { type: "wait",    config: "Short delay (only when the optional SMS is enabled)",
+            deploy: { input: "Only when the optional SMS is enabled — set the short delay before the SMS goes out." } },
+          { type: "action",  config: "Send review request SMS (optional)",
+            deploy: { input: "Optional — attach the client's review-request SMS copy.", assets: "Send from the client's A2P-approved number." } },
           { type: "end",     config: "Stop" }
         ],
         tests: [
@@ -1553,21 +1559,28 @@ const REVIEW_ENGINE = {
         trigger: { type: "Tag added", filters: { tag: "google_review_done" } },
         final_rule: "When google_review_done is added, if not already maxed and Google not already credited, mark Google complete, +$15 balance & lifetime, cap at $30, send thank-you coupon.",
         nodes: [
-          { type: "trigger", config: "Tag added: google_review_done (staff-verified review)" },
-          { type: "guard",   config: "If tag review_credit_maxed present → end" },
-          { type: "guard",   config: "If field Google Review Completed = Yes → end (one credit per platform)" },
+          { type: "trigger", config: "Tag added: google_review_done (staff-verified review)",
+            deploy: { input: "Fires when staff add google_review_done after verifying the Google review live.", guardrail: "Staff add this tag ONLY after verifying the review — the tag is the sole thing that grants credit; balances are never adjusted by hand." } },
+          { type: "guard",   config: "If tag review_credit_maxed present → end",
+            deploy: { guardrail: "$30 lifetime cap guard — never remove (removing it = credit abuse)." } },
+          { type: "guard",   config: "If field Google Review Completed = Yes → end (one credit per platform)",
+            deploy: { guardrail: "Per-platform dedupe — one credit per platform; never remove." } },
           { type: "update",  config: "Set Google Review Completed = Yes" },
-          { type: "update",  config: "Review Credit Balance += $15" },
+          { type: "update",  config: "Review Credit Balance += $15",
+            deploy: { input: "Credit per verified review = $15 for this client (set the amount)." } },
           { type: "update",  config: "Review Credits Earned (Lifetime) += $15" },
           { type: "condition", config: "Review Credits Earned (Lifetime) >= $30?",
+            deploy: { input: "Hard lifetime cap = $30 for this client (set the amount).", guardrail: "The cap prevents over-crediting — never raise or remove without sign-off." },
             yes: [
               { type: "update", config: "Set Review Incentive Status = Maxed" },
               { type: "update", config: "Add tag review_credit_maxed" },
-              { type: "action", config: "Send thank-you email with coupon (REVIEW15/REVIEW30)" },
+              { type: "action", config: "Send thank-you email with coupon (REVIEW15/REVIEW30)",
+                deploy: { input: "Insert the client's Stripe coupon codes (REVIEW15 / REVIEW30 pattern — must exist in Stripe first).", assets: "Attach the client's thank-you email copy." } },
               { type: "end",    config: "Stop" }
             ],
             no: [
-              { type: "action", config: "Send thank-you email with coupon (REVIEW15/REVIEW30)" },
+              { type: "action", config: "Send thank-you email with coupon (REVIEW15/REVIEW30)",
+                deploy: { input: "Insert the client's Stripe coupon codes (REVIEW15 / REVIEW30 pattern — must exist in Stripe first).", assets: "Attach the client's thank-you email copy." } },
               { type: "end",    config: "Stop" }
             ] }
         ],
@@ -1584,21 +1597,28 @@ const REVIEW_ENGINE = {
         trigger: { type: "Tag added", filters: { tag: "facebook_review_done" } },
         final_rule: "When facebook_review_done is added, if not already maxed and Facebook not already credited, mark Facebook complete, +$15 balance & lifetime, cap at $30, send thank-you coupon.",
         nodes: [
-          { type: "trigger", config: "Tag added: facebook_review_done (staff-verified review)" },
-          { type: "guard",   config: "If tag review_credit_maxed present → end" },
-          { type: "guard",   config: "If field Facebook Review Completed = Yes → end (one credit per platform)" },
+          { type: "trigger", config: "Tag added: facebook_review_done (staff-verified review)",
+            deploy: { input: "Fires when staff add facebook_review_done after verifying the Facebook review live.", guardrail: "Staff add this tag ONLY after verifying the review — the tag is the sole thing that grants credit; balances are never adjusted by hand." } },
+          { type: "guard",   config: "If tag review_credit_maxed present → end",
+            deploy: { guardrail: "$30 lifetime cap guard — never remove (removing it = credit abuse)." } },
+          { type: "guard",   config: "If field Facebook Review Completed = Yes → end (one credit per platform)",
+            deploy: { guardrail: "Per-platform dedupe — one credit per platform; never remove." } },
           { type: "update",  config: "Set Facebook Review Completed = Yes" },
-          { type: "update",  config: "Review Credit Balance += $15" },
+          { type: "update",  config: "Review Credit Balance += $15",
+            deploy: { input: "Credit per verified review = $15 for this client (set the amount)." } },
           { type: "update",  config: "Review Credits Earned (Lifetime) += $15" },
           { type: "condition", config: "Review Credits Earned (Lifetime) >= $30?",
+            deploy: { input: "Hard lifetime cap = $30 for this client (set the amount).", guardrail: "The cap prevents over-crediting — never raise or remove without sign-off." },
             yes: [
               { type: "update", config: "Set Review Incentive Status = Maxed" },
               { type: "update", config: "Add tag review_credit_maxed" },
-              { type: "action", config: "Send thank-you email with coupon (REVIEW15/REVIEW30)" },
+              { type: "action", config: "Send thank-you email with coupon (REVIEW15/REVIEW30)",
+                deploy: { input: "Insert the client's Stripe coupon codes (REVIEW15 / REVIEW30 pattern — must exist in Stripe first).", assets: "Attach the client's thank-you email copy." } },
               { type: "end",    config: "Stop" }
             ],
             no: [
-              { type: "action", config: "Send thank-you email with coupon (REVIEW15/REVIEW30)" },
+              { type: "action", config: "Send thank-you email with coupon (REVIEW15/REVIEW30)",
+                deploy: { input: "Insert the client's Stripe coupon codes (REVIEW15 / REVIEW30 pattern — must exist in Stripe first).", assets: "Attach the client's thank-you email copy." } },
               { type: "end",    config: "Stop" }
             ] }
         ],
@@ -1615,8 +1635,10 @@ const REVIEW_ENGINE = {
         trigger: { type: "Inbound webhook", filters: { event: "checkout.session.completed with coupon applied (Stripe)" } },
         final_rule: "When checkout completes with a review coupon, confirm the code, remove eligibility, decrement balance, log redemption, prevent reuse.",
         nodes: [
-          { type: "trigger", config: "Inbound webhook: checkout.session.completed with coupon applied (Stripe)" },
-          { type: "guard",   config: "If coupon not REVIEW15/REVIEW30 OR tag Review Credit Eligible absent → end" },
+          { type: "trigger", config: "Inbound webhook: checkout.session.completed with coupon applied (Stripe)",
+            deploy: { input: "Wire this client's Stripe checkout webhook (checkout.session.completed) into this automation.", guardrail: "Stripe enforces the coupon, GHL enforces eligibility — both must stay wired." } },
+          { type: "guard",   config: "If coupon not REVIEW15/REVIEW30 OR tag Review Credit Eligible absent → end",
+            deploy: { guardrail: "Blocks wrong coupons and reuse — never remove; it keeps eligibility gating intact." } },
           { type: "update",  config: "Decrement Review Credit Balance by the redeemed amount" },
           { type: "update",  config: "Remove tag Review Credit Eligible" },
           { type: "update",  config: "Set Last Redemption Date = now" },
@@ -2002,11 +2024,12 @@ const DESIGN_DOCTRINE_PROMPT = `AUTOMATION DESIGN DOCTRINE (how you decide the n
 8. Delays are timing, not logic: never "wait and hope" — wait, re-find, then branch on what exists. Every delay has a reason.`;
 
 const FORMULATE_CONTRACT_PROMPT = `OUTPUT — respond ONLY with valid JSON, no markdown, exactly this shape:
-{"spec":{"purpose":"one sentence","automations":[{"name":"workflow name","trigger":{"type":"exact GHL trigger","filters":{}},"final_rule":"When [trigger] happens, if [guard passes], update [state], then [action], unless [failure condition].","nodes":[{"type":"trigger","config":"exact trigger + filters"}],"tests":["test matrix items"]}]},"manifest":{"requires_tags":["tags this engine reads/branches on"],"creates_tags":["tags it sets"],"requires_fields":[{"name":"field name","type":"text|number|currency|date","object":"contact|opportunity"}]},"deployment":{"branding":{"<area>":"what changes per client"},"business_rules":{"math_operations":["every hardcoded number that changes per client"]},"never_touch":["architectural rules that break the engine if edited"]}}
+{"spec":{"purpose":"one sentence","automations":[{"name":"workflow name","trigger":{"type":"exact GHL trigger","filters":{}},"final_rule":"When [trigger] happens, if [guard passes], update [state], then [action], unless [failure condition].","nodes":[{"type":"trigger","config":"exact trigger + filters","deploy":{"input":"what the operator enters/selects here for THIS client","guardrail":"what must NOT be changed here"}}],"tests":["test matrix items"]}]},"manifest":{"requires_tags":["tags this engine reads/branches on"],"creates_tags":["tags it sets"],"requires_fields":[{"name":"field name","type":"text|number|currency|date","object":"contact|opportunity"}]},"deployment":{"branding":{"<area>":"what changes per client"},"business_rules":{"math_operations":["every hardcoded number that changes per client"]},"never_touch":["architectural rules that break the engine if edited"]}}
 Field rules:
 - spec: catalog-grade — a builder executes it without more research. Trigger semantics match the business event exactly; design every trigger for re-entry/duplicates (processed-state tags, find-before-create); value-awarding steps gate on Payment Received.
 - final_rule: fill the template with THIS automation's specifics — it is the spine the nodes expand from.
 - nodes: the ordered node-by-node workflow exactly as assembled in the GHL builder. Each node = {"type","config"}; type is one of trigger|guard|wait|action|update|condition|webhook|handoff|end (webhook = external webhook-out call — never fold it into action; update = field/tag/record state change). The first node is always the trigger; the second is the guard (doctrine rule 3). condition nodes add "yes":[nodes] and "no":[nodes] branch arrays (branches may end with an end node). config is one precise sentence of settings.
+- node "deploy" (OPTIONAL, per node): the per-node setup instructions for a FUTURE client deploying this snapshot — {"input": what the operator must enter or select at this node for this client (delays, thresholds, the trigger event, coupon codes, links), "assets": copy/links/media to attach — MESSAGE-SENDING nodes only (email/SMS sends), "guardrail": what must NOT be changed here (a rule that breaks the engine if edited)}. Include ONLY the buckets that apply to that node; OMIT deploy entirely on pure state-change nodes (set field / add tag) that need no per-client input. Draw these from the SAME facts as the deployment tiers — branding → assets, business_rules numbers/the trigger → input, never_touch → guardrail — so each rule lands on the node it governs.
 - manifest: classify by doctrine rule 2 — every tag the engine reads or sets and every custom field it needs, named exactly as the nodes reference them. The engine is not buildable until it declares these. A field's "object" = which GHL record it lives on: omit it for contact fields (the default); set "opportunity" only when the field genuinely belongs on the deal/opportunity record.
 - tests: the REAL test matrix for THIS automation, not generic phrases. One entry each for: the happy path end-to-end; EVERY guard (prove the duplicate-prevention actually blocks a re-fire); EVERY condition branch — the YES and the NO separately; each webhook ROUND-TRIP (it fires AND the response writes back the expected field); the exit condition (the automation stops on the right tag/state). Each test names the setup, the action, and the expected observable result.
 - deployment: the three-tier guide for FUTURE clients of this engine — branding (names/copy/links), business_rules incl. math_operations (the most-forgotten tier), never_touch (the architecture).
@@ -2111,6 +2134,12 @@ function validateNodes(nodes, at, isBranch){
     if(!n || typeof n !== "object") throw new Error(here + ": not an object");
     if(!NODE_TYPES.includes(n.type)) throw new Error(here + `: type must be one of ${NODE_TYPES.join("|")}`);
     if(typeof n.config !== "string" || !n.config.trim()) throw new Error(here + ": config missing");
+    if(n.deploy != null){   // optional per-node deploy bucket — lenient: object of string fields
+      if(typeof n.deploy !== "object" || Array.isArray(n.deploy)) throw new Error(here + ": deploy must be an object");
+      ["input","assets","guardrail"].forEach(k => {
+        if(n.deploy[k] != null && typeof n.deploy[k] !== "string") throw new Error(here + `: deploy.${k} must be a string`);
+      });
+    }
     if(n.type === "condition"){
       validateNodes(n.yes, here + " yes-branch", true);
       validateNodes(n.no,  here + " no-branch",  true);
@@ -3317,10 +3346,12 @@ function renderEngineDetail(){
 function renderDeploymentCard(dep, key){
   const flag = dep.needs_review === "parameterize" ? `<span class="dep-review">⚠ REVIEW — parameterized: confirm changes</span>`
              : dep.needs_review === "formulate"    ? `<span class="dep-review">⚠ REVIEW — formulated: unproven${dep.seeded_from ? " (seeded from " + esc(dep.seeded_from) + " stub)" : ""}</span>` : "";
+  // Branding + Never touch now live per-node in the click popups (Assets / Do not
+  // change); the box keeps the engine-level leftovers — incl. Parameter values, the
+  // CONCRETE per-client settings the generic node notes don't carry.
   const sections = [
     ["Changes made", dep.changes_note], ["Parameter values", dep.parameter_values],
-    ["Branding", dep.tiers && dep.tiers.branding], ["Business rules", dep.tiers && dep.tiers.business_rules],
-    ["Never touch", dep.tiers && dep.tiers.never_touch], ["Client overrides", dep.overrides],
+    ["Business rules", dep.tiers && dep.tiers.business_rules], ["Client overrides", dep.overrides],
     ["Engine spec", dep.spec_extras],
   ].filter(([, v]) => v != null);
   const rows = sections.map(([label, v], i) => {
