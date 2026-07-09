@@ -1,0 +1,135 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="860" viewBox="0 0 1280 860" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#9AA3AD"/>
+    </marker>
+    <marker id="arrowVolt" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#00D4A0"/>
+    </marker>
+  </defs>
+
+  <!-- bg -->
+  <rect width="1280" height="860" fill="#0D1F2D"/>
+  <rect x="0" y="0" width="1280" height="66" fill="#1A1A2E"/>
+  <text x="40" y="34" fill="#EDEFF2" font-size="21" font-weight="800">Build Plan — Clickable nodes + description popup</text>
+  <text x="40" y="54" fill="#9AA3AD" font-size="13">renderNodeGraph refactor · descriptions move out of nodes into a click popup · truncated preview in-node</text>
+
+  <!-- legend -->
+  <rect x="905" y="18" width="15" height="15" rx="3" fill="#232338" stroke="#9AA3AD"/>
+  <text x="926" y="30" fill="#9AA3AD" font-size="12">modify existing</text>
+  <rect x="1055" y="18" width="15" height="15" rx="3" fill="#232338" stroke="#00D4A0" stroke-dasharray="4 3"/>
+  <text x="1076" y="30" fill="#9AA3AD" font-size="12">new (this build)</text>
+
+  <!-- ============ BEFORE ============ -->
+  <text x="60" y="112" fill="#9AA3AD" font-size="13" font-weight="700" letter-spacing="1">BEFORE — description baked into the node</text>
+  <!-- wide node with full text -->
+  <g>
+    <rect x="60" y="128" width="360" height="96" rx="10" fill="#232338" stroke="rgba(255,255,255,0.09)"/>
+    <rect x="60" y="128" width="4" height="96" rx="2" fill="#00A878"/>
+    <rect x="78" y="144" width="58" height="18" rx="8" fill="#0D1F2D"/>
+    <text x="107" y="157" fill="#00D4A0" font-size="10.5" font-weight="700" text-anchor="middle">ACTION</text>
+    <text x="78" y="184" fill="#EDEFF2" font-size="12.5">Send review request email — primary +</text>
+    <text x="78" y="202" fill="#EDEFF2" font-size="12.5">secondary platform links, one CTA</text>
+  </g>
+  <text x="60" y="250" fill="#E75A7C" font-size="11.5">✗ every node a wall of text · graphs don't scan · fixed max-width crowds</text>
+
+  <!-- transform arrow -->
+  <line x1="440" y1="176" x2="512" y2="176" stroke="#00D4A0" stroke-width="2.5" marker-end="url(#arrowVolt)"/>
+  <text x="476" y="166" fill="#00D4A0" font-size="11" text-anchor="middle" font-weight="700">refactor</text>
+
+  <!-- ============ AFTER ============ -->
+  <text x="540" y="112" fill="#9AA3AD" font-size="13" font-weight="700" letter-spacing="1">AFTER — compact node (type + one-line preview)</text>
+  <g>
+    <rect x="540" y="146" width="300" height="56" rx="10" fill="#232338" stroke="rgba(255,255,255,0.09)"/>
+    <rect x="540" y="146" width="4" height="56" rx="2" fill="#00A878"/>
+    <rect x="558" y="158" width="58" height="18" rx="8" fill="#0D1F2D"/>
+    <text x="587" y="171" fill="#00D4A0" font-size="10.5" font-weight="700" text-anchor="middle">ACTION</text>
+    <text x="558" y="192" fill="#C7CBD1" font-size="12">Send review request email…</text>
+    <circle cx="822" cy="174" r="9" fill="none" stroke="#9AA3AD"/>
+    <text x="822" y="178" fill="#9AA3AD" font-size="11" text-anchor="middle" font-weight="700">i</text>
+  </g>
+  <text x="540" y="228" fill="#00D4A0" font-size="11.5">✓ scannable · clickable (pointer + hover) · matches dribbble reference</text>
+
+  <!-- click arrow to popup -->
+  <line x1="690" y1="238" x2="690" y2="286" stroke="#00D4A0" stroke-width="2.5" marker-end="url(#arrowVolt)"/>
+  <text x="704" y="268" fill="#00D4A0" font-size="11" font-weight="700">click</text>
+
+  <!-- ============ POPUP (new) ============ -->
+  <g>
+    <rect x="905" y="122" width="330" height="150" rx="12" fill="#161622" stroke="#00D4A0" stroke-width="1.5" stroke-dasharray="5 4"/>
+    <text x="925" y="150" fill="#9AA3AD" font-size="11" font-weight="700" letter-spacing="1">BLOCK DEFINITION</text>
+    <rect x="925" y="160" width="58" height="20" rx="8" fill="#0D1F2D"/>
+    <text x="954" y="174" fill="#00D4A0" font-size="11" font-weight="700" text-anchor="middle">ACTION</text>
+    <text x="925" y="206" fill="#EDEFF2" font-size="12.5">Send review request email — primary +</text>
+    <text x="925" y="224" fill="#EDEFF2" font-size="12.5">secondary platform links, one CTA</text>
+    <text x="925" y="252" fill="#9AA3AD" font-size="11">full, unedited description · ✕ / overlay / Esc to close</text>
+    <circle cx="1214" cy="140" r="9" fill="none" stroke="#9AA3AD"/>
+    <text x="1214" y="144" fill="#9AA3AD" font-size="12" text-anchor="middle">✕</text>
+  </g>
+  <text x="905" y="292" fill="#00D4A0" font-size="11.5">NEW · dark hex bg (modal rule) · reusable overlay</text>
+
+  <!-- divider -->
+  <line x1="40" y1="320" x2="1240" y2="320" stroke="rgba(255,255,255,0.12)"/>
+
+  <!-- ============ CODE TOUCHPOINTS ============ -->
+  <text x="40" y="352" fill="#EDEFF2" font-size="15" font-weight="800">Code touchpoints — all in index.html</text>
+
+  <!-- modify: renderNodeGraph -->
+  <rect x="40" y="372" width="270" height="92" rx="10" fill="#232338" stroke="#9AA3AD"/>
+  <text x="56" y="396" fill="#00D4A0" font-size="13" font-weight="700">renderNodeGraph()</text>
+  <text x="56" y="414" fill="#9AA3AD" font-size="11">~line 2846 · MODIFY</text>
+  <text x="56" y="434" fill="#C7CBD1" font-size="11.5">chip + truncated .fl-txt;</text>
+  <text x="56" y="450" fill="#C7CBD1" font-size="11.5">data-type/data-desc + onclick</text>
+
+  <!-- modify: trigger node 3184 -->
+  <rect x="330" y="372" width="270" height="92" rx="10" fill="#232338" stroke="#9AA3AD"/>
+  <text x="346" y="396" fill="#00D4A0" font-size="13" font-weight="700">trigger node markup</text>
+  <text x="346" y="414" fill="#9AA3AD" font-size="11">~line 3184 · MODIFY</text>
+  <text x="346" y="434" fill="#C7CBD1" font-size="11.5">same treatment as fl-node</text>
+  <text x="346" y="450" fill="#C7CBD1" font-size="11.5">(shared .fl-node shape)</text>
+
+  <!-- new: showNodeInfo -->
+  <rect x="620" y="372" width="270" height="92" rx="10" fill="#232338" stroke="#00D4A0" stroke-dasharray="5 4"/>
+  <text x="636" y="396" fill="#00D4A0" font-size="13" font-weight="700">showNodeInfo(el) /</text>
+  <text x="636" y="414" fill="#00D4A0" font-size="13" font-weight="700">closeNodeInfo()</text>
+  <text x="636" y="434" fill="#9AA3AD" font-size="11">NEW fns · read data-attrs</text>
+  <text x="636" y="450" fill="#C7CBD1" font-size="11.5">populate + show/hide overlay</text>
+
+  <!-- new: popup markup + css -->
+  <rect x="910" y="372" width="330" height="92" rx="10" fill="#232338" stroke="#00D4A0" stroke-dasharray="5 4"/>
+  <text x="926" y="396" fill="#00D4A0" font-size="13" font-weight="700">#node-info overlay + CSS</text>
+  <text x="926" y="414" fill="#9AA3AD" font-size="11">NEW markup (near #nc-modal) · CSS</text>
+  <text x="926" y="434" fill="#C7CBD1" font-size="11.5">.node-info dark hex bg;</text>
+  <text x="926" y="450" fill="#C7CBD1" font-size="11.5">.fl-node cursor/hover + .fl-txt clamp</text>
+
+  <!-- connectors touchpoints -> outcomes -->
+  <line x1="175" y1="464" x2="175" y2="500" stroke="#9AA3AD" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="465" y1="464" x2="465" y2="500" stroke="#9AA3AD" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="755" y1="464" x2="755" y2="500" stroke="#00D4A0" stroke-width="1.5" marker-end="url(#arrowVolt)"/>
+  <line x1="1075" y1="464" x2="1075" y2="500" stroke="#00D4A0" stroke-width="1.5" marker-end="url(#arrowVolt)"/>
+
+  <!-- ============ GUARD note ============ -->
+  <rect x="40" y="512" width="560" height="120" rx="10" fill="#1A1A2E" stroke="#E75A7C" stroke-width="1.2"/>
+  <text x="58" y="538" fill="#E75A7C" font-size="13" font-weight="800">Guard fork — unchanged (locked July 8 rule)</text>
+  <text x="58" y="562" fill="#C7CBD1" font-size="11.5">Guard condition text moves to the popup, but the node still forks:</text>
+  <text x="58" y="580" fill="#C7CBD1" font-size="11.5">YES → End pill · NO → entire remaining flow.</text>
+  <text x="58" y="604" fill="#9AA3AD" font-size="11.5">Guard stays a SINGLE data node; fork synthesized at render. End pills</text>
+  <text x="58" y="620" fill="#9AA3AD" font-size="11.5">and YES/NO branch pills stay as-is (outcome markers, not clickable nodes).</text>
+
+  <!-- ============ NOT TOUCHED ============ -->
+  <rect x="620" y="512" width="620" height="120" rx="10" fill="#1A1A2E" stroke="rgba(255,255,255,0.14)"/>
+  <text x="638" y="538" fill="#EDEFF2" font-size="13" font-weight="800">Not touched — no data/prompt/schema change</text>
+  <text x="638" y="562" fill="#C7CBD1" font-size="11.5">• workflow JSONB data model      • AI prompts / validators</text>
+  <text x="638" y="582" fill="#C7CBD1" font-size="11.5">• descriptions (config text)     • renderNodeRows (collapsed list)</text>
+  <text x="638" y="602" fill="#C7CBD1" font-size="11.5">• PM layer (status/checklist/hrs) • Supabase writes / migrations</text>
+  <text x="638" y="622" fill="#9AA3AD" font-size="11.5">Pure presentation change: same data in, richer interaction out.</text>
+
+  <!-- ============ VERIFY ============ -->
+  <rect x="40" y="656" width="1200" height="150" rx="10" fill="#12232f" stroke="#00D4A0" stroke-width="1.2"/>
+  <text x="58" y="682" fill="#00D4A0" font-size="13" font-weight="800">Definition of Done — verify live</text>
+  <text x="58" y="708" fill="#C7CBD1" font-size="12">1 · Open Build plan detail for a graduated engine (e.g. Review Request) → nodes show type + one-line preview, not full text.</text>
+  <text x="58" y="730" fill="#C7CBD1" font-size="12">2 · Click each type — trigger / action / guard / wait / update — popup shows the correct, unedited full description.</text>
+  <text x="58" y="752" fill="#C7CBD1" font-size="12">3 · ✕, overlay-click, and Esc all close the popup. Hover/pointer affordance present on every node.</text>
+  <text x="58" y="774" fill="#C7CBD1" font-size="12">4 · Guard still draws its YES→End / NO→remaining-flow fork. Cascading guards still nest. renderNodeRows list view unchanged.</text>
+  <text x="58" y="796" fill="#9AA3AD" font-size="11.5">No commit until these pass and you approve. No git push without explicit approval.</text>
+</svg>

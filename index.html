@@ -199,8 +199,11 @@
   /* workflow node GRAPH — visual flow (boxes + connectors + branch split) on a
      dot-grid canvas; detail view only, the shared renderNodeRows list is untouched */
   .fl-canvas{padding:14px 6px 18px;background-image:radial-gradient(rgba(255,255,255,.05) 1px,transparent 1px);background-size:16px 16px;border-radius:8px}
-  .fl-node{display:flex;align-items:baseline;gap:8px;background:#232338;border:1px solid var(--d-line);border-left:3px solid var(--d-line);border-radius:10px;padding:10px 12px;max-width:420px;margin:0 auto;font-size:12.5px;color:var(--d-text);box-shadow:0 2px 8px rgba(0,0,0,.35)}
-  .fl-txt{min-width:0}
+  .fl-node{display:flex;align-items:center;gap:8px;background:#232338;border:1px solid var(--d-line);border-left:3px solid var(--d-line);border-radius:10px;padding:10px 12px;max-width:420px;margin:0 auto;font-size:12.5px;color:var(--d-text);box-shadow:0 2px 8px rgba(0,0,0,.35);cursor:pointer;transition:background-color .12s ease,box-shadow .12s ease}
+  .fl-node:hover{background:#2b2b44;box-shadow:0 0 0 1px var(--volt),0 2px 8px rgba(0,0,0,.35)}
+  .fl-txt{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}   /* one-line preview; full text lives in the click popup */
+  .fl-info{flex:none;margin-left:auto;width:16px;height:16px;border:1px solid var(--d-muted);border-radius:50%;font-size:10px;font-weight:700;font-style:italic;color:var(--d-muted);display:flex;align-items:center;justify-content:center;line-height:1}
+  .fl-node:hover .fl-info{border-color:var(--volt);color:var(--volt)}
   .fl-t-trigger{border-left-color:var(--volt)}
   .fl-t-action{border-left-color:var(--run)}
   .fl-t-guard{border-left-color:var(--node-guard)}
@@ -215,6 +218,14 @@
   .fl-yes{background:rgba(0,212,160,.12);color:var(--volt);border:1px solid rgba(0,212,160,.4)}
   .fl-no{background:rgba(231,90,124,.12);color:var(--node-guard);border:1px solid rgba(231,90,124,.4)}
   .fl-end{display:block;width:max-content;margin:0 auto;padding:6px 18px;border-radius:20px;background:rgba(0,212,160,.12);border:1px solid var(--volt);color:var(--volt);font-size:11px;font-weight:700}
+  /* node-info popup — a node's full description on click (dark hex bg, not a CSS var: the modal-transparency rule) */
+  .ni-overlay{position:fixed;inset:0;background:rgba(6,10,16,.66);display:none;align-items:center;justify-content:center;z-index:60}
+  .ni-box{background:#161622;border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:22px 24px;width:440px;max-width:92vw;box-shadow:0 24px 60px rgba(0,0,0,.6)}
+  .ni-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+  .ni-chip{font-size:11px;font-weight:700;letter-spacing:.5px;padding:3px 10px;border-radius:9px;background:#0D1F2D;color:var(--volt)}
+  .ni-x{background:none;border:none;color:var(--d-muted);font-size:18px;cursor:pointer;line-height:1}
+  .ni-x:hover{color:var(--d-text-strong)}
+  .ni-body{font-size:13.5px;line-height:1.5;color:var(--d-text);white-space:pre-wrap}
   /* deployment card — one collapsible row per section, collapsed by default */
   .bp-dep-sec{border-top:1px solid var(--d-line)}
   .bp-dep-sec:first-of-type{border-top:none}
@@ -322,6 +333,14 @@
       <button class="btn-ghost" onclick="closeNewClient()">Cancel</button>
       <button class="btn-primary" style="width:auto" onclick="createClient()">Create</button>
     </div>
+  </div>
+</div>
+
+<!-- node-info popup: a workflow node's full, unedited description on click -->
+<div class="ni-overlay" id="node-info" onclick="if(event.target===this)closeNodeInfo()">
+  <div class="ni-box">
+    <div class="ni-head"><span class="ni-chip" id="ni-chip"></span><button class="ni-x" onclick="closeNodeInfo()">✕</button></div>
+    <div class="ni-body" id="ni-body"></div>
   </div>
 </div>
 
@@ -2835,9 +2854,29 @@ function renderNodeRows(nodes){
   }).join("");
 }
 
+// One flow node: a type chip + a ONE-LINE preview (CSS-clamped) + an info dot.
+// The full, unedited description rides in data-d and opens in the click popup —
+// nothing here truncates or rewrites config text; the CSS ellipsis does the
+// visual clamp. `preview` differs from `full` only for guards (cond vs config).
+function flNode(cls, chip, preview, full){
+  const f = full == null ? preview : full;
+  return `<div class="fl-node ${cls}" data-t="${escAttr(chip)}" data-d="${escAttr(f)}" onclick="showNodeInfo(this)">`
+    + `<span class="wf-chip">${esc(chip)}</span><span class="fl-txt">${esc(preview)}</span><span class="fl-info">i</span></div>`;
+}
+// Popup shows a node's full description on click. textContent (not innerHTML) —
+// config text is untrusted UI data, never parsed as markup.
+function showNodeInfo(el){
+  document.getElementById("ni-chip").textContent = el.dataset.t || "STEP";
+  document.getElementById("ni-body").textContent = el.dataset.d || "";
+  document.getElementById("node-info").style.display = "flex";
+}
+function closeNodeInfo(){ document.getElementById("node-info").style.display = "none"; }
+document.addEventListener("keydown", e => { if(e.key === "Escape") closeNodeInfo(); });
+
 // Visual node GRAPH for the detail view: same nodes data as renderNodeRows,
 // drawn as a vertical flow — boxed nodes, connector lines with arrowheads,
-// branch splits, end nodes as terminal pills. Read-only; no interactions.
+// branch splits, end nodes as terminal pills. Each node is CLICKABLE → a popup
+// with its full description (flNode); the graph itself only previews one line.
 // RENDER RULE (locked July 8 2026): a guard IS a GHL if/else — it ALWAYS forks.
 // Trip side (YES) → End pill (label from the config's "→ …" part); pass side
 // (NO) → the ENTIRE remaining flow, so cascading guards nest into successive
@@ -2849,14 +2888,14 @@ function renderNodeGraph(nodes){
   for(let i = 0; i < nodes.length; i++){
     const n = nodes[i];
     const conn = i ? `<div class="fl-conn"></div>` : "";
-    if(typeof n === "string"){ html += conn + `<div class="fl-node"><span class="wf-chip">STEP</span><span class="fl-txt">${esc(n)}</span></div>`; continue; }
+    if(typeof n === "string"){ html += conn + flNode("", "STEP", n); continue; }
     if(n.type === "end"){ html += conn + `<div class="fl-end">${esc(n.config || "End")}</div>`; continue; }
     if(n.type === "guard"){
       const parts = String(n.config || "").split("→");
       const cond = parts[0].trim();
       const outcome = (parts[1] || "").trim();
       const endTxt = outcome && outcome.toLowerCase() !== "end" ? outcome : "End";
-      html += conn + `<div class="fl-node fl-t-guard"><span class="wf-chip">GUARD</span><span class="fl-txt">${esc(cond)}</span></div>
+      html += conn + flNode("fl-t-guard", "GUARD", cond, n.config) + `
         <div class="fl-conn"></div>
         <div class="fl-branches fl-guard-split">
           <div class="fl-branch"><div class="fl-pill fl-yes">YES</div><div class="fl-conn"></div><div class="fl-end">${esc(endTxt)}</div></div>
@@ -2865,7 +2904,7 @@ function renderNodeGraph(nodes){
       return html;   // remainder consumed by the NO branch — nothing renders after a guard at this level
     }
     const chip = n.type === "condition" ? "IF" : String(n.type || "step").toUpperCase();
-    html += conn + `<div class="fl-node fl-t-${esc(n.type || "step")}"><span class="wf-chip">${esc(chip)}</span><span class="fl-txt">${esc(n.config || "")}</span></div>`;
+    html += conn + flNode("fl-t-" + esc(n.type || "step"), chip, n.config || "");
     if(n.type === "condition")
       html += `<div class="fl-conn"></div>
         <div class="fl-branches">
@@ -3181,7 +3220,7 @@ function renderEngineDetail(){
   const isObj = a && typeof a === "object";
   const autoName = a ? (typeof a === "string" ? a : (a.name || "Untitled automation")) : "";
   const key = "panel:" + s.id + ":" + pv.autoIndex;   // isolated expand namespace for Tests + deployment sections
-  const trig = isObj && a.trigger ? `<div class="fl-node fl-t-trigger"><span class="wf-chip">TRIGGER</span><span class="fl-txt">${esc(a.trigger.type + (a.trigger.filters && Object.keys(a.trigger.filters).length ? " — " + JSON.stringify(a.trigger.filters) : ""))}</span></div>` : "";
+  const trig = isObj && a.trigger ? flNode("fl-t-trigger", "TRIGGER", a.trigger.type + (a.trigger.filters && Object.keys(a.trigger.filters).length ? " — " + JSON.stringify(a.trigger.filters) : "")) : "";
   const flow = isObj
     ? (a.nodes ? renderNodeGraph(a.nodes) : trig + (trig && (a.steps || []).length ? `<div class="fl-conn"></div>` : "") + renderNodeGraph(a.steps))
     : "";
