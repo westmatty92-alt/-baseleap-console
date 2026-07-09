@@ -215,22 +215,6 @@
   .fl-yes{background:rgba(0,212,160,.12);color:var(--volt);border:1px solid rgba(0,212,160,.4)}
   .fl-no{background:rgba(231,90,124,.12);color:var(--node-guard);border:1px solid rgba(231,90,124,.4)}
   .fl-end{display:block;width:max-content;margin:0 auto;padding:6px 18px;border-radius:20px;background:rgba(0,212,160,.12);border:1px solid var(--volt);color:var(--volt);font-size:11px;font-weight:700}
-  /* set-up checklist + tests — expandable guidance rows */
-  .bp-card-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
-  .bp-card-head h4{margin:0}
-  .bp-gen{background:none;border:1px solid var(--d-line);color:var(--volt);font-size:11px;font-weight:600;padding:4px 10px;border-radius:8px;cursor:pointer;white-space:nowrap}
-  .bp-gen:hover{border-color:var(--volt)}
-  .bp-gen:disabled{opacity:.5;pointer-events:none}
-  .bp-chk{border-top:1px solid var(--d-line)}
-  .bp-chk:first-of-type{border-top:none}
-  .bp-chk-row{display:flex;gap:9px;align-items:flex-start;padding:8px 0}
-  .bp-chk-row input{margin-top:2px}
-  .bp-chk-t{flex:1;text-align:left;background:none;border:none;color:var(--d-text);font-size:13px;line-height:1.45;cursor:pointer;padding:0}
-  .bp-chk-t:hover{color:var(--volt)}
-  .bp-chk-body{padding:0 0 10px 24px}
-  .bp-chk-d{font-size:12.5px;color:var(--d-muted);line-height:1.5;margin-bottom:6px}
-  .bp-steps{margin:0;padding-left:18px;font-size:12.5px;color:var(--d-text)}
-  .bp-steps li{margin:3px 0;line-height:1.45}
   /* deployment card — one collapsible row per section, collapsed by default */
   .bp-dep-sec{border-top:1px solid var(--d-line)}
   .bp-dep-sec:first-of-type{border-top:none}
@@ -354,7 +338,7 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 ============================================================ */
 function freshAudit(){ return { tab:"guide", guideNotes:{}, captureText:"", summary:null, sessionId:null, loaded:false, analyzing:false, msg:"", stackForm:null, stackOtherFlags:{}, extracting:false }; }
 function freshAutomation(){ return { tab:"gaps", loaded:false, msg:"", gaps:[], drafts:{}, assessing:{}, errors:{}, assessingAll:false, validatingAll:false, progress:"", finBusy:{}, finBulkBusy:false, finMsg:"" }; }
-function freshBuildPlan(){ return { loaded:false, msg:"", plan:null, steps:[], draft:null, draftGaps:null, generating:false, saving:false, expanded:{}, panel:null, guideBusy:false }; }
+function freshBuildPlan(){ return { loaded:false, msg:"", plan:null, steps:[], draft:null, draftGaps:null, generating:false, saving:false, expanded:{}, panel:null }; }
 function freshSetup(){ return { loaded:false, msg:"", run:null, preflight:null, diff:null, running:false, busy:false }; }
 
 const S = {
@@ -3181,138 +3165,6 @@ function renderEngineSubRows(s){
 function openEnginePanel(stepId, autoIndex){ S.buildPlan.panel = { stepId, autoIndex }; renderAutomation(); }
 function closeEnginePanel(){ S.buildPlan.panel = null; renderAutomation(); }
 
-/* ---- Guidance layer: per-item descriptions + how-to steps, generated once ----
-   Data shape (JSONB, no migration): checklist item {text, done, detail?, steps?};
-   each workflow automation may carry test_steps (string[][], index-aligned with
-   tests — tests themselves STAY strings, so validators/catalog specs are untouched). */
-function renderSetupChecklist(s){
-  const items = s.checklist || [];
-  if(!items.length) return `<div class="msg">No checklist items.</div>`;
-  return items.map((c, i) => {
-    const k = "chk:" + s.id + ":" + i, open = !!S.buildPlan.expanded[k];
-    const has = c.detail || (c.steps || []).length;
-    return `
-      <div class="bp-chk">
-        <div class="bp-chk-row">
-          <input type="checkbox" ${c.done?"checked":""} onchange="toggleStepChecklist('${s.id}',${i})">
-          <button class="bp-chk-t" onclick="toggleStepDepth('${escAttr(k)}')">${has ? (open ? "▾ " : "▸ ") : ""}${c.done ? `<s>${esc(c.text)}</s>` : esc(c.text)}</button>
-        </div>
-        ${open && has ? `<div class="bp-chk-body">
-          ${c.detail ? `<div class="bp-chk-d">${esc(c.detail)}</div>` : ""}
-          ${(c.steps || []).length ? `<ol class="bp-steps">${c.steps.map(t => `<li>${esc(t)}</li>`).join("")}</ol>` : ""}
-        </div>` : ""}
-      </div>`;
-  }).join("");
-}
-
-function renderDetailTests(a, s, autoIdx){
-  const tests = Array.isArray(a.tests) ? a.tests : (a.tests ? [String(a.tests)] : []);
-  if(!tests.length) return "";
-  const guides = Array.isArray(a.test_steps) ? a.test_steps : [];
-  return tests.map((t, j) => {
-    const k = `tst:${s.id}:${autoIdx}:${j}`, open = !!S.buildPlan.expanded[k];
-    const st = guides[j] || [];
-    return `
-      <div class="bp-chk">
-        <div class="bp-chk-row">
-          <button class="bp-chk-t" onclick="toggleStepDepth('${escAttr(k)}')">${open ? "▾ " : "▸ "}${esc(typeof t === "string" ? t : String(t))}</button>
-        </div>
-        ${open ? `<div class="bp-chk-body">${st.length ? `<ol class="bp-steps">${st.map(x => `<li>${esc(x)}</li>`).join("")}</ol>` : `<div class="msg">No run guide yet — use ✨ Generate guidance.</div>`}</div>` : ""}
-      </div>`;
-  }).join("");
-}
-
-function guidanceSystemPrompt(){
-  return `You write operator guidance for deploying GoHighLevel (GHL) automations, shown inside Baseleap's internal console. You receive one JSON payload describing an automation step: the engine step (title, detail), its tag/field manifest, deployment parameters, the automation (name, final_rule, trigger, nodes, tests), and "need" — the checklist items and tests that require guidance, each with its index.
-
-Reply with STRICT JSON only — no prose, no markdown fences:
-{"checklist":[{"i":<index>,"detail":"...","steps":["..."]}],"tests":[{"i":<index>,"steps":["..."]}]}
-
-Rules:
-- One entry for EVERY index in need.checklist and need.tests — no extras, no omissions.
-- checklist detail: 1-2 sentences — what the item means and why it gates deployment.
-- checklist steps: 2-6 brief imperative steps naming exact GHL surfaces (e.g. "Settings → Custom Fields") and the exact tag/field names from the manifest where relevant.
-- tests steps: 2-6 brief steps to RUN that test against THIS automation: which test contact/tag/stage/appointment state to set up, what to trigger, and the exact expected result to observe.
-- Ground every instruction in the provided nodes/parameters — never invent GHL features or menu paths you are not confident exist.`;
-}
-
-// Strict, index-validated parse (defensive: fences stripped, shape checked,
-// unknown/duplicate/missing indices all REJECTED — a partial merge would look
-// like success while silently leaving items unguided).
-function parseGuidance(text, chkNeed, tstNeed){
-  let raw = String(text).trim();
-  const b0 = raw.indexOf("{"), b1 = raw.lastIndexOf("}");
-  if(b0 === -1 || b1 === -1) throw new Error("no JSON object in response");
-  raw = raw.slice(b0, b1 + 1);
-  let obj; try{ obj = JSON.parse(raw); }catch(e){ throw new Error("guidance JSON did not parse"); }
-  const takeSteps = (v, at) => {
-    if(!Array.isArray(v) || !v.length || v.length > 8 || v.some(x => typeof x !== "string" || !x.trim()))
-      throw new Error(at + ": steps must be 1-8 non-empty strings");
-    return v.map(x => x.trim());
-  };
-  const wantChk = new Set(chkNeed.map(x => x.i)), wantTst = new Set(tstNeed.map(x => x.i));
-  const out = { checklist: [], tests: [] };
-  (obj.checklist || []).forEach(e => {
-    if(!e || !Number.isInteger(e.i) || !wantChk.has(e.i)) throw new Error("checklist: unknown or duplicate index " + (e && e.i));
-    if(typeof e.detail !== "string" || !e.detail.trim()) throw new Error("checklist[" + e.i + "]: missing detail");
-    out.checklist.push({ i: e.i, detail: e.detail.trim(), steps: takeSteps(e.steps, "checklist[" + e.i + "]") });
-    wantChk.delete(e.i);
-  });
-  (obj.tests || []).forEach(e => {
-    if(!e || !Number.isInteger(e.i) || !wantTst.has(e.i)) throw new Error("tests: unknown or duplicate index " + (e && e.i));
-    out.tests.push({ i: e.i, steps: takeSteps(e.steps, "tests[" + e.i + "]") });
-    wantTst.delete(e.i);
-  });
-  if(wantChk.size || wantTst.size) throw new Error("guidance incomplete — " + (wantChk.size + wantTst.size) + " requested item(s) missing; regenerate");
-  return out;
-}
-
-// ONE ai() call per press: fills every checklist item still missing detail plus
-// every run-guide missing on the OPEN automation's tests. Already-guided items
-// are never regenerated. Verified write; local row re-rendered from the DB row.
-async function generateStepGuidance(stepId, autoIndex){
-  const s = byIdStep(stepId); if(!s || S.buildPlan.guideBusy) return;
-  const a = (s.workflow || [])[autoIndex];
-  const isObj = a && typeof a === "object";
-  const chkMissing = (s.checklist || []).map((c, i) => ({ i, text: c.text })).filter(x => !s.checklist[x.i].detail);
-  const tests = isObj && Array.isArray(a.tests) ? a.tests : [];
-  const guides = isObj && Array.isArray(a.test_steps) ? a.test_steps : [];
-  const tstMissing = tests.map((t, i) => ({ i, text: typeof t === "string" ? t : String(t) })).filter(x => !(guides[x.i] || []).length);
-  if(!chkMissing.length && !tstMissing.length) return;
-  S.buildPlan.guideBusy = true; setBuildPlanMsg("Generating guidance…"); renderAutomation();
-  try{
-    const payload = {
-      step: { title: s.title, detail: s.detail },
-      manifest: s.manifest || null,
-      deployment: s.deployment ? { route: s.deployment.route, changes_note: s.deployment.changes_note, parameter_values: s.deployment.parameter_values } : null,
-      automation: isObj ? { name: a.name, final_rule: a.final_rule, trigger: a.trigger || null, nodes: a.nodes || a.steps || [], tests } : null,
-      need: { checklist: chkMissing, tests: tstMissing },
-    };
-    const text = await ai({ system: guidanceSystemPrompt(), messages: [{ role: "user", content: JSON.stringify(payload) }], max_tokens: 3000 });
-    const g = parseGuidance(text, chkMissing, tstMissing);
-    const checklist = (s.checklist || []).map((c, i) => {
-      const hit = g.checklist.find(x => x.i === i);
-      return hit ? { ...c, detail: hit.detail, steps: hit.steps } : c;
-    });
-    const patch = { checklist };
-    if(tstMissing.length && isObj){
-      patch.workflow = s.workflow.map((au, idx) => {
-        if(idx !== autoIndex) return au;
-        const test_steps = tests.map((_, j) => { const hit = g.tests.find(x => x.i === j); return hit ? hit.steps : (guides[j] || []); });
-        return { ...au, test_steps };
-      });
-    }
-    const { data, error } = await sb.from("build_steps").update(patch).eq("id", stepId).select().single();
-    if(error || !data) throw new Error(error ? error.message : "no row returned");
-    Object.assign(s, data);
-    setBuildPlanMsg("Guidance generated ✓");
-  }catch(e){
-    console.error("generateStepGuidance error:", e);
-    setBuildPlanMsg("Guidance failed: " + e.message + " — nothing was saved; try again.");
-  }
-  S.buildPlan.guideBusy = false; renderAutomation();
-}
-
 // Automation detail — dark card dashboard (decision-surface tokens, as Finalize).
 // Main: Workflow card (typed node flow) → Tests card → Deployment card whose
 // sections are individually collapsible (collapsed by default — the fix for the
@@ -3335,12 +3187,11 @@ function renderEngineDetail(){
     : "";
   const nodes = isObj ? `<div class="fl-canvas">${flow}</div>` : `<div class="msg">${esc(autoName)} — no structured detail.</div>`;
   const lead = isObj && a.final_rule ? `<div class="bp-lead">${esc(a.final_rule)}</div>` : "";
-  const tests = isObj ? renderDetailTests(a, s, pv.autoIndex) : "";
-  // ✨ button shows only while something still lacks guidance (checklist detail
-  // or a run-guide on the open automation's tests) — filled items never regenerate
-  const needsGuide = (s.checklist || []).some(c => !c.detail)
-    || (isObj && (Array.isArray(a.tests) ? a.tests : []).some((t, j) => !(((Array.isArray(a.test_steps) ? a.test_steps : [])[j]) || []).length));
-  const genBtn = needsGuide ? `<button class="bp-gen" onclick="generateStepGuidance('${s.id}', ${pv.autoIndex})" ${S.buildPlan.guideBusy?"disabled":""}>${S.buildPlan.guideBusy?"Generating…":"✨ Generate guidance"}</button>` : "";
+  const tests = isObj ? renderAutomationTests(a, key) : "";
+  const checklist = (s.checklist || []).map((c, i) => `
+    <label style="display:block;font-size:13px;margin:2px 0">
+      <input type="checkbox" ${c.done?"checked":""} onchange="toggleStepChecklist('${s.id}',${i})"> ${c.done ? `<s>${esc(c.text)}</s>` : esc(c.text)}
+    </label>`).join("");
   return `
     <div class="bp-detail">
       <div class="bp-detail-head">
@@ -3350,11 +3201,11 @@ function renderEngineDetail(){
       <div class="bp-detail-grid">
         <div class="bp-main">
           <div class="bp-card"><h4>Workflow</h4>${lead}${nodes}</div>
-          ${tests ? `<div class="bp-card"><h4>Tests</h4>${tests}</div>` : ""}
+          ${tests ? `<div class="bp-card">${tests}</div>` : ""}
           ${s.deployment ? renderDeploymentCard(s.deployment, key) : ""}
         </div>
         <aside class="bp-side">
-          <div class="bp-card"><div class="bp-card-head"><h4>Set up checklist</h4>${genBtn}</div>${renderSetupChecklist(s)}</div>
+          <div class="bp-card"><h4>Checklist</h4>${checklist || `<div class="msg">No checklist items.</div>`}</div>
           <div class="bp-card"><h4>Notes</h4>
             <textarea class="notes" oninput="this.style.height='auto';this.style.height=(this.scrollHeight+2)+'px'" onchange="saveStepNotes('${s.id}', this.value)">${esc(s.notes || "")}</textarea>
           </div>
