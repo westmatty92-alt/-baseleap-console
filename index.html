@@ -215,17 +215,17 @@
   .fl-conn{width:2px;height:34px;background:rgba(255,255,255,.26);margin:0 auto;position:relative}
   .fl-conn::after{content:"";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:9px;height:9px;border-radius:50%;background:#2b2b44;border:1.5px solid rgba(255,255,255,.4)}
   .fl-conn-x{height:16px}
-  /* guard: sits on the spine; its "trip → End" peels off to the LEFT (absolutely
-     positioned so the pass path keeps flowing straight down — no rightward drift) */
-  .fl-guardwrap{position:relative;width:max-content;margin:0 auto}
-  .fl-trip{position:absolute;top:50%;right:calc(100% + 46px);transform:translateY(-50%);display:flex;flex-direction:column;align-items:center;gap:2px;white-space:nowrap}
-  .fl-trip::before{content:"";position:absolute;top:50%;left:100%;width:46px;height:2px;background:rgba(255,255,255,.26)}
-  .fl-branches{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start}
-  .fl-guard-split{grid-template-columns:minmax(120px,auto) 1fr}   /* trip side is just an End pill; the continuing flow gets the width */
-  .fl-branch{min-width:0}
-  .fl-pill{width:max-content;margin:0 auto;padding:3px 13px;border-radius:11px;font-size:10px;font-weight:800;letter-spacing:.5px}
-  .fl-yes{background:rgba(0,212,160,.14);color:var(--volt);border:1px solid rgba(0,212,160,.45)}
-  .fl-no{background:rgba(231,90,124,.14);color:var(--node-guard);border:1px solid rgba(231,90,124,.45)}
+  /* guard / condition = a real If-Else FORK: one branch column per condition + a
+     None/else column carrying the main flow. Bracket connector via ::after (bar) +
+     ::before (stub) on each column — continuous across, trimmed at the outer edges. */
+  .fl-fork{display:flex;justify-content:center;align-items:flex-start}
+  .fl-b{position:relative;padding:16px 13px 0;display:flex;flex-direction:column;align-items:center;min-width:0}
+  .fl-b::after{content:"";position:absolute;top:0;left:0;right:0;height:2px;background:rgba(255,255,255,.26)}
+  .fl-b:first-child::after{left:50%}
+  .fl-b:last-child::after{right:50%}
+  .fl-b::before{content:"";position:absolute;top:0;left:50%;transform:translateX(-50%);width:2px;height:14px;background:rgba(255,255,255,.26)}
+  .fl-blabel{width:max-content;padding:3px 13px;border-radius:11px;font-size:10px;font-weight:800;letter-spacing:.4px;white-space:nowrap;background:rgba(231,90,124,.14);color:var(--node-guard);border:1px solid rgba(231,90,124,.45)}
+  .fl-blabel-go{background:rgba(0,212,160,.14);color:var(--volt);border:1px solid rgba(0,212,160,.45)}
   /* terminal pills (End / Stop) — filled brand pills, echoing the reference's Exit pills */
   .fl-end{display:block;width:max-content;margin:0 auto;padding:8px 22px;border-radius:22px;background:var(--volt);border:1px solid var(--volt);color:#08131b;font-size:11px;font-weight:800;letter-spacing:.3px}
   /* node-info popup — a node's full description on click (dark hex bg, not a CSS var: the modal-transparency rule) */
@@ -1534,8 +1534,12 @@ const REVIEW_ENGINE = {
         nodes: [
           { type: "trigger", config: "Client completion signal (per completion_trigger): appointment businesses = Appointment Status Showed (normal calendars; NOT Service Booking) · pipeline businesses = Pipeline Stage changed to the client's completion stage",
             deploy: { input: "Wire to THIS client's completion event — Appointment Status = Showed (appointment businesses; normal service calendars, NOT Service Booking) OR Pipeline Stage changed to their completion stage (e.g. Job Complete / Won for contractors).", guardrail: "Fire ONLY on the verified completion signal — never on a booking, intent, cancellation, or no-show event." } },
-          { type: "guard",   config: "If tag review-requested OR review_credit_maxed present → end",
-            deploy: { guardrail: "Dedupe + cap guard — blocks a second ask and any maxed contact. Keep guard-first; never remove." } },
+          { type: "guard",   config: "Eligibility gate: end if already asked (tag review-requested) or credit maxed (tag review_credit_maxed); otherwise continue to the ask",
+            deploy: { guardrail: "Dedupe + cap guard — blocks a second ask and any maxed contact. Keep guard-first; never remove." },
+            branches: [
+              { when: "already asked", to: [{ type: "end", config: "End — already asked" }] },
+              { when: "credit maxed",  to: [{ type: "end", config: "End — maxed" }] }
+            ] },
           { type: "update",  config: "Set field Last Review Request Date = now" },
           { type: "update",  config: "Add tag review-requested" },
           { type: "wait",    config: "2–12h (per-client delay)",
@@ -2031,6 +2035,7 @@ Field rules:
 - final_rule: fill the template with THIS automation's specifics — it is the spine the nodes expand from.
 - nodes: the ordered node-by-node workflow exactly as assembled in the GHL builder. Each node = {"type","config"}; type is one of trigger|guard|wait|action|update|condition|webhook|handoff|end (webhook = external webhook-out call — never fold it into action; update = field/tag/record state change). The first node is always the trigger; the second is the guard (doctrine rule 3). condition nodes add "yes":[nodes] and "no":[nodes] branch arrays (branches may end with an end node). config is one precise sentence of settings.
 - node "deploy" (OPTIONAL, per node): the per-node setup instructions for a FUTURE client deploying this snapshot — {"input": what the operator must enter or select at this node for this client (delays, thresholds, the trigger event, coupon codes, links), "assets": copy/links/media to attach — MESSAGE-SENDING nodes only (email/SMS sends), "guardrail": what must NOT be changed here (a rule that breaks the engine if edited)}. Include ONLY the buckets that apply to that node; OMIT deploy entirely on pure state-change nodes (set field / add tag) that need no per-client input. Draw these from the SAME facts as the deployment tiers — branding → assets, business_rules numbers/the trigger → input, never_touch → guardrail — so each rule lands on the node it governs.
+- multi-branch If/Else (OPTIONAL): when a guard/condition genuinely has 3+ outcomes (GHL If/Else supports up to 5 condition branches + a None fallback), give the node a "branches" array INSTEAD of yes/no: [{"when":"this branch's condition set (AND/OR)","to":[the nodes on this branch — often ending in an end node]}]. Max 5. Do NOT include the None/else path in branches — the None path is simply the nodes that FOLLOW this node (the main flow continues there). A simple duplicate-prevention guard stays the single-condition "config":"If X → end" form (rendered as if-met/if-not-met); use branches only for real 3+-way splits.
 - manifest: classify by doctrine rule 2 — every tag the engine reads or sets and every custom field it needs, named exactly as the nodes reference them. The engine is not buildable until it declares these. A field's "object" = which GHL record it lives on: omit it for contact fields (the default); set "opportunity" only when the field genuinely belongs on the deal/opportunity record.
 - tests: the REAL test matrix for THIS automation, not generic phrases. One entry each for: the happy path end-to-end; EVERY guard (prove the duplicate-prevention actually blocks a re-fire); EVERY condition branch — the YES and the NO separately; each webhook ROUND-TRIP (it fires AND the response writes back the expected field); the exit condition (the automation stops on the right tag/state). Each test names the setup, the action, and the expected observable result.
 - deployment: the three-tier guide for FUTURE clients of this engine — branding (names/copy/links), business_rules incl. math_operations (the most-forgotten tier), never_touch (the architecture).
@@ -2139,6 +2144,15 @@ function validateNodes(nodes, at, isBranch){
       if(typeof n.deploy !== "object" || Array.isArray(n.deploy)) throw new Error(here + ": deploy must be an object");
       ["input","assets","guardrail"].forEach(k => {
         if(n.deploy[k] != null && typeof n.deploy[k] !== "string") throw new Error(here + `: deploy.${k} must be a string`);
+      });
+    }
+    if(n.branches != null){   // multi-branch If-Else: up to 5 condition branches (+ the None column is the main flow)
+      if(!Array.isArray(n.branches) || !n.branches.length) throw new Error(here + ": branches must be a non-empty array");
+      if(n.branches.length > 5) throw new Error(here + ": at most 5 condition branches (GHL If/Else limit; the None fallback is the main flow)");
+      n.branches.forEach((b, k) => {
+        if(!b || typeof b !== "object") throw new Error(`${here} branch ${k+1}: not an object`);
+        if(typeof b.when !== "string" || !b.when.trim()) throw new Error(`${here} branch ${k+1}: when (condition) missing`);
+        validateNodes(b.to, `${here} branch ${k+1} (${b.when})`, true);
       });
     }
     if(n.type === "condition"){
@@ -3009,30 +3023,47 @@ function renderNodeGraph(nodes){
     const conn = i ? `<div class="fl-conn"></div>` : "";
     if(typeof n === "string"){ html += conn + flNode("", "STEP", n); continue; }
     if(n.type === "end"){ html += conn + `<div class="fl-end">${esc(n.config || "End")}</div>`; continue; }
-    if(n.type === "guard"){
-      const parts = String(n.config || "").split("→");
-      const cond = parts[0].trim();
-      const outcome = (parts[1] || "").trim();
-      const endTxt = outcome && outcome.toLowerCase() !== "end" ? outcome : "End";
-      // Guard IS a GHL if/else fork (locked rule). Trip (condition MET) peels off to
-      // the side and dead-ends; the pass path continues straight down the SAME spine —
-      // so we render the trip as a side offshoot and `continue`, letting the remaining
-      // nodes flow inline. Cascading guards each peel their own trip, no rightward drift.
-      html += conn + `<div class="fl-guardwrap">${flNode("fl-t-guard", "GUARD", cond, n.config, n.deploy)}`
-        + `<div class="fl-trip"><div class="fl-pill fl-no">if met</div><div class="fl-conn fl-conn-x"></div><div class="fl-end">${esc(endTxt)}</div></div></div>`;
-      if(i === nodes.length - 1) html += `<div class="fl-conn"></div><div class="fl-end">End</div>`;   // guard last → pass path terminates
-      continue;
+    // GUARD / multi-branch If-Else: a fork with one column per condition plus a
+    // None column that carries the MAIN flow (the remaining sibling nodes). A guard
+    // WITH a `branches` array renders those conditions (up to 5) + None (6 total);
+    // a legacy single-condition guard (`config:"If X → end"`) is the 2-branch case.
+    // The remainder is consumed by the None column, so we return.
+    if(n.type === "guard" || (Array.isArray(n.branches) && n.branches.length)){
+      const elseFlow = renderNodeGraph(nodes.slice(i + 1));
+      let cols;
+      if(Array.isArray(n.branches) && n.branches.length){
+        cols = n.branches.map(b => ({ label: b.when || "if", to: b.to }));
+        cols.push({ label: "if none", to: null, html: elseFlow, tone: "go" });
+      } else {
+        const parts = String(n.config || "").split("→");
+        const outcome = (parts[1] || "").trim();
+        const endTxt = outcome && outcome.toLowerCase() !== "end" ? outcome : "End";
+        cols = [
+          { label: "if met",     to: [{ type: "end", config: endTxt }] },
+          { label: "if not met", to: null, html: elseFlow, tone: "go" }
+        ];
+      }
+      html += conn + flNode("fl-t-guard", "GUARD", n.config || "", n.config || "", n.deploy) + renderFork(cols);
+      return html;
     }
     const chip = n.type === "condition" ? "IF" : String(n.type || "step").toUpperCase();
     html += conn + flNode("fl-t-" + esc(n.type || "step"), chip, n.config || "", n.config || "", n.deploy);
-    if(n.type === "condition")
-      html += `<div class="fl-conn"></div>
-        <div class="fl-branches">
-          <div class="fl-branch"><div class="fl-pill fl-yes">YES</div><div class="fl-conn"></div>${renderNodeGraph(n.yes)}</div>
-          <div class="fl-branch"><div class="fl-pill fl-no">NO</div><div class="fl-conn"></div>${renderNodeGraph(n.no)}</div>
-        </div>`;
+    if(n.type === "condition")   // binary If — both sides are explicit flows (no None column)
+      html += renderFork([{ label: "yes", to: n.yes, tone: "go" }, { label: "no", to: n.no }]);
   }
   return html;
+}
+
+// A fork = the vertical connector into a bracket of branch columns. Each column:
+// { label, tone("go"→green else red), and its downstream flow as `to` (nodes) or
+// pre-rendered `html` }. An empty branch shows a single End pill.
+function renderFork(cols){
+  const inner = cols.map(c => {
+    const flow = c.html != null ? c.html : renderNodeGraph(c.to && c.to.length ? c.to : [{ type: "end", config: "End" }]);
+    return `<div class="fl-b"><div class="fl-blabel${c.tone === "go" ? " fl-blabel-go" : ""}">${esc(c.label)}</div>`
+      + `<div class="fl-conn fl-conn-x"></div>${flow || `<div class="fl-end">End</div>`}</div>`;
+  }).join("");
+  return `<div class="fl-conn"></div><div class="fl-fork">${inner}</div>`;
 }
 
 /* Nested disclosure (3 levels): step depth → collapsed automation list (01 · Name)
