@@ -1532,7 +1532,7 @@ const REVIEW_ENGINE = {
         trigger: { type: "Client completion signal (client_parameter completion_trigger): Appointment Status = Showed OR Pipeline Stage changed to [completion stage]", filters: { rule: "the client's verified-completion event only — never a booking/intent event; appointment shape excludes Service Booking calendars" } },
         final_rule: "When the client's completion signal fires (appointment marked Showed, or pipeline stage moved to Job Complete), if the client wasn't already asked, wait a delay, then send the review ask by email (+ optional SMS) — never on booking, cancellation, or no-show events.",
         nodes: [
-          { type: "trigger", config: "Client completion signal (per completion_trigger): appointment businesses = Appointment Status Showed (normal calendars; NOT Service Booking) · pipeline businesses = Pipeline Stage changed to the client's completion stage",
+          { type: "trigger", action: "Appointment / Pipeline Stage", config: "Client completion signal (per completion_trigger): appointment businesses = Appointment Status Showed (normal calendars; NOT Service Booking) · pipeline businesses = Pipeline Stage changed to the client's completion stage",
             deploy: { input: "Wire to THIS client's completion event — Appointment Status = Showed (appointment businesses; normal service calendars, NOT Service Booking) OR Pipeline Stage changed to their completion stage (e.g. Job Complete / Won for contractors).", guardrail: "Fire ONLY on the verified completion signal — never on a booking, intent, cancellation, or no-show event." } },
           { type: "guard",   config: "Eligibility gate: end if already asked (tag review-requested) or credit maxed (tag review_credit_maxed); otherwise continue to the ask",
             deploy: { guardrail: "Dedupe + cap guard — blocks a second ask and any maxed contact. Keep guard-first; never remove." },
@@ -2034,6 +2034,7 @@ Field rules:
 - spec: catalog-grade — a builder executes it without more research. Trigger semantics match the business event exactly; design every trigger for re-entry/duplicates (processed-state tags, find-before-create); value-awarding steps gate on Payment Received.
 - final_rule: fill the template with THIS automation's specifics — it is the spine the nodes expand from.
 - nodes: the ordered node-by-node workflow exactly as assembled in the GHL builder. Each node = {"type","config"}; type is one of trigger|guard|wait|action|update|condition|webhook|handoff|end (webhook = external webhook-out call — never fold it into action; update = field/tag/record state change). The first node is always the trigger; the second is the guard (doctrine rule 3). condition nodes add "yes":[nodes] and "no":[nodes] branch arrays (branches may end with an end node). config is one precise sentence of settings.
+- node "action" (the EXACT native GHL step name for that node, from the Trigger/Action vocabulary — e.g. "Send Email", "Send SMS", "Add Contact Tag", "Update Contact Field", "Update Opportunity", "Wait", "If/Else", "Inbound Webhook", "Appointment Status", "Pipeline Stage Changed", "Contact Tag"): set it whenever you know the native step; it becomes the node's label in the graph (config stays the plain-language "what it does"). Omit only when no native step fits.
 - node "deploy" (OPTIONAL, per node): the per-node setup instructions for a FUTURE client deploying this snapshot — {"input": what the operator must enter or select at this node for this client (delays, thresholds, the trigger event, coupon codes, links), "assets": copy/links/media to attach — MESSAGE-SENDING nodes only (email/SMS sends), "guardrail": what must NOT be changed here (a rule that breaks the engine if edited)}. Include ONLY the buckets that apply to that node; OMIT deploy entirely on pure state-change nodes (set field / add tag) that need no per-client input. Draw these from the SAME facts as the deployment tiers — branding → assets, business_rules numbers/the trigger → input, never_touch → guardrail — so each rule lands on the node it governs.
 - multi-branch If/Else (OPTIONAL): when a guard/condition genuinely has 3+ outcomes (GHL If/Else supports up to 5 condition branches + a None fallback), give the node a "branches" array INSTEAD of yes/no: [{"when":"this branch's condition set (AND/OR)","to":[the nodes on this branch — often ending in an end node]}]. Max 5. Do NOT include the None/else path in branches — the None path is simply the nodes that FOLLOW this node (the main flow continues there). A simple duplicate-prevention guard stays the single-condition "config":"If X → end" form (rendered as if-met/if-not-met); use branches only for real 3+-way splits.
 - manifest: classify by doctrine rule 2 — every tag the engine reads or sets and every custom field it needs, named exactly as the nodes reference them. The engine is not buildable until it declares these. A field's "object" = which GHL record it lives on: omit it for contact fields (the default); set "opportunity" only when the field genuinely belongs on the deal/opportunity record.
@@ -2140,6 +2141,7 @@ function validateNodes(nodes, at, isBranch){
     if(!n || typeof n !== "object") throw new Error(here + ": not an object");
     if(!NODE_TYPES.includes(n.type)) throw new Error(here + `: type must be one of ${NODE_TYPES.join("|")}`);
     if(typeof n.config !== "string" || !n.config.trim()) throw new Error(here + ": config missing");
+    if(n.action != null && (typeof n.action !== "string" || !n.action.trim())) throw new Error(here + ": action (GHL name) must be a non-empty string");
     if(n.deploy != null){   // optional per-node deploy bucket — lenient: object of string fields
       if(typeof n.deploy !== "object" || Array.isArray(n.deploy)) throw new Error(here + ": deploy must be an object");
       ["input","assets","guardrail"].forEach(k => {
@@ -2923,25 +2925,79 @@ function renderNodeRows(nodes){
   }).join("");
 }
 
-// The node's short NAME = its config's leading action phrase (before the first
-// " — ", " (", or " → " detail), e.g. "Send review request email", "Add tag
-// review-requested", "2–12h". Anything still long is CSS-ellipsised. Full config
-// lives in the popup.
+// Fallback name = config's leading action phrase (before the first " — ", " (",
+// or " → "), e.g. "Send review request email", "Add tag review-requested", "2–12h".
 function nodeName(config){
   const c = String(config || "").trim();
   return c.split(/\s[—–-]\s|\s\(|\s→\s/)[0].trim() || c;
 }
-// One flow node: its ACTION NAME (from config), colored by type. The full config
-// plus this node's deploy buckets ride in data-* and open in the click popup;
-// data-t keeps the TYPE for the popup chip. `deploy` = optional { input, assets, guardrail }.
-function flNode(cls, chip, preview, full, deploy){
-  const f = full == null ? preview : full;
-  const label = nodeName(f) || (chip === "IF" ? "If" : chip.charAt(0) + chip.slice(1).toLowerCase());
+// The node's canonical GHL action/trigger NAME — an explicit node.action if the
+// plan declared one, else classified from type + config against the GHL vocabulary
+// (.claude/skills/ghl-automation). Returns null when it can't tell (caller falls
+// back to nodeName). This is a display label only — never a lookup key.
+function ghlActionName(n){
+  if(n && typeof n.action === "string" && n.action.trim()) return n.action.trim();
+  const t = n && n.type, c = String((n && n.config) || "").toLowerCase();
+  const any = (...ws) => ws.some(w => c.includes(w));
+  if(t === "wait") return "Wait";
+  if(t === "guard" || t === "condition") return "If/Else";
+  if(t === "webhook") return any("custom") ? "Custom Webhook" : "Webhook";
+  if(t === "handoff") return any("go to", "goto") ? "Go To" : "Add to Workflow";
+  if(t === "trigger"){
+    if(any("inbound webhook")) return "Inbound Webhook";
+    if(any("appointment status", "showed", "no-show")) return "Appointment Status";
+    if(any("pipeline stage", "stage changed", "stage moved", "job complete")) return "Pipeline Stage Changed";
+    if(any("opportunity status", "won", "lost")) return "Opportunity Status Changed";
+    if(any("tag added", "tag: ", "contact tag")) return "Contact Tag";
+    if(any("form submit")) return "Form Submitted";
+    if(any("payment received", "payment")) return "Payment Received";
+    if(any("invoice")) return "Invoice";
+    if(any("coupon")) return "Coupon Redeemed";
+    if(any("order")) return "Order Form Submission";
+    if(any("email open", "opened", "clicked", "email event")) return "Email Events";
+    if(any("link click")) return "Trigger Link Clicked";
+    if(any("contact created", "new contact")) return "Contact Created";
+    if(any("webhook")) return "Inbound Webhook";
+    return "Workflow Trigger";
+  }
+  if(t === "action"){
+    if(any("email")) return "Send Email";                     // the medium wins: "send review request email" = Send Email
+    if(any("sms", "text message")) return "Send SMS";
+    if(any("whatsapp")) return "WhatsApp";
+    if(any("voicemail")) return "Voicemail";
+    if(any("review request")) return "Review Request";        // only the native Review Request primitive (no email/SMS medium named)
+    if(any("internal notification", "notify", "alert the team")) return "Internal Notification";
+    if(any("slack")) return "Slack";
+    if(any("manual call", "place call")) return "Manual Call";
+    if(any("send invoice", "invoice")) return "Send Invoice";
+    if(any("webhook")) return "Webhook";
+    return null;
+  }
+  if(t === "update"){
+    if(any("remove tag", "clear tag")) return "Remove Contact Tag";
+    if(any("add tag", "apply tag", "add the tag")) return "Add Contact Tag";
+    if(any("remove from workflow")) return "Remove from Workflow";
+    if(any("add to workflow", "enroll", "add to campaign")) return "Add to Workflow";
+    if(any("assign")) return "Assign to User";
+    if(any("note")) return "Add to Notes";
+    if(any("dnd")) return "DND Contact";
+    if(any("custom value")) return "Update Custom Values";
+    if(any("opportunity", "pipeline stage", "deal", "move to stage")) return "Update Opportunity";
+    if(any("appointment status")) return "Update Appointment Status";
+    return "Update Contact Field";
+  }
+  return null;
+}
+function flLabel(n){ return ghlActionName(n) || nodeName(n && n.config) || "Step"; }
+// One flow node: its canonical GHL action/trigger NAME (label + popup chip),
+// colored by type. The full config ("what it does") + deploy buckets ride in
+// data-* and open in the click popup.
+function flNode(cls, name, config, deploy){
   const d = deploy && typeof deploy === "object" ? deploy : {};
   const da = (k, v) => v ? ` ${k}="${escAttr(v)}"` : "";
-  return `<div class="fl-node ${cls}" data-t="${escAttr(chip)}" data-d="${escAttr(f)}"`
+  return `<div class="fl-node ${cls}" data-t="${escAttr(name)}" data-d="${escAttr(config || "")}"`
     + da("data-input", d.input) + da("data-assets", d.assets) + da("data-guard", d.guardrail)
-    + ` onclick="showNodeInfo(this)"><span class="fl-lbl">${esc(label)}</span></div>`;
+    + ` onclick="showNodeInfo(this)"><span class="fl-lbl">${esc(name)}</span></div>`;
 }
 // One labeled popup section — only rendered when it has content. esc() escapes
 // the (untrusted) config/deploy text; the label is a fixed string.
@@ -3027,7 +3083,7 @@ function renderNodeGraph(nodes){
   for(let i = 0; i < nodes.length; i++){
     const n = nodes[i];
     const conn = i ? `<div class="fl-conn"></div>` : "";
-    if(typeof n === "string"){ html += conn + flNode("", "STEP", n); continue; }
+    if(typeof n === "string"){ html += conn + flNode("", nodeName(n) || "Step", n); continue; }
     if(n.type === "end"){ html += conn + `<div class="fl-end">${esc(n.config || "End")}</div>`; continue; }
     // GUARD / multi-branch If-Else: a fork with one column per condition plus a
     // None column that carries the MAIN flow (the remaining sibling nodes). A guard
@@ -3049,11 +3105,10 @@ function renderNodeGraph(nodes){
           { label: "if not met", to: null, html: elseFlow, tone: "go" }
         ];
       }
-      html += conn + flNode("fl-t-guard", "GUARD", n.config || "", n.config || "", n.deploy) + renderFork(cols);
+      html += conn + flNode("fl-t-guard", flLabel(n), n.config || "", n.deploy) + renderFork(cols);
       return html;
     }
-    const chip = n.type === "condition" ? "IF" : String(n.type || "step").toUpperCase();
-    html += conn + flNode("fl-t-" + esc(n.type || "step"), chip, n.config || "", n.config || "", n.deploy);
+    html += conn + flNode("fl-t-" + esc(n.type || "step"), flLabel(n), n.config || "", n.deploy);
     if(n.type === "condition")   // binary If — both sides are explicit flows (no None column)
       html += renderFork([{ label: "yes", to: n.yes, tone: "go" }, { label: "no", to: n.no }]);
   }
@@ -3377,7 +3432,8 @@ function renderEngineDetail(){
   const isObj = a && typeof a === "object";
   const autoName = a ? (typeof a === "string" ? a : (a.name || "Untitled automation")) : "";
   const key = "panel:" + s.id + ":" + pv.autoIndex;   // isolated expand namespace for Tests + deployment sections
-  const trig = isObj && a.trigger ? flNode("fl-t-trigger", "TRIGGER", a.trigger.type + (a.trigger.filters && Object.keys(a.trigger.filters).length ? " — " + JSON.stringify(a.trigger.filters) : ""), null, a.trigger.deploy) : "";
+  const trigTxt = isObj && a.trigger ? a.trigger.type + (a.trigger.filters && Object.keys(a.trigger.filters).length ? " — " + JSON.stringify(a.trigger.filters) : "") : "";
+  const trig = isObj && a.trigger ? flNode("fl-t-trigger", ghlActionName({ type:"trigger", config:trigTxt, action:a.trigger.action }) || nodeName(trigTxt), trigTxt, a.trigger.deploy) : "";
   const flow = isObj
     ? (a.nodes ? renderNodeGraph(a.nodes) : trig + (trig && (a.steps || []).length ? `<div class="fl-conn"></div>` : "") + renderNodeGraph(a.steps))
     : "";
