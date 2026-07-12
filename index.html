@@ -2063,7 +2063,7 @@ const PARAMETERIZE_CONTRACT_PROMPT = `OUTPUT — respond ONLY with valid JSON, n
 {"parameter_values":{"<declared key>":"the concrete value for THIS client"},"changes_made":"operator-readable list of every adaptation, e.g. discount set to 15%, tiers renamed Silver/Gold, field sr_referral_code → acme_referral_code","deployment_overrides":{"branding":{},"business_rules":{}}}
 Field rules:
 - parameter_values: one entry per declared client_parameter key — every key, no extras. Value = the concrete setting for this client, or "NEEDS DISCOVERY: <what to ask>" when the business context doesn't answer it.
-- changes_made: every adaptation in one plain list — this is what the operator confirms before building. Never empty.
+- changes_made: every adaptation in one plain list — this is what the operator confirms before building. Never empty: even when every parameter_value is "NEEDS DISCOVERY" and nothing concrete was adapted yet, say so explicitly (e.g. "No values adapted — all parameters pending discovery from the client") rather than returning an empty string or omitting the field.
 - deployment_overrides: ONLY the deployment-guide VALUES that change for this client (adapted math, renamed tiers/fields/tags). Echo nothing that stays as-is. never_touch is architecture — never overridden.`;
 
 const DESIGN_DOCTRINE_PROMPT = `AUTOMATION DESIGN DOCTRINE (how you decide the nodes, tags, and fields — apply BEFORE writing them):
@@ -2081,7 +2081,7 @@ const FORMULATE_CONTRACT_PROMPT = `OUTPUT — respond ONLY with valid JSON, no m
 Field rules:
 - spec: catalog-grade — a builder executes it without more research. Trigger semantics match the business event exactly; design every trigger for re-entry/duplicates (processed-state tags, find-before-create); value-awarding steps gate on Payment Received.
 - final_rule: fill the template with THIS automation's specifics — it is the spine the nodes expand from.
-- nodes: the ordered node-by-node workflow exactly as assembled in the GHL builder. Each node = {"type","config"}; type is one of trigger|guard|wait|action|update|condition|webhook|handoff|end (webhook = external webhook-out call — never fold it into action; update = field/tag/record state change). The first node is always the trigger; the second is the guard (doctrine rule 3). condition nodes add "yes":[nodes] and "no":[nodes] branch arrays (branches may end with an end node). config is one precise sentence of settings.
+- nodes: the ordered node-by-node workflow exactly as assembled in the GHL builder. Each node = {"type","config"}; type is one of trigger|guard|wait|action|update|condition|webhook|handoff|end (webhook = external webhook-out call — never fold it into action; update = field/tag/record state change). The first node is always the trigger; the second is the guard (doctrine rule 3). condition nodes add "yes":[nodes] and "no":[nodes] branch arrays (branches may end with an end node). A condition's "yes" AND "no" must EACH contain at least one node — a fallback-less If/Else is invalid. To model "if X → stop, otherwise continue the main flow," DO NOT use a condition with an empty "no": use a guard ("config":"If X → end"), which renders as if-met→end / if-not-met→continue; reserve condition for when BOTH outcomes have their own distinct steps. config is one precise sentence of settings.
 - node "action" (the EXACT native GHL step name for that node, from the Trigger/Action vocabulary — e.g. "Send Email", "Send SMS", "Add Contact Tag", "Update Contact Field", "Update Opportunity", "Wait", "If/Else", "Inbound Webhook", "Appointment Status", "Pipeline Stage Changed", "Contact Tag"): set it whenever you know the native step; it becomes the node's label in the graph (config stays the plain-language "what it does"). Omit only when no native step fits.
 - node "deploy" (OPTIONAL, per node): the per-node setup instructions for a FUTURE client deploying this snapshot — {"input": what the operator must enter or select at this node for this client (delays, thresholds, the trigger event, coupon codes, links), "assets": copy/links/media to attach — MESSAGE-SENDING nodes only (email/SMS sends), "guardrail": what must NOT be changed here (a rule that breaks the engine if edited)}. Include ONLY the buckets that apply to that node; OMIT deploy entirely on pure state-change nodes (set field / add tag) that need no per-client input. Draw these from the SAME facts as the deployment tiers — branding → assets, business_rules numbers/the trigger → input, never_touch → guardrail — so each rule lands on the node it governs.
 - multi-branch If/Else (OPTIONAL): when a guard/condition genuinely has 3+ outcomes (GHL If/Else supports up to 5 condition branches + a None fallback), give the node a "branches" array INSTEAD of yes/no: [{"when":"this branch's condition set (AND/OR)","to":[the nodes on this branch — often ending in an end node]}]. Max 5. Do NOT include the None/else path in branches — the None path is simply the nodes that FOLLOW this node (the main flow continues there). A simple duplicate-prevention guard stays the single-condition "config":"If X → end" form (rendered as if-met/if-not-met); use branches only for real 3+-way splits.
@@ -2125,9 +2125,13 @@ async function aiJsonWithRetry({ system, userMsg, max_tokens, validate, what }){
   const attempt = async (msg) => {
     let out;
     const raw = await ai({ system, messages: [{ role:"user", content: msg }], max_tokens });
+    // Capture the raw output on any contract failure — the throw only carries the
+    // error string, so without this the actual generation is discarded and the next
+    // investigation is blind. Logged with `what` (e.g. "parameterize (lead_response)").
     try{ out = JSON.parse(raw.replace(/```json|```/g, "").trim()); }
-    catch(e){ throw new Error("invalid JSON"); }
-    validate(out);
+    catch(e){ console.error(`[sweep] ${what} — unparseable AI output:\n`, raw); throw new Error("invalid JSON"); }
+    try{ validate(out); }
+    catch(e){ console.error(`[sweep] ${what} — validation failed (${e.message}); raw output:\n`, raw); throw e; }
     return out;
   };
   try{ return await attempt(userMsg); }
