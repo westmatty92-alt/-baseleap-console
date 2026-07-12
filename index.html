@@ -2732,6 +2732,20 @@ async function generateBuildPlan(){
   S.buildPlan.generating = false; renderAutomation();
 }
 
+// "Generate new plan" — append-only regenerate. Clears the LOADED plan locally
+// (never deletes the DB row: the old build_plans row + its setup_runs audit stay
+// intact — that FK is RESTRICT precisely so audit is never destroyed). Re-enters
+// generation; saving appends a NEW build_plans row that loadBuildPlanData then
+// treats as latest. The prior plan's setup-run history stays tied to the prior
+// plan id by design (audit records what ran against THAT plan). Nothing is written
+// until the operator saves the draft, so cancelling changes nothing on disk.
+function regenerateBuildPlan(){
+  if(S.buildPlan.generating) return;
+  if(!confirm("Generate a new build plan?\n\nThe current saved plan stays in the database and its Setup Agent history is preserved. A new plan is created only when you save the draft — it then supersedes this one on next load.")) return;
+  S.buildPlan.plan = null; S.buildPlan.steps = [];   // local only — no DB delete
+  generateBuildPlan();
+}
+
 // Draft steps → build_steps rows. Local refs become real UUIDs minted client-side,
 // so depends_on UUID[] resolves inside ONE atomic batch insert.
 function draftStepRows(draft, gaps, planId, op){
@@ -3470,6 +3484,7 @@ function renderSavedPlan(){
       <div class="phase-t">${esc(p.title || "Untitled plan")}</div>
       <div class="msg">${esc(p.summary || "")}</div>
       <div class="msg" style="margin-top:6px">${done} of ${steps.length} steps done</div>
+      <div style="margin-top:10px"><button class="btn-ghost" style="width:auto" onclick="regenerateBuildPlan()" ${S.buildPlan.generating?"disabled":""}>${S.buildPlan.generating?"Generating…":"Generate new plan"}</button></div>
     </div>`;
   // CRM always shown; App / Agent Builder only when steps of that track exist.
   const sections = TRACK_ORDER
