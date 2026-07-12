@@ -2663,7 +2663,11 @@ function parseAndOrderPlan(raw, gaps, sweep){
   p.steps.forEach(s => { s.depends_on = [...new Set(s.depends_on)]; });  // dupes would corrupt indegree counts
   injectManifestSetupSteps(p, gaps, sweep);   // after validation (AI steps only), before the sort (injected refs order like any step)
   const steps = orderPlanSteps(p.steps, gaps).map(s => ({
-    ...s, title: s.title.trim(), detail: s.detail.trim(), checklist: s.checklist.map(c => c.trim()),
+    ...s, title: s.title.trim(), detail: s.detail.trim(),
+    // AI steps carry string checklist items; injected setup steps carry {text, how}
+    // objects — trim either shape, keep the object form for draftStepRows to normalize.
+    checklist: s.checklist.map(c => typeof c === "string" ? c.trim()
+      : { ...c, text: String(c.text || "").trim(), how: c.how ? String(c.how).trim() : c.how }),
   }));
   // coverage counts AUTOMATION steps only — an injected setup step must never mask a missing engine step
   const covered = new Set(steps.filter(s => s.agent === "automation").map(s => s.gap_ref).filter(r => r !== null));
