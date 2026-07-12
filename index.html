@@ -188,6 +188,10 @@
   .bp-main,.bp-side{display:flex;flex-direction:column;gap:16px;min-width:0}
   .bp-card{background:var(--depth);border:1px solid var(--d-line);border-radius:12px;padding:16px 18px;box-shadow:0 2px 10px rgba(0,0,0,.3),inset 0 1px 0 rgba(255,255,255,.04)}
   .bp-card h4{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--volt);margin:0 0 10px}
+  /* instructional checklist item: label + its "how to do this in GHL" sub-text */
+  .bp-ck{margin:0 0 10px}
+  .bp-ck-lbl{display:block;font-size:13px;font-weight:600;color:var(--d-text)}
+  .bp-ck-how{font-size:12px;line-height:1.5;color:var(--d-muted);margin:3px 0 0 22px}
   .bp-lead{font-size:14px;color:var(--d-muted);line-height:1.55;margin:0 0 12px}
   .bp-detail .msg{color:var(--d-muted)}
   .bp-detail .mf-line{color:var(--d-text)}
@@ -242,6 +246,12 @@
   .ni-sec-label{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;font-weight:700;margin-bottom:6px;color:var(--volt)}
   .ni-sec.warn .ni-sec-label{color:#EF9F27}
   .ni-sec-body{font-size:15px;line-height:1.55;color:var(--d-text);white-space:pre-wrap}
+  /* "This client's value" — the concrete per-client setting, Volt-tinted so it reads as data, not instruction */
+  .ni-cv .ni-sec-body{background:rgba(0,212,160,.08);border:1px solid rgba(0,212,160,.28);border-radius:9px;padding:10px 12px}
+  .ni-cv-row{display:flex;gap:12px;align-items:baseline;padding:3px 0}
+  .ni-cv-k{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--volt);font-weight:700;min-width:120px;flex:0 0 auto}
+  .ni-cv-val{color:var(--d-text)}
+  .ni-cv-tbd{color:#EF9F27;font-weight:600}
   /* node-graph zoom: scaled inner content in a scroll viewport, pinned controls */
   .bp-card-graph{position:relative}
   .fl-viewport{position:relative;overflow:hidden;max-height:70vh;background-image:radial-gradient(rgba(255,255,255,.05) 1px,transparent 1px);background-size:16px 16px;border-radius:8px;cursor:grab;user-select:none}
@@ -1533,7 +1543,7 @@ const REVIEW_ENGINE = {
         final_rule: "When the client's completion signal fires (appointment marked Showed, or pipeline stage moved to Job Complete), if the client wasn't already asked, wait a delay, then send the review ask by email (+ optional SMS) — never on booking, cancellation, or no-show events.",
         nodes: [
           { type: "trigger", action: "Appointment / Pipeline Stage", config: "Client completion signal (per completion_trigger): appointment businesses = Appointment Status Showed (normal calendars; NOT Service Booking) · pipeline businesses = Pipeline Stage changed to the client's completion stage",
-            deploy: { input: "Wire to THIS client's completion event — Appointment Status = Showed (appointment businesses; normal service calendars, NOT Service Booking) OR Pipeline Stage changed to their completion stage (e.g. Job Complete / Won for contractors).", guardrail: "Fire ONLY on the verified completion signal — never on a booking, intent, cancellation, or no-show event." } },
+            deploy: { param: "completion_trigger", input: "Wire to THIS client's completion event — Appointment Status = Showed (appointment businesses; normal service calendars, NOT Service Booking) OR Pipeline Stage changed to their completion stage (e.g. Job Complete / Won for contractors).", guardrail: "Fire ONLY on the verified completion signal — never on a booking, intent, cancellation, or no-show event." } },
           { type: "guard",   config: "Eligibility gate: end if already asked (tag review-requested) or credit maxed (tag review_credit_maxed); otherwise continue to the ask",
             deploy: { guardrail: "Dedupe + cap guard — blocks a second ask and any maxed contact. Keep guard-first; never remove." },
             branches: [
@@ -1543,13 +1553,25 @@ const REVIEW_ENGINE = {
           { type: "update",  config: "Set field Last Review Request Date = now" },
           { type: "update",  config: "Add tag review-requested" },
           { type: "wait",    config: "2–12h (per-client delay)",
-            deploy: { input: "Set the delay between the completion signal and the ask (2–12h for this client)." } },
+            deploy: { param: "request_delay", input: "Set the delay between the completion signal and the ask (2–12h for this client)." } },
           { type: "action",  config: "Send review request email — primary + secondary platform links, one CTA",
-            deploy: { input: "Insert this client's live review links (primary + secondary platform — Google + Facebook default, or Google + HomeStars / Yelp).", assets: "Attach the client's review-request email copy; send from their authenticated subdomain; keep it to one CTA (the review link as the primary action).", guardrail: "One ask per completion — don't add extra sends here." } },
+            deploy: { params: ["review_links", "email_copy"], input: "Insert this client's live review links (primary + secondary platform — Google + Facebook default, or Google + HomeStars / Yelp).", assets: "Attach the client's review-request email copy; send from their authenticated subdomain; keep it to one CTA (the review link as the primary action).", guardrail: "One ask per completion — don't add extra sends here.",
+              tasks: [
+                { text: "Build the branded review-request email template",
+                  how: "GHL → Marketing → Emails → Templates: build the review-request email as branded HTML (logo, brand colors, ONE CTA = the review link). Build a matching thank-you template for the reward emails. Select these templates in every Send Email node in this workflow." },
+                { text: "Retrieve the client's live review URLs",
+                  how: "Get the client's live Google review link from their Google Business Profile (Reviews → 'Get more reviews' → copy link), plus any secondary platform (Facebook / HomeStars / Yelp). Paste into the email's CTA; verify each opens the write-a-review screen." },
+                { text: "Authenticate the email sending subdomain",
+                  how: "Verify the client's dedicated sending subdomain (GHL → Settings → Email Services): add the DKIM/SPF/return-path DNS records and confirm 'verified'. Send review requests from this subdomain so they reach the inbox." }
+              ] } },
           { type: "wait",    config: "Short delay (only when the optional SMS is enabled)",
             deploy: { input: "Only when the optional SMS is enabled — set the short delay before the SMS goes out." } },
           { type: "action",  config: "Send review request SMS (optional)",
-            deploy: { input: "Optional — attach the client's review-request SMS copy.", assets: "Send from the client's A2P-approved number." } },
+            deploy: { param: "sms_copy", input: "Optional — attach the client's review-request SMS copy.", assets: "Send from the client's A2P-approved number.",
+              tasks: [
+                { text: "Register the SMS number for A2P (only if SMS enabled)",
+                  how: "If the optional SMS is on, register the client's sending number for A2P 10DLC (GHL → Settings → Phone Numbers → trust center) and wait for approval before sending. Unregistered numbers get carrier-filtered." }
+              ] } },
           { type: "end",     config: "Stop" }
         ],
         tests: [
@@ -1572,20 +1594,29 @@ const REVIEW_ENGINE = {
             deploy: { guardrail: "Per-platform dedupe — one credit per platform; never remove." } },
           { type: "update",  config: "Set Google Review Completed = Yes" },
           { type: "update",  config: "Review Credit Balance += $15",
-            deploy: { input: "Credit per verified review = $15 for this client (set the amount)." } },
-          { type: "update",  config: "Review Credits Earned (Lifetime) += $15" },
+            deploy: { param: "credit_per_review", input: "Credit per verified review = $15 for this client (set the amount)." } },
+          { type: "update",  config: "Review Credits Earned (Lifetime) += $15",
+            deploy: { param: "credit_per_review" } },
           { type: "condition", config: "Review Credits Earned (Lifetime) >= $30?",
-            deploy: { input: "Hard lifetime cap = $30 for this client (set the amount).", guardrail: "The cap prevents over-crediting — never raise or remove without sign-off." },
+            deploy: { param: "lifetime_cap", input: "Hard lifetime cap = $30 for this client (set the amount).", guardrail: "The cap prevents over-crediting — never raise or remove without sign-off." },
             yes: [
               { type: "update", config: "Set Review Incentive Status = Maxed" },
               { type: "update", config: "Add tag review_credit_maxed" },
               { type: "action", config: "Send thank-you email with coupon (REVIEW15/REVIEW30)",
-                deploy: { input: "Insert the client's Stripe coupon codes (REVIEW15 / REVIEW30 pattern — must exist in Stripe first).", assets: "Attach the client's thank-you email copy." } },
+                deploy: { params: ["coupon_codes", "email_copy"], input: "Insert the client's review coupon codes (REVIEW15 / REVIEW30 pattern — must exist in the checkout's coupon dashboard first; see the setup task).", assets: "Attach the client's thank-you email copy.",
+                  tasks: [
+                    { text: "Create the review coupons — PREREQUISITE",
+                      how: "First confirm how this client checks out. GHL-native funnel or order form (the common case): create the coupons in GHL → Payments → Coupons (REVIEW15 = $15 off, REVIEW30 = $30 off, or the client's amounts) — the customer enters the code on the GHL checkout page and GHL applies it. GHL Payments runs on Stripe as the processor, so make sure the products exist/sync to Stripe, but create the COUPON in GHL, not the Stripe dashboard. Only if this client checks out through raw Stripe Checkout (no GHL order form) do you create the coupon in Stripe → Products → Coupons instead. Either way the coupon MUST exist before the redemption automation is wired." }
+                  ] } },
               { type: "end",    config: "Stop" }
             ],
             no: [
               { type: "action", config: "Send thank-you email with coupon (REVIEW15/REVIEW30)",
-                deploy: { input: "Insert the client's Stripe coupon codes (REVIEW15 / REVIEW30 pattern — must exist in Stripe first).", assets: "Attach the client's thank-you email copy." } },
+                deploy: { params: ["coupon_codes", "email_copy"], input: "Insert the client's review coupon codes (REVIEW15 / REVIEW30 pattern — must exist in the checkout's coupon dashboard first; see the setup task).", assets: "Attach the client's thank-you email copy.",
+                  tasks: [
+                    { text: "Create the review coupons — PREREQUISITE",
+                      how: "First confirm how this client checks out. GHL-native funnel or order form (the common case): create the coupons in GHL → Payments → Coupons (REVIEW15 = $15 off, REVIEW30 = $30 off, or the client's amounts) — the customer enters the code on the GHL checkout page and GHL applies it. GHL Payments runs on Stripe as the processor, so make sure the products exist/sync to Stripe, but create the COUPON in GHL, not the Stripe dashboard. Only if this client checks out through raw Stripe Checkout (no GHL order form) do you create the coupon in Stripe → Products → Coupons instead. Either way the coupon MUST exist before the redemption automation is wired." }
+                  ] } },
               { type: "end",    config: "Stop" }
             ] }
         ],
@@ -1610,20 +1641,29 @@ const REVIEW_ENGINE = {
             deploy: { guardrail: "Per-platform dedupe — one credit per platform; never remove." } },
           { type: "update",  config: "Set Facebook Review Completed = Yes" },
           { type: "update",  config: "Review Credit Balance += $15",
-            deploy: { input: "Credit per verified review = $15 for this client (set the amount)." } },
-          { type: "update",  config: "Review Credits Earned (Lifetime) += $15" },
+            deploy: { param: "credit_per_review", input: "Credit per verified review = $15 for this client (set the amount)." } },
+          { type: "update",  config: "Review Credits Earned (Lifetime) += $15",
+            deploy: { param: "credit_per_review" } },
           { type: "condition", config: "Review Credits Earned (Lifetime) >= $30?",
-            deploy: { input: "Hard lifetime cap = $30 for this client (set the amount).", guardrail: "The cap prevents over-crediting — never raise or remove without sign-off." },
+            deploy: { param: "lifetime_cap", input: "Hard lifetime cap = $30 for this client (set the amount).", guardrail: "The cap prevents over-crediting — never raise or remove without sign-off." },
             yes: [
               { type: "update", config: "Set Review Incentive Status = Maxed" },
               { type: "update", config: "Add tag review_credit_maxed" },
               { type: "action", config: "Send thank-you email with coupon (REVIEW15/REVIEW30)",
-                deploy: { input: "Insert the client's Stripe coupon codes (REVIEW15 / REVIEW30 pattern — must exist in Stripe first).", assets: "Attach the client's thank-you email copy." } },
+                deploy: { params: ["coupon_codes", "email_copy"], input: "Insert the client's review coupon codes (REVIEW15 / REVIEW30 pattern — must exist in the checkout's coupon dashboard first; see the setup task).", assets: "Attach the client's thank-you email copy.",
+                  tasks: [
+                    { text: "Create the review coupons — PREREQUISITE",
+                      how: "First confirm how this client checks out. GHL-native funnel or order form (the common case): create the coupons in GHL → Payments → Coupons (REVIEW15 = $15 off, REVIEW30 = $30 off, or the client's amounts) — the customer enters the code on the GHL checkout page and GHL applies it. GHL Payments runs on Stripe as the processor, so make sure the products exist/sync to Stripe, but create the COUPON in GHL, not the Stripe dashboard. Only if this client checks out through raw Stripe Checkout (no GHL order form) do you create the coupon in Stripe → Products → Coupons instead. Either way the coupon MUST exist before the redemption automation is wired." }
+                  ] } },
               { type: "end",    config: "Stop" }
             ],
             no: [
               { type: "action", config: "Send thank-you email with coupon (REVIEW15/REVIEW30)",
-                deploy: { input: "Insert the client's Stripe coupon codes (REVIEW15 / REVIEW30 pattern — must exist in Stripe first).", assets: "Attach the client's thank-you email copy." } },
+                deploy: { params: ["coupon_codes", "email_copy"], input: "Insert the client's review coupon codes (REVIEW15 / REVIEW30 pattern — must exist in the checkout's coupon dashboard first; see the setup task).", assets: "Attach the client's thank-you email copy.",
+                  tasks: [
+                    { text: "Create the review coupons — PREREQUISITE",
+                      how: "First confirm how this client checks out. GHL-native funnel or order form (the common case): create the coupons in GHL → Payments → Coupons (REVIEW15 = $15 off, REVIEW30 = $30 off, or the client's amounts) — the customer enters the code on the GHL checkout page and GHL applies it. GHL Payments runs on Stripe as the processor, so make sure the products exist/sync to Stripe, but create the COUPON in GHL, not the Stripe dashboard. Only if this client checks out through raw Stripe Checkout (no GHL order form) do you create the coupon in Stripe → Products → Coupons instead. Either way the coupon MUST exist before the redemption automation is wired." }
+                  ] } },
               { type: "end",    config: "Stop" }
             ] }
         ],
@@ -1643,7 +1683,11 @@ const REVIEW_ENGINE = {
           { type: "trigger", config: "Inbound webhook: checkout.session.completed with coupon applied (Stripe)",
             deploy: { input: "Wire this client's Stripe checkout webhook (checkout.session.completed) into this automation.", guardrail: "Stripe enforces the coupon, GHL enforces eligibility — both must stay wired." } },
           { type: "guard",   config: "If coupon not REVIEW15/REVIEW30 OR tag Review Credit Eligible absent → end",
-            deploy: { guardrail: "Blocks wrong coupons and reuse — never remove; it keeps eligibility gating intact." } },
+            deploy: { param: "coupon_codes", guardrail: "Blocks wrong coupons and reuse — never remove; it keeps eligibility gating intact.",
+              tasks: [
+                { text: "Create the review coupons — PREREQUISITE",
+                  how: "First confirm how this client checks out. GHL-native funnel or order form (the common case): create the coupons in GHL → Payments → Coupons (REVIEW15 = $15 off, REVIEW30 = $30 off, or the client's amounts) — the customer enters the code on the GHL checkout page and GHL applies it. GHL Payments runs on Stripe as the processor, so make sure the products exist/sync to Stripe, but create the COUPON in GHL, not the Stripe dashboard. Only if this client checks out through raw Stripe Checkout (no GHL order form) do you create the coupon in Stripe → Products → Coupons instead. Either way the coupon MUST exist before the redemption automation is wired." }
+              ] } },
           { type: "update",  config: "Decrement Review Credit Balance by the redeemed amount" },
           { type: "update",  config: "Remove tag Review Credit Eligible" },
           { type: "update",  config: "Set Last Redemption Date = now" },
@@ -1690,7 +1734,11 @@ const REVIEW_ENGINE = {
         "Stripe enforces the coupon / GHL enforces eligibility — both stay wired"
       ],
       sop_note: "SOP 'Reviews' section attaches near-verbatim at deploy: staff verification workflow, weekly audit checklist, common mistakes, escalation, the 'Verify → add ONE tag → stop' rule."
-    }
+    },
+    setup_tasks: [
+      { text: "Attach the SOP 'Reviews' section",
+        how: "Attach the near-verbatim 'Reviews' SOP for the client's team: staff verification workflow, weekly audit checklist, common mistakes, escalation, and the 'Verify the review → add ONE tag → stop' rule. Verify-then-tag is staff's only manual action." }
+    ]
   },
   client_parameters: {
     completion_trigger: "the client's job-completion event that fires automation 1 — 'Appointment Status = Showed (normal service calendars — NOT Service Booking)' for appointment businesses, or 'Pipeline Stage changed to [stage]' (e.g. Job Complete / Won) for pipeline businesses like contractors. Never a booking/intent event.",
@@ -2328,6 +2376,34 @@ async function sweepAcceptedGaps(gaps){
 // — never emitted inside the plan JSON (token budget). mode is overridden from
 // the route; the first automation step per gap carries the artifacts + editable
 // changes note, later steps of the same gap just carry the review flag.
+// Declarative setup tasks → deduped {text, how} checklist items. Same principle
+// as the manifest injector: the CODE is generic (works for ANY engine), the tasks
+// are DECLARED in the engine spec — per node as deploy.tasks (the physical thing a
+// builder must create/retrieve/provision for THAT node) and engine-level as
+// spec.setup_tasks (whole-engine tasks like attaching the SOP). Never inferred from
+// prose. Deduped by text so a task declared on several nodes (e.g. the coupon) lands
+// once. Walks nested branch flows (branches/yes/no) so a task on a branch node counts.
+function collectSetupTasks(sw){
+  const spec = sw.spec || {};
+  const out = [], seen = new Set();
+  const push = t => {
+    if(!t || typeof t !== "object" || !t.text || !String(t.text).trim()) return;
+    const key = String(t.text).trim();
+    if(seen.has(key)) return;
+    seen.add(key);
+    out.push({ text: key, how: (t.how && String(t.how).trim()) || null });
+  };
+  const walk = nodes => (nodes || []).forEach(n => {
+    if(!n || typeof n !== "object") return;
+    if(n.deploy && Array.isArray(n.deploy.tasks)) n.deploy.tasks.forEach(push);
+    if(Array.isArray(n.branches)) n.branches.forEach(b => walk(b.to));
+    walk(n.yes); walk(n.no);
+  });
+  (spec.automations || []).forEach(a => { if(a && typeof a === "object") walk(a.nodes || a.steps); });
+  (spec.setup_tasks || []).forEach(push);
+  return out;
+}
+
 function attachSweepToDraft(draft, sweep){
   const seen = new Set();
   draft.steps.forEach(s => {
@@ -2342,6 +2418,10 @@ function attachSweepToDraft(draft, sweep){
       // (never overwrite the {tbd:true} flag injection set on manifest-less engines)
       s.workflow = (sw.spec && sw.spec.automations) || null;
       if(sw.manifest) s.manifest = sw.manifest;
+      // Declared physical setup tasks (build template, retrieve links, coupons, SOP…)
+      // prepend to the checklist — setup precedes build, so they read at the top.
+      const tasks = collectSetupTasks(sw);
+      if(tasks.length) s.checklist = [...tasks, ...(s.checklist || [])];
     }
     seen.add(s.gap_ref);
   });
@@ -2356,7 +2436,7 @@ function attachSweepToDraft(draft, sweep){
 // spec_extras = the engine spec minus what already renders structurally
 // (automations → workflow view, deployment/manifest → their own sections).
 function composeStepDeployment(sw, changesNote){
-  const { automations: _a, deployment: _d, manifest: _m, ...specExtras } = sw.spec || {};
+  const { automations: _a, deployment: _d, manifest: _m, setup_tasks: _st, ...specExtras } = sw.spec || {};
   const d = {
     route: sw.route,
     seeded_from: sw.seeded_from || null,   // depth guard: the thin stub this formulation was seeded with
@@ -2522,6 +2602,12 @@ function manifestItemKeys(m){
     .concat((m.requires_fields || []).map(fieldKey));
 }
 
+// A checklist item is either a legacy plain string (label only) or {text, how,
+// done} — an instructional item whose `how` is the real "how to do this in GHL"
+// text. These readers tolerate both so old saved rows keep rendering.
+function ckText(c){ return typeof c === "string" ? c : ((c && c.text) || ""); }
+function ckHow(c){ return typeof c === "string" ? "" : ((c && c.how) || ""); }
+
 function injectManifestSetupSteps(p, gaps, sweep){
   const owner = new Map();   // "tag:X" / "field:<object>:Y" → ref of the injected step that creates it
   const injected = [];
@@ -2538,10 +2624,17 @@ function injectManifestSetupSteps(p, gaps, sweep){
       ref, agent: "setup", mode: null, gap_ref: i, long_lead: false, injected: "manifest",
       title: `Create tags & fields — ${gaps[i].title}`,
       detail: `Generated from the engine's manifest: these ${mine.length} tag/field item${mine.length === 1 ? "" : "s"} must exist before the engine's workflows are built.`,
-      checklist: mine.map(k => k.startsWith("tag:")
-        ? "Create tag: " + k.slice(4)
-        : "Create field: " + fieldLabel((sw.manifest.requires_fields || []).find(f => fieldKey(f) === k)))
-        .concat(["Verify each item exists on a test contact"]),
+      checklist: mine.map(k => {
+        if(k.startsWith("tag:")){
+          const t = k.slice(4);
+          return { text: "Create tag: " + t,
+            how: "GHL → Settings → Tags (or add it inline on a contact): create a tag named exactly `" + t + "`. Tag names must match the workflow character-for-character." };
+        }
+        const f = (sw.manifest.requires_fields || []).find(x => fieldKey(x) === k);
+        return { text: "Create field: " + fieldLabel(f),
+          how: "GHL → Settings → Custom Fields → Add Field: name it exactly `" + f.name + "`, type " + f.type + ", on the " + fieldObject(f) + " record. The workflow reads/writes this field by its exact name." };
+      }).concat([{ text: "Verify each item exists on a test contact",
+        how: "Open a test contact and confirm every tag and field above is present and selectable before building any workflow that depends on them." }]),
       estimated_hours: 0.5, depends_on: [], manifest: sw.manifest,
     });
   });
@@ -2646,7 +2739,7 @@ function draftStepRows(draft, gaps, planId, op){
     matched_engine: s.gap_ref === null ? null : (gaps[s.gap_ref].matched_engine || null),
     title: s.title, detail: s.detail,
     notes: null,   // operator-typed text only — the auto-generated story lives in deployment (split DoD)
-    checklist: s.checklist.map(t => ({ text: t, done: false })),
+    checklist: s.checklist.map(t => typeof t === "string" ? { text: t, done: false } : { text: t.text, how: t.how || null, done: false }),
     manifest: s.manifest || null, workflow: s.workflow || null,   // Build-Plan Depth (migration 008)
     deployment: s.carries_artifacts && draft.sweep && s.gap_ref !== null && draft.sweep[s.gap_ref]
       ? composeStepDeployment(draft.sweep[s.gap_ref], s.changes_note) : null,   // migration 009
@@ -2989,13 +3082,39 @@ function ghlActionName(n){
   return null;
 }
 function flLabel(n){ return ghlActionName(n) || nodeName(n && n.config) || "Step"; }
+// The step's per-client parameter_values, set by renderEngineDetail for the
+// duration of its synchronous render so flNode can resolve a node's declared
+// param(s) → this client's concrete value. Null on draft/formulate/historical
+// rows (no dict) — nodes then show no "This client's value" section.
+let flParams = null;
+function paramLabel(k){ return String(k).replace(/_/g, " ").replace(/^./, c => c.toUpperCase()); }
+// A node declares the client_parameter(s) it resolves as deploy.param (string)
+// and/or deploy.params (array). Union them, order preserved, dedup empties out.
+function paramKeys(d){
+  const ks = [];
+  if(typeof d.param === "string" && d.param.trim()) ks.push(d.param.trim());
+  if(Array.isArray(d.params)) d.params.forEach(k => { if(typeof k === "string" && k.trim()) ks.push(k.trim()); });
+  return ks;
+}
+// Resolve those keys against flParams → [{k, v}] for the popup. Only keys that
+// have a concrete value in THIS client's dict survive (a declared-but-unanswered
+// key or a missing dict just yields nothing — the generic "What you input" still
+// tells the builder what to enter).
+function clientValues(d){
+  if(!flParams) return [];
+  return paramKeys(d).map(k => ({ k, v: flParams[k] })).filter(x => x.v != null && String(x.v).trim());
+}
 // One flow node: its canonical GHL action/trigger NAME (label + popup chip),
-// colored by type. The full config ("what it does") + deploy buckets ride in
-// data-* and open in the click popup.
+// colored by type. The full config ("what it does") + deploy buckets + this
+// client's resolved param values ride in data-* and open in the click popup.
 function flNode(cls, name, config, deploy){
   const d = deploy && typeof deploy === "object" ? deploy : {};
   const da = (k, v) => v ? ` ${k}="${escAttr(v)}"` : "";
+  const cv = clientValues(d);
+  const tasks = Array.isArray(d.tasks) ? d.tasks.map(t => t && t.text).filter(Boolean) : [];
   return `<div class="fl-node ${cls}" data-t="${escAttr(name)}" data-d="${escAttr(config || "")}"`
+    + da("data-cv", cv.length ? JSON.stringify(cv) : "")
+    + da("data-tasks", tasks.length ? tasks.join("\n") : "")
     + da("data-input", d.input) + da("data-assets", d.assets) + da("data-guard", d.guardrail)
     + ` onclick="showNodeInfo(this)"><span class="fl-lbl">${esc(name)}</span></div>`;
 }
@@ -3004,14 +3123,33 @@ function flNode(cls, name, config, deploy){
 function niSec(label, text, warn){
   return text ? `<div class="ni-sec${warn ? " warn" : ""}"><div class="ni-sec-label">${esc(label)}</div><div class="ni-sec-body">${esc(text)}</div></div>` : "";
 }
-// Popup: the node's config + its deploy buckets, organized into sections.
+// This client's concrete value(s) for the node, from data-cv (JSON [{k,v}]).
+// A single param renders bare (the section title says whose value it is); two+
+// get a param label each so the builder knows which is which. A "NEEDS DISCOVERY"
+// value is flagged — it's an unresolved answer that becomes a checklist task.
+function niClientValue(json){
+  let arr; try{ arr = JSON.parse(json || "[]"); }catch(e){ arr = []; }
+  if(!arr.length) return "";
+  const tbd = v => /^needs discovery/i.test(String(v).trim());
+  const row = x => {
+    const flagged = tbd(x.v);
+    const val = `<span class="ni-cv-val${flagged ? " ni-cv-tbd" : ""}">${flagged ? "⚠ " : ""}${esc(String(x.v))}</span>`;
+    return arr.length === 1 ? val : `<div class="ni-cv-row"><span class="ni-cv-k">${esc(paramLabel(x.k))}</span>${val}</div>`;
+  };
+  return `<div class="ni-sec ni-cv"><div class="ni-sec-label">This client's value</div>`
+    + `<div class="ni-sec-body">${arr.map(row).join("")}</div></div>`;
+}
+// Popup: the node's config, this client's resolved value(s), then the generic
+// deploy buckets, organized into sections.
 function showNodeInfo(el){
   const d = el.dataset;
   document.getElementById("ni-chip").textContent = d.t || "STEP";
   document.getElementById("ni-body").innerHTML =
       niSec("What it does", d.d, false)
+    + niClientValue(d.cv)
     + niSec("What you input", d.input, false)
     + niSec("Assets to attach", d.assets, false)
+    + niSec("Set up first (see checklist)", d.tasks, false)
     + niSec("Do not change", d.guard, true);
   document.getElementById("node-info").style.display = "flex";
 }
@@ -3266,7 +3404,7 @@ function renderDraftStep(s, d){
         ${s.depends_on.length ? `<div class="msg" style="margin-bottom:4px">After: ${esc(draftDepLabel(s, d))}</div>` : ""}
         <div style="font-size:13px;margin:6px 0">${esc(s.detail)}</div>
         ${renderDraftChangesNote(s)}
-        ${s.checklist.length ? `<div class="msg">${s.checklist.map(c => "☐ " + esc(c)).join("<br>")}</div>` : ""}
+        ${s.checklist.length ? `<div class="msg">${s.checklist.map(c => "☐ " + esc(ckText(c))).join("<br>")}</div>` : ""}
         ${renderStepDepth(s, s.ref)}
         ${renderStepDeployment(draftStepDeployment(s), s.ref)}
       </div>
@@ -3432,6 +3570,9 @@ function renderEngineDetail(){
   const isObj = a && typeof a === "object";
   const autoName = a ? (typeof a === "string" ? a : (a.name || "Untitled automation")) : "";
   const key = "panel:" + s.id + ":" + pv.autoIndex;   // isolated expand namespace for Tests + deployment sections
+  // Per-client values for this step feed flNode during the sync render below, so
+  // each node's popup shows THIS client's concrete setting next to the generic input.
+  flParams = (s.deployment && s.deployment.parameter_values) || null;
   const trigTxt = isObj && a.trigger ? a.trigger.type + (a.trigger.filters && Object.keys(a.trigger.filters).length ? " — " + JSON.stringify(a.trigger.filters) : "") : "";
   const trig = isObj && a.trigger ? flNode("fl-t-trigger", ghlActionName({ type:"trigger", config:trigTxt, action:a.trigger.action }) || nodeName(trigTxt), trigTxt, a.trigger.deploy) : "";
   const flow = isObj
@@ -3448,10 +3589,15 @@ function renderEngineDetail(){
     : `<div class="msg">${esc(autoName)} — no structured detail.</div>`;
   const lead = isObj && a.final_rule ? `<div class="bp-lead">${esc(a.final_rule)}</div>` : "";
   const tests = isObj ? renderAutomationTests(a, key) : "";
-  const checklist = (s.checklist || []).map((c, i) => `
-    <label style="display:block;font-size:13px;margin:2px 0">
-      <input type="checkbox" ${c.done?"checked":""} onchange="toggleStepChecklist('${s.id}',${i})"> ${c.done ? `<s>${esc(c.text)}</s>` : esc(c.text)}
-    </label>`).join("");
+  const checklist = (s.checklist || []).map((c, i) => {
+    const how = ckHow(c), txt = ckText(c);
+    return `<div class="bp-ck">
+      <label class="bp-ck-lbl">
+        <input type="checkbox" ${c.done?"checked":""} onchange="toggleStepChecklist('${s.id}',${i})"> ${c.done ? `<s>${esc(txt)}</s>` : esc(txt)}
+      </label>
+      ${how ? `<div class="bp-ck-how">${esc(how)}</div>` : ""}
+    </div>`;
+  }).join("");
   return `
     <div class="bp-detail">
       <div class="bp-detail-head">
@@ -3466,7 +3612,7 @@ function renderEngineDetail(){
         <aside class="bp-side">
           ${s.manifest ? `<div class="bp-card"><h4>Manifest</h4>${renderManifestLines(s.manifest)}</div>` : ""}
           <div class="bp-card"><h4>Setup Checklist</h4>${checklist || `<div class="msg">No checklist items.</div>`}</div>
-          ${s.deployment ? renderDeploymentCard(s.deployment, key) : ""}
+          ${s.deployment ? renderDeploymentCard(s.deployment, key, s.workflow) : ""}
           <div class="bp-card"><h4>Notes</h4>
             <textarea class="notes" oninput="this.style.height='auto';this.style.height=(this.scrollHeight+2)+'px'" onchange="saveStepNotes('${s.id}', this.value)">${esc(s.notes || "")}</textarea>
           </div>
@@ -3475,19 +3621,43 @@ function renderEngineDetail(){
     </div>`;
 }
 
+// Every client_parameter a node in this workflow already resolves (deploy.param /
+// deploy.params). Those now render as "This client's value" inside the node popup,
+// so the side card must NOT repeat them — it keeps only the engine-level leftovers.
+function claimedParamKeys(workflow){
+  const keys = new Set();
+  const walk = nodes => (nodes || []).forEach(n => {
+    if(!n || typeof n !== "object") return;
+    if(n.deploy) paramKeys(n.deploy).forEach(k => keys.add(k));
+    if(Array.isArray(n.branches)) n.branches.forEach(b => walk(b.to));
+    walk(n.yes); walk(n.no);
+  });
+  (workflow || []).forEach(a => { if(a && typeof a === "object") walk(a.nodes || a.steps); });
+  return keys;
+}
+
 // Deployment card: each block of the deployment story is its own collapsible
 // row (collapsed by default) instead of one always-open wall of prose. Bodies
 // reuse renderDeploymentLines verbatim; the ⚠ REVIEW flag stays visible on the
 // card header without opening anything.
-function renderDeploymentCard(dep, key){
+function renderDeploymentCard(dep, key, workflow){
   const flag = dep.needs_review === "parameterize" ? `<span class="dep-review">⚠ REVIEW — parameterized: confirm changes</span>`
              : dep.needs_review === "formulate"    ? `<span class="dep-review">⚠ REVIEW — formulated: unproven${dep.seeded_from ? " (seeded from " + esc(dep.seeded_from) + " stub)" : ""}</span>` : "";
-  // Branding + Never touch now live per-node in the click popups (Assets / Do not
-  // change); the box keeps the engine-level leftovers — incl. Parameter values, the
-  // CONCRETE per-client settings the generic node notes don't carry.
+  // Node-level content lives in the click popups now: branding→Assets, per-node
+  // never_touch→Do not change, and every node-attributed parameter_value→"This
+  // client's value". The card keeps ONLY the genuinely engine-level leftovers:
+  // Client settings = the parameters NO node claims (master toggles, scope choices);
+  // Never touch = the cross-cutting architectural rules that belong to no single node.
+  const claimed = claimedParamKeys(workflow);
+  const engineParams = dep.parameter_values
+    ? Object.fromEntries(Object.entries(dep.parameter_values).filter(([k]) => !claimed.has(k)))
+    : null;
   const sections = [
-    ["Changes made", dep.changes_note], ["Parameter values", dep.parameter_values],
-    ["Business rules", dep.tiers && dep.tiers.business_rules], ["Client overrides", dep.overrides],
+    ["Changes made", dep.changes_note],
+    ["Client settings", engineParams && Object.keys(engineParams).length ? engineParams : null],
+    ["Business rules", dep.tiers && dep.tiers.business_rules],
+    ["Never touch", dep.tiers && dep.tiers.never_touch],
+    ["Client overrides", dep.overrides],
     ["Engine spec", dep.spec_extras],
   ].filter(([, v]) => v != null);
   const rows = sections.map(([label, v], i) => {
