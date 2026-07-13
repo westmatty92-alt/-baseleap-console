@@ -180,9 +180,15 @@
   .bp-detail{margin:0 -24px -24px;padding:24px 24px 64px;background:var(--d-bg);min-height:calc(100vh - 168px);color:var(--d-text);box-shadow:inset 0 14px 18px -16px rgba(0,0,0,.7)}
   .bp-back{background:none;border:none;color:var(--run);font-size:13px;font-weight:600;cursor:pointer;padding:6px 0;margin-bottom:8px}
   .bp-back:hover{color:var(--volt)}
-  .bp-detail-head{margin-bottom:16px}
+  .bp-detail-head{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:16px}
   .bp-detail-title{font-size:18px;font-weight:800;color:var(--d-text-strong)}
   .bp-detail-sub{font-size:12px;color:var(--d-muted);font-weight:500;margin-top:3px}
+  /* Prev/Next between automations — right of the detail head, never touches the subtabs */
+  .bp-detail-nav{display:flex;align-items:center;gap:10px;flex:0 0 auto}
+  .bp-nav-btn{background:rgba(255,255,255,.05);border:1px solid var(--d-line);color:var(--d-text);border-radius:8px;padding:5px 12px;font-size:12.5px;font-weight:600;cursor:pointer}
+  .bp-nav-btn:hover:not(:disabled){border-color:var(--volt);color:var(--volt)}
+  .bp-nav-btn:disabled{opacity:.4;cursor:default}
+  .bp-nav-pos{font-size:12px;color:var(--d-muted);white-space:nowrap}
   .bp-detail-grid{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:16px;align-items:start}
   @media(max-width:900px){.bp-detail-grid{grid-template-columns:1fr}}
   .bp-main,.bp-side{display:flex;flex-direction:column;gap:16px;min-width:0}
@@ -3611,6 +3617,29 @@ function renderEngineSubRows(s){
 function openEnginePanel(stepId, autoIndex){ S.buildPlan.panel = { stepId, autoIndex }; S.buildPlan.zoom = 1; S.buildPlan.pan = { x:0, y:0 }; renderAutomation(); }   // each automation opens fit at 100%
 function closeEnginePanel(){ S.buildPlan.panel = null; renderAutomation(); }
 
+// Flattened, plan-ordered sequence of every workflow automation across all steps
+// (steps are position-sorted; automations in array order). Setup steps (no workflow)
+// contribute nothing; thin string automations ARE included, so the sequence matches
+// the clickable sub-row list exactly — "N of M" is truthful and Next/Prev never skips
+// an automation the operator can see in the plan.
+function flatAutomations(){
+  const seq = [];
+  S.buildPlan.steps.forEach(s => {
+    if(Array.isArray(s.workflow)) s.workflow.forEach((_a, i) => seq.push({ stepId: s.id, autoIndex: i }));
+  });
+  return seq;
+}
+// Clamp navigation between automations (no wrap). delta -1 = Prev, +1 = Next.
+// openEnginePanel resets zoom/pan + re-renders (and re-sets flParams for the new step).
+function navAutomation(delta){
+  const pv = S.buildPlan.panel; if(!pv) return;
+  const seq = flatAutomations();
+  const cur = seq.findIndex(x => x.stepId === pv.stepId && x.autoIndex === pv.autoIndex);
+  const next = cur + delta;
+  if(cur < 0 || next < 0 || next >= seq.length) return;   // clamp at both ends
+  openEnginePanel(seq[next].stepId, seq[next].autoIndex);
+}
+
 // Automation detail — dark card dashboard (decision-surface tokens, as Finalize).
 // Main: Workflow card (typed node flow) → Tests card → Deployment card whose
 // sections are individually collapsible (collapsed by default — the fix for the
@@ -3659,11 +3688,23 @@ function renderEngineDetail(){
       : `<label class="bp-ck-lbl">${cb} ${label}</label>`;
     return `<div class="bp-ck">${row}${how && open ? `<div class="disc-how">${esc(how)}</div>` : ""}</div>`;
   }).join("");
+  const seq = flatAutomations();
+  const cur = seq.findIndex(x => x.stepId === pv.stepId && x.autoIndex === pv.autoIndex);
+  // Nav only when there's more than one automation to move between and the current one
+  // is locatable (cur >= 0 guards a stale panel). Clamp: Prev off at first, Next at last.
+  const nav = (seq.length > 1 && cur >= 0) ? `
+        <div class="bp-detail-nav">
+          <button class="bp-nav-btn" onclick="navAutomation(-1)" ${cur === 0 ? "disabled" : ""}>‹ Prev</button>
+          <span class="bp-nav-pos">Automation ${cur + 1} of ${seq.length}</span>
+          <button class="bp-nav-btn" onclick="navAutomation(1)" ${cur === seq.length - 1 ? "disabled" : ""}>Next ›</button>
+        </div>` : "";
   return `
     <div class="bp-detail">
       <div class="bp-detail-head">
-        <div class="bp-detail-title">${esc(autoName)}</div>
-        <div class="bp-detail-sub">${esc(s.title)}</div>
+        <div>
+          <div class="bp-detail-title">${esc(autoName)}</div>
+          <div class="bp-detail-sub">${esc(s.title)}</div>
+        </div>${nav}
       </div>
       <div class="bp-detail-grid">
         <div class="bp-main">
