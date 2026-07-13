@@ -188,10 +188,15 @@
   .bp-main,.bp-side{display:flex;flex-direction:column;gap:16px;min-width:0}
   .bp-card{background:var(--depth);border:1px solid var(--d-line);border-radius:12px;padding:16px 18px;box-shadow:0 2px 10px rgba(0,0,0,.3),inset 0 1px 0 rgba(255,255,255,.04)}
   .bp-card h4{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--volt);margin:0 0 10px}
-  /* instructional checklist item: label + its "how to do this in GHL" sub-text */
+  /* instructional checklist item: checkbox + expandable label; how reveals on click */
   .bp-ck{margin:0 0 10px}
-  .bp-ck-lbl{display:block;font-size:13px;font-weight:600;color:var(--d-text)}
-  .bp-ck-how{font-size:12px;line-height:1.5;color:var(--d-muted);margin:3px 0 0 22px}
+  .bp-ck-lbl{display:flex;align-items:baseline;gap:6px;font-size:13px;font-weight:600;color:var(--d-text)}
+  /* shared summary-first disclosure (checklist how + test how), same look/behaviour */
+  .disc-toggle{background:none;border:none;padding:0;text-align:left;font:inherit;color:inherit;cursor:pointer}
+  .disc-toggle:hover{color:var(--volt)}
+  .disc-how{font-size:12px;line-height:1.5;color:var(--d-muted);margin:3px 0 0 22px}
+  /* Tests read as the tail of this automation's Workflow card, not a separate box */
+  .bp-tests{border-top:1px solid var(--d-line);margin-top:14px;padding-top:12px}
   .bp-lead{font-size:14px;color:var(--d-muted);line-height:1.55;margin:0 0 12px}
   .bp-detail .msg{color:var(--d-muted)}
   .bp-detail .mf-line{color:var(--d-text)}
@@ -254,6 +259,9 @@
   .ni-cv-tbd{color:#EF9F27;font-weight:600}
   /* node-graph zoom: scaled inner content in a scroll viewport, pinned controls */
   .bp-card-graph{position:relative}
+  /* wraps viewport + zoom control so the control anchors to the GRAPH, not the whole
+     card — lets Tests sit below inside the same card without the control overlapping it */
+  .fl-graphwrap{position:relative}
   .fl-viewport{position:relative;overflow:hidden;max-height:70vh;background-image:radial-gradient(rgba(255,255,255,.05) 1px,transparent 1px);background-size:16px 16px;border-radius:8px;cursor:grab;user-select:none}
   .fl-viewport.grabbing{cursor:grabbing}
   .fl-zoom{transform-origin:0 0;padding:14px 6px 18px;width:max-content;min-width:100%;box-sizing:border-box;will-change:transform}
@@ -2240,8 +2248,14 @@ function countNodeTypes(nodes, counts = { guard: 0, condition: 0 }){
 // in the PROMPT. A strict count would false-reject valid formulations over a
 // counting mismatch and make formulate flaky; the floor only rejects trivial output.
 function validateAutomationTests(a, at){
-  if(!Array.isArray(a.tests) || !a.tests.length || a.tests.some(t => typeof t !== "string" || !t.trim()))
-    throw new Error(at + ": tests must be a non-empty array of non-empty strings");
+  if(!Array.isArray(a.tests) || !a.tests.length) throw new Error(at + ": tests must be a non-empty array");
+  a.tests.forEach((t, i) => {   // dual-shape: legacy string OR {name, how} (how optional)
+    if(typeof t === "string"){ if(!t.trim()) throw new Error(`${at}: tests[${i}] must be a non-empty string`); }
+    else if(t && typeof t === "object" && !Array.isArray(t)){
+      if(typeof t.name !== "string" || !t.name.trim()) throw new Error(`${at}: tests[${i}].name must be a non-empty string`);
+      if(t.how != null && (typeof t.how !== "string" || !t.how.trim())) throw new Error(`${at}: tests[${i}].how must be a non-empty string when present`);
+    } else throw new Error(`${at}: tests[${i}] must be a string or {name, how}`);
+  });
   const c = countNodeTypes(a.nodes);
   const floor = c.guard + c.condition;
   if(a.tests.length < floor)
@@ -2620,6 +2634,11 @@ function manifestItemKeys(m){
 // text. These readers tolerate both so old saved rows keep rendering.
 function ckText(c){ return typeof c === "string" ? c : ((c && c.text) || ""); }
 function ckHow(c){ return typeof c === "string" ? "" : ((c && c.how) || ""); }
+// A test item is either a legacy plain string (assertion only) or {name, how} —
+// where `how` is the click-by-click GHL run instructions. Same dual-shape/tolerance
+// discipline as the checklist readers above.
+function testName(t){ return typeof t === "string" ? t : ((t && t.name) || ""); }
+function testHow(t){ return typeof t === "string" ? "" : ((t && t.how) || ""); }
 
 function injectManifestSetupSteps(p, gaps, sweep){
   const owner = new Map();   // "tag:X" / "field:<object>:Y" → ref of the injected step that creates it
@@ -3307,7 +3326,13 @@ function renderAutomationTests(a, key){
   const tKey = key + ":t";
   const open = !!S.buildPlan.expanded[tKey];
   return `<button class="depth-toggle" onclick="toggleStepDepth('${escAttr(tKey)}')">${open ? "▾" : "▸"} Tests (${tests.length})</button>`
-    + (open ? `<div class="wf-tests">${tests.map(t => `<div class="wf-test">☐ ${esc(t)}</div>`).join("")}</div>` : "");
+    + (open ? `<div class="wf-tests">${tests.map((t, i) => {
+        const name = testName(t), how = testHow(t);
+        if(!how) return `<div class="wf-test">☐ ${esc(name)}</div>`;   // legacy assertion-only test
+        const eKey = `${key}:test${i}`, eo = !!S.buildPlan.expanded[eKey];
+        return `<div class="wf-test"><button class="disc-toggle" onclick="toggleStepDepth('${escAttr(eKey)}')">${eo ? "▾" : "▸"} ☐ ${esc(name)}</button>`
+          + (eo ? `<div class="disc-how">${esc(how)}</div>` : "") + `</div>`;
+      }).join("")}</div>` : "");
 }
 
 function renderAutomationBody(a, key){
@@ -3612,23 +3637,27 @@ function renderEngineDetail(){
     : "";
   const z = S.buildPlan.zoom || 1, p = S.buildPlan.pan || { x:0, y:0 };
   const nodes = isObj
-    ? `<div class="fl-viewport" onmousedown="graphPanStart(event,this)" onwheel="graphWheel(event,this)"><div class="fl-zoom" id="flZoom" style="transform:translate(${p.x}px, ${p.y}px) scale(${z})">${flow}</div></div>
+    ? `<div class="fl-graphwrap"><div class="fl-viewport" onmousedown="graphPanStart(event,this)" onwheel="graphWheel(event,this)"><div class="fl-zoom" id="flZoom" style="transform:translate(${p.x}px, ${p.y}px) scale(${z})">${flow}</div></div>
        <div class="fl-zoomctl">
          <button onclick="zoomGraph(-0.1)" title="Zoom out">−</button>
          <span class="fl-zoompct" id="flZoomPct" onclick="zoomGraph(0)" title="Reset (fit)">${Math.round(z * 100)}%</span>
          <button onclick="zoomGraph(0.1)" title="Zoom in">+</button>
-       </div>`
+       </div></div>`
     : `<div class="msg">${esc(autoName)} — no structured detail.</div>`;
   const lead = isObj && a.final_rule ? `<div class="bp-lead">${esc(a.final_rule)}</div>` : "";
   const tests = isObj ? renderAutomationTests(a, key) : "";
   const checklist = (s.checklist || []).map((c, i) => {
     const how = ckHow(c), txt = ckText(c);
-    return `<div class="bp-ck">
-      <label class="bp-ck-lbl">
-        <input type="checkbox" ${c.done?"checked":""} onchange="toggleStepChecklist('${s.id}',${i})"> ${c.done ? `<s>${esc(txt)}</s>` : esc(txt)}
-      </label>
-      ${how ? `<div class="bp-ck-how">${esc(how)}</div>` : ""}
-    </div>`;
+    const label = c.done ? `<s>${esc(txt)}</s>` : esc(txt);
+    const cb = `<input type="checkbox" ${c.done?"checked":""} onchange="toggleStepChecklist('${s.id}',${i})">`;
+    const eKey = `${s.id}:ck${i}`, open = !!S.buildPlan.expanded[eKey];
+    // how item: checkbox owns `done`, caret owns expand — separate, non-competing controls.
+    // no-how item: no caret competes, so keep the classic <label> wrapper so clicking the
+    // text still toggles done (preserves prior behaviour for the common no-how case).
+    const row = how
+      ? `<div class="bp-ck-lbl">${cb} <button class="disc-toggle bp-ck-toggle" onclick="toggleStepDepth('${escAttr(eKey)}')">${open ? "▾" : "▸"} ${label}</button></div>`
+      : `<label class="bp-ck-lbl">${cb} ${label}</label>`;
+    return `<div class="bp-ck">${row}${how && open ? `<div class="disc-how">${esc(how)}</div>` : ""}</div>`;
   }).join("");
   return `
     <div class="bp-detail">
@@ -3638,8 +3667,7 @@ function renderEngineDetail(){
       </div>
       <div class="bp-detail-grid">
         <div class="bp-main">
-          <div class="bp-card bp-card-graph"><h4>Workflow</h4>${lead}${nodes}</div>
-          ${tests ? `<div class="bp-card">${tests}</div>` : ""}
+          <div class="bp-card bp-card-graph"><h4>Workflow</h4>${lead}${nodes}${tests ? `<div class="bp-tests">${tests}</div>` : ""}</div>
         </div>
         <aside class="bp-side">
           ${s.manifest ? `<div class="bp-card"><h4>Manifest</h4>${renderManifestLines(s.manifest)}</div>` : ""}
