@@ -176,6 +176,12 @@
   .bp-status-sel{font-size:12px;padding:5px 7px;border:1px solid var(--line);border-radius:6px;background:var(--surface);justify-self:start}
   .bp-subrow{display:flex;align-items:center;gap:8px;padding:8px 14px 8px 32px;font-size:12.5px;color:var(--depth);cursor:pointer;border-bottom:1px solid var(--line);background:var(--canvas)}
   .bp-subrow:hover{background:rgba(0,0,0,.04)}
+  /* nested test-gate sub-row: keeps its own status control + an expandable test matrix */
+  .bp-testgate{cursor:default;background:rgba(0,0,0,.02)}
+  .bp-testgate:hover{background:rgba(0,0,0,.03)}
+  .bp-tg-name{flex:1;min-width:0;display:flex;align-items:center;gap:6px;background:none;border:none;padding:0;font:inherit;color:var(--depth);text-align:left;cursor:pointer}
+  .bp-tg-chip{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--run);background:rgba(0,168,120,.1);border-radius:5px;padding:2px 6px}
+  .bp-tg-checklist{padding:8px 14px 12px 44px;background:var(--canvas);border-bottom:1px solid var(--line)}
   /* Automation detail — dark decision-surface (same --d-* tokens as Finalize) */
   .bp-detail{margin:0 -24px -24px;padding:24px 24px 64px;background:var(--d-bg);min-height:calc(100vh - 168px);color:var(--d-text);box-shadow:inset 0 14px 18px -16px rgba(0,0,0,.7)}
   .bp-back{background:none;border:none;color:var(--run);font-size:13px;font-weight:600;cursor:pointer;padding:6px 0;margin-bottom:8px}
@@ -3538,6 +3544,34 @@ function renderSavedPlan(){
   return head + renderManifestCard(steps) + sections;
 }
 
+// A test-gate is an ordinary automation step the planner ends an engine's chain
+// with ("configured != complete"): its checklist IS the test matrix. It carries no
+// structural flag — only a title convention — so we identify it structurally and
+// match it to its parent engine by shared gap_id (both deliver the same gap), the
+// engine being the sibling that carries the node workflow. The title marker only
+// confirms/disambiguates; it is never the sole signal.
+function isTestGateTitle(s){ return /test[\s-]*gate/i.test((s && s.title) || ""); }
+
+// Partition a track's automation steps into top-level `engines` (engine steps PLUS
+// any test-gate we could not match) and `gatesByParent` (parentStepId -> [gate,…]).
+// Nestable test-gate = title marker + NO workflow + a gap_id + a workflow-carrying
+// sibling in the same gap. Anything failing those stays top-level — never force-nested.
+// Render-only: every step (nested or not) still appears once for completion counts.
+function partitionTestGates(steps){
+  const gatesByParent = new Map(), nested = new Set();
+  steps.forEach(g => {
+    const hasWf = Array.isArray(g.workflow) && g.workflow.length;
+    if(!isTestGateTitle(g) || hasWf || g.gap_id == null) return;         // not a nestable gate
+    const parent = steps.find(e => e.id !== g.id && e.gap_id === g.gap_id
+      && Array.isArray(e.workflow) && e.workflow.length);                // first workflow-carrying sibling in the gap
+    if(!parent) return;                                                  // no engine sibling -> standalone
+    if(!gatesByParent.has(parent.id)) gatesByParent.set(parent.id, []);
+    gatesByParent.get(parent.id).push(g);
+    nested.add(g.id);
+  });
+  return { engines: steps.filter(s => !nested.has(s.id)), gatesByParent };
+}
+
 function renderPlanSection(track, allSteps){
   const cKey = "seccol:" + track, open = !S.buildPlan.expanded[cKey];   // default open
   const done = allSteps.filter(s => s.status === "done").length;
@@ -3548,7 +3582,10 @@ function renderPlanSection(track, allSteps){
   const setupBadge = setupSteps.length
     ? `<button class="bp-setup-badge ${setupOk ? "bp-setup-ok" : "bp-setup-no"}" onclick="event.stopPropagation();toggleStepDepth('${escAttr(sKey)}')">Setup ${setupOk ? "✓" : "○"} ${setupDone}/${setupSteps.length}</button>`
     : "";
-  const engineRows = allSteps.filter(s => s.agent !== "setup");
+  // Test-gates nest into their engine's dropdown (last sub-row); engines + any
+  // unmatched gate render at the top level. Rollup counts (done/allSteps) are
+  // unchanged — every step still exists once, only its render slot moves.
+  const { engines, gatesByParent } = partitionTestGates(allSteps.filter(s => s.agent !== "setup"));
   // pill tint reflects the group's rollup: all done / in progress / not started
   const secState = !allSteps.length ? "empty" : done === allSteps.length ? "done" : done > 0 ? "prog" : "todo";
   const thead = `<div class="bp-thead"><span>Task</span><span>Description</span><span>Progress</span><span>Hrs</span><span>Status</span></div>`;
@@ -3564,7 +3601,7 @@ function renderPlanSection(track, allSteps){
         ${setupBadge}
       </div>
       ${open && setupOpen && setupSteps.length ? renderSetupMini(setupSteps) : ""}
-      ${open && engineRows.length ? `<div class="bp-table">${thead}${engineRows.map(renderEngineRow).join("")}</div>` : ""}
+      ${open && engines.length ? `<div class="bp-table">${thead}${engines.map(s => renderEngineRow(s, gatesByParent)).join("")}</div>` : ""}
     </div>`;
 }
 
@@ -3576,7 +3613,7 @@ function renderSetupMini(setupSteps){
   ).join("") + `</div>`;
 }
 
-function renderEngineRow(s){
+function renderEngineRow(s, gatesByParent){
   const stage = STATUS_STAGE[s.status] != null ? STATUS_STAGE[s.status] : 0;
   const pct = [0, 25, 75, 100][stage] || 0;   // 4 discrete stages (queued/building/testing/done); ticks in CSS keep it from reading as a continuous %
   const blockers = (s.depends_on || []).map(byIdStep).filter(t => t && t.status !== "done");
@@ -3598,16 +3635,54 @@ function renderEngineRow(s){
       <span class="bp-hours">${s.estimated_hours != null ? esc(String(s.estimated_hours)) + "h" : ""}</span>
       <select class="bp-status-sel" onchange="setStepStatus('${s.id}', this.value)">${statusOptions(s.status)}</select>
     </div>`
-    + (expanded && hasAutos ? renderEngineSubRows(s) : "");
+    + (expanded && hasAutos ? renderEngineSubRows(s, gatesByParent) : "");
 }
 
 // Inline indented sub-rows = the step's workflow automations (statusless — there
-// is no per-automation status). Click one to open its content in the slide-over.
-function renderEngineSubRows(s){
-  return (s.workflow || []).map((a, i) => {
+// is no per-automation status; click opens the slide-over), THEN its nested
+// test-gate(s) as the last entries — unlike automations, a test-gate keeps its own
+// status control and its checklist (the test matrix) expands inline.
+function renderEngineSubRows(s, gatesByParent){
+  const autos = (s.workflow || []).map((a, i) => {
     const name = typeof a === "string" ? a : (a.name || "Untitled automation");
     return `<div class="bp-subrow" onclick="openEnginePanel('${s.id}', ${i})"><span class="auto-num">${String(i + 1).padStart(2, "0")}</span> ${esc(name)}</div>`;
   }).join("");
+  const gates = ((gatesByParent && gatesByParent.get(s.id)) || []).map(renderTestGateSubRow).join("");
+  return autos + gates;
+}
+
+// Shared instructional-checklist renderer — the detail-view Setup Checklist AND the
+// nested test-gate's test matrix render through this ONE function, so they stay
+// identical: dual-shape items ({text,how} or string), checkbox owns done, caret owns
+// the how disclosure (no-how items keep the <label> so a text click still toggles done).
+function renderChecklistItems(step){
+  return (step.checklist || []).map((c, i) => {
+    const how = ckHow(c), txt = ckText(c);
+    const label = c.done ? `<s>${esc(txt)}</s>` : esc(txt);
+    const cb = `<input type="checkbox" ${c.done?"checked":""} onchange="toggleStepChecklist('${step.id}',${i})">`;
+    const eKey = `${step.id}:ck${i}`, open = !!S.buildPlan.expanded[eKey];
+    const row = how
+      ? `<div class="bp-ck-lbl">${cb} <button class="disc-toggle bp-ck-toggle" onclick="toggleStepDepth('${escAttr(eKey)}')">${open ? "▾" : "▸"} ${label}</button></div>`
+      : `<label class="bp-ck-lbl">${cb} ${label}</label>`;
+    return `<div class="bp-ck">${row}${how && open ? `<div class="disc-how">${esc(how)}</div>` : ""}</div>`;
+  }).join("");
+}
+
+// A nested test-gate: its own row with a status select + a caret that expands the
+// test-matrix checklist inline (reusing the shared checklist renderer). blocked-by is
+// SCOPED — same-gap (its own engine's) blockers are the redundant parent reference and
+// suppressed; cross-engine blockers still surface.
+function renderTestGateSubRow(g){
+  const rowKey = "tg:" + g.id, open = !!S.buildPlan.expanded[rowKey];
+  const blockers = (g.depends_on || []).map(byIdStep).filter(t => t && t.status !== "done" && t.gap_id !== g.gap_id);
+  const blocked = blockers.length ? `<span class="bp-blocked">blocked by: ${esc(blockers.map(b => b.title).join(", "))}</span>` : "";
+  const items = renderChecklistItems(g);
+  return `<div class="bp-subrow bp-testgate st-${esc(g.status)}">
+      <button class="disc-toggle bp-tg-name" onclick="toggleStepDepth('${escAttr(rowKey)}')">${open ? "▾" : "▸"} <span class="bp-tg-chip">Test gate</span> ${esc(g.title)}</button>
+      ${blocked}
+      <select class="bp-status-sel" onchange="setStepStatus('${g.id}', this.value)">${statusOptions(g.status)}</select>
+    </div>`
+    + (open ? `<div class="bp-tg-checklist">${items || `<div class="msg">No test items.</div>`}</div>` : "");
 }
 
 /* Right slide-over — reuses the existing per-automation content renderers
@@ -3675,19 +3750,7 @@ function renderEngineDetail(){
     : `<div class="msg">${esc(autoName)} — no structured detail.</div>`;
   const lead = isObj && a.final_rule ? `<div class="bp-lead">${esc(a.final_rule)}</div>` : "";
   const tests = isObj ? renderAutomationTests(a, key) : "";
-  const checklist = (s.checklist || []).map((c, i) => {
-    const how = ckHow(c), txt = ckText(c);
-    const label = c.done ? `<s>${esc(txt)}</s>` : esc(txt);
-    const cb = `<input type="checkbox" ${c.done?"checked":""} onchange="toggleStepChecklist('${s.id}',${i})">`;
-    const eKey = `${s.id}:ck${i}`, open = !!S.buildPlan.expanded[eKey];
-    // how item: checkbox owns `done`, caret owns expand — separate, non-competing controls.
-    // no-how item: no caret competes, so keep the classic <label> wrapper so clicking the
-    // text still toggles done (preserves prior behaviour for the common no-how case).
-    const row = how
-      ? `<div class="bp-ck-lbl">${cb} <button class="disc-toggle bp-ck-toggle" onclick="toggleStepDepth('${escAttr(eKey)}')">${open ? "▾" : "▸"} ${label}</button></div>`
-      : `<label class="bp-ck-lbl">${cb} ${label}</label>`;
-    return `<div class="bp-ck">${row}${how && open ? `<div class="disc-how">${esc(how)}</div>` : ""}</div>`;
-  }).join("");
+  const checklist = renderChecklistItems(s);
   const seq = flatAutomations();
   const cur = seq.findIndex(x => x.stepId === pv.stepId && x.autoIndex === pv.autoIndex);
   // Nav only when there's more than one automation to move between and the current one
