@@ -2039,7 +2039,7 @@ const BUILD_SEQUENCING_PROMPT = `ORDERING DOCTRINE (you emit DEPENDENCY EDGES, n
 2. Foundation before engines, scoped per engine. An engine depends only on the gates it actually needs — never block a no-SMS engine on A2P.
 3. Catalog dependency order: Payment Processor Foundation → payment-triggered engines (booking Won-state, session decrement, referral revenue awards) → loyalty/membership on top. If an accepted gap needs a prerequisite engine that was NOT accepted, add that to scope_flags (name both the gap and the missing engine) — surface it, never silently absorb it.
 4. Dedupe foundations. Emit ONE A2P step, ONE email-auth step, ONE pipeline step — each with many dependents. Never a per-engine copy of a shared gate.
-5. Every engine's chain ends with a test-gate step. Configured ≠ complete: the last step of each engine is its controlled test, and that step's checklist is the test matrix (happy path · not-eligible · every branch · missing data · duplicate/re-entry · external-app failure where relevant).
+5. Every engine's chain ends with a controlled test — but you do NOT emit it. Code injects one test-gate step per engine from the engine's OWN declared test matrix after you respond, and wires it to depend on that engine's build steps (configured ≠ complete). Do NOT add test, QA, or "verify the engine" steps yourself — just build the engine steps and their dependency edges; the gate is appended for you.
 6. Parallel tracks are fine. Independent dependency subtrees need no artificial edges between them.
 Cross-agent edges are expected: automation steps typically depend on setup steps (Review Engine workflow ← GBP connected ← A2P); the reverse exists too (a setup import waiting on an automation that cleans the data). agent is an attribute of a step, not a partition.`;
 
@@ -2067,8 +2067,8 @@ Field rules:
 - gap_ref: the NUMBER of the accepted gap this step delivers (from the numbered list in the request), or null for foundation/setup steps. EVERY accepted gap must be delivered by at least one automation step.
 - long_lead: true ONLY on steps with an external approval/propagation clock (A2P registration; domain/email-auth + warm-up). Everything else false.
 - title: CLIENT-SAFE plain language ("Automated review requests go live") — never hours, prices, tool names, or mechanics. All mechanics go in detail.
-- checklist: the concrete build/verify items for the step; on a test-gate step it is the test matrix. estimated_hours: internal cost-to-deliver for THIS step — an engine's chain should sum to roughly that gap's validated estimate.
-- Retrieve-mode engines are typically ONE deploy step (depending on the shared foundations it needs) plus ONE test-gate step. Formulate-mode engines may decompose into more steps.
+- checklist: the concrete build/verify items for the step. estimated_hours: internal cost-to-deliver for THIS step — an engine's chain should sum to roughly that gap's validated estimate. (The injected test-gate carries its own hours on top — do not add a test step to absorb them.)
+- Retrieve-mode engines are typically ONE deploy step (depending on the shared foundations it needs); the test-gate is injected by code, not emitted by you. Formulate-mode engines may decompose into more steps.
 - scope_flags: [] when there are none.
 - BE ECONOMICAL — the full plan must fit in one response. detail: 1-2 tight sentences (trigger, key wiring, fallback — no prose padding). checklist: at most 6 items, each a short imperative phrase. summary: 2-3 sentences. Brevity comes from tighter PROSE, never from dropping steps, checklist items that matter, or dependency edges.`;
 
@@ -2470,6 +2470,7 @@ function attachSweepToDraft(draft, sweep){
   const seen = new Set();
   draft.steps.forEach(s => {
     if(s.gap_ref === null || s.agent !== "automation" || !sweep[s.gap_ref]) return;
+    if(s.injected) return;   // injected test-gate carries no workflow/mode/artifacts — leave it inert
     const sw = sweep[s.gap_ref];
     s.mode = sw.route === "formulate" ? "formulate" : "retrieve";
     s.needs_review = (sw.route === "parameterize" || sw.route === "formulate") ? sw.route : null;
@@ -2715,6 +2716,63 @@ function injectManifestSetupSteps(p, gaps, sweep){
   p.steps.push(...injected);
 }
 
+// The engine's OWN declared test matrix, deduped, as {text, how} checklist items.
+// Source = sweep[i].spec.automations[].tests (present on every route: dropin uses
+// the catalog engine's spec, parameterize the same, formulate the generated spec).
+// Dual-shape tolerant (string | {name, how}) and tolerant of a single-string tests
+// field (some catalog engines) — same normalization the detail view uses.
+function testMatrixItems(sw){
+  const autos = (sw && sw.spec && sw.spec.automations) || [];
+  const items = [], seen = new Set();
+  autos.forEach(a => {
+    const ts = Array.isArray(a && a.tests) ? a.tests : (a && a.tests ? [String(a.tests)] : []);
+    ts.forEach(t => {
+      const text = testName(t).trim();
+      if(!text || seen.has(text)) return;
+      seen.add(text);
+      const how = testHow(t).trim();
+      items.push(how ? { text, how } : { text });
+    });
+  });
+  return items;
+}
+
+// Completeness by construction — the same discipline as injectManifestSetupSteps:
+// the AI kept FORGETTING the per-engine test-gate (and drifting its wording between
+// "controlled test" and "test gate", which silently defeated partitionTestGates'
+// title match), so CODE now owns it. One gate per engine, titled with the EXACT
+// marker partitionTestGates matches, checklist = the engine's own declared test
+// matrix, depending on every build step of that engine so it always sorts LAST in
+// the chain (configured ≠ complete). Runs after the manifest injector, before the
+// sort. Generation-time only — never mutates a saved plan. A test-less engine still
+// gets a gate with an explicit placeholder matrix, never a silently absent one.
+function injectTestGateSteps(p, gaps, sweep){
+  const taken = new Set(p.steps.map(s => s.ref));
+  // Defensive: if the AI disobeyed and still emitted a gate for a gap, don't double it.
+  const aiGateGaps = new Set(
+    p.steps.filter(s => s.agent === "automation" && isTestGateTitle(s)).map(s => s.gap_ref));
+  const injected = [];
+  gaps.forEach((g, i) => {
+    if(!sweep[i] || aiGateGaps.has(i)) return;
+    const buildRefs = p.steps
+      .filter(s => s.agent === "automation" && s.gap_ref === i && !isTestGateTitle(s))
+      .map(s => s.ref);
+    if(!buildRefs.length) return;   // no engine step delivers this gap → nothing to gate
+    let ref = "tg" + i;
+    while(taken.has(ref)) ref += "_";   // the AI owns the s* namespace; guard a collision anyway
+    taken.add(ref);
+    const matrix = testMatrixItems(sweep[i]);
+    injected.push({
+      ref, agent: "automation", mode: null, gap_ref: i, long_lead: false, injected: "testgate",
+      title: `${g.title} — test gate`,   // code-owned wording → partitionTestGates always matches
+      detail: "Controlled test — configured ≠ complete: run this engine's full test matrix before marking it done.",
+      checklist: matrix.length ? matrix : [{ text: "Define and run this engine's controlled test matrix: happy path, every guard and branch, missing data, duplicate/re-entry, and external-app failure where relevant." }],
+      estimated_hours: 0.5, depends_on: buildRefs,
+    });
+  });
+  p.steps.push(...injected);
+}
+
 // raw AI text → validated, code-completed, deterministically ordered draft plan.
 // Throws with a specific message on any contract violation — the caller
 // retries generation ONCE on failure and never saves an invalid graph.
@@ -2725,6 +2783,7 @@ function parseAndOrderPlan(raw, gaps, sweep){
   validatePlanShape(p, gaps);
   p.steps.forEach(s => { s.depends_on = [...new Set(s.depends_on)]; });  // dupes would corrupt indegree counts
   injectManifestSetupSteps(p, gaps, sweep);   // after validation (AI steps only), before the sort (injected refs order like any step)
+  injectTestGateSteps(p, gaps, sweep);        // one test-gate per engine, appended and wired to sort last in its chain
   const steps = orderPlanSteps(p.steps, gaps).map(s => ({
     ...s, title: s.title.trim(), detail: s.detail.trim(),
     // AI steps carry string checklist items; injected setup steps carry {text, how}
