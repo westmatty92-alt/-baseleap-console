@@ -2204,6 +2204,28 @@ async function adaptEngineToClient(engine, gap){
 
 const NODE_TYPES = ["trigger","guard","wait","action","update","condition","webhook","handoff","end"];
 
+// Deterministic auto-repair for the recurring lone-empty-branch condition.
+// Prompt fixes (c79e2d4 empty-no, then the symmetric empty-yes rule) never fully
+// converged — three occurrences across two rounds: the model keeps emitting a
+// condition with ONE empty branch when it means a guard (one side stops, the other
+// continues). Rather than reject-and-retry on luck, normalize it — the empty side
+// becomes an explicit End (the stop), the populated side stays (the continue):
+// exactly what the guard fork renders (met→end / else→continue). Kept as
+// type:"condition" ON PURPOSE — the canvas guard renderer (renderNodeGraph) consumes
+// the FOLLOWING siblings as its continue-flow and IGNORES yes/no, so a literal
+// type:"guard" conversion would silently DROP the populated branch unless we also
+// spliced it into the parent array. Synthesizing the End needs no parent surgery and
+// BOTH renderers already draw a two-branch condition. BOTH branches empty stays a
+// real fallback-less If/Else — left to throw. Do NOT "simplify" this back to a
+// rejection: it is the permanent structural fix for this failure class.
+function normalizeLoneEmptyBranch(n, here){
+  const yesEmpty = !Array.isArray(n.yes) || !n.yes.length;
+  const noEmpty  = !Array.isArray(n.no)  || !n.no.length;
+  if(yesEmpty === noEmpty) return;   // both populated → nothing to do; both empty → leave for the throw
+  n[yesEmpty ? "yes" : "no"] = [{ type: "end", config: "End" }];
+  console.warn(`[sweep] ${here}: lone empty ${yesEmpty ? "yes" : "no"}-branch auto-normalized to a guard-equivalent End (not rejected).`);
+}
+
 // One node = {type, config}; condition nodes carry yes/no branch arrays (one level
 // of nesting is the contract — branches hold plain nodes, validated the same way).
 function validateNodes(nodes, at, isBranch){
@@ -2239,6 +2261,7 @@ function validateNodes(nodes, at, isBranch){
       });
     }
     if(n.type === "condition"){
+      normalizeLoneEmptyBranch(n, here);   // deterministic repair BEFORE the empty-branch throw
       validateNodes(n.yes, here + " yes-branch", true);
       validateNodes(n.no,  here + " no-branch",  true);
     }
