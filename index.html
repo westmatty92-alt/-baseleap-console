@@ -1199,7 +1199,18 @@ const ENGINE_SEED = [
             "Branch on Booking Timeline: This Week (tightest cadence) · Within Two Weeks (medium) · This Month (slower) · Just Browsing (lightest nurture) · Else/blank fallback"
           ],
           stop_condition: "All reminders stop once the lead books: the Booking Engine removes Lead-NeedsBooking and sets appt_booked, which exits the drip.",
-          tests: "A form mapping · B This Week · C Within Two Weeks · D This Month · E Just Browsing · F else/blank · G opportunity creation · H duplicate guard · I booking stop · J no-booking completion"
+          tests: [
+            { name: "Facebook form field mapping", how: "Submit a test Facebook lead form; confirm Interested Service, Booking Timeline, and Launch Location Qualified land in the correct custom fields (single-line text) with no capitalization/wording mismatch." },
+            { name: "Branch: This Week", how: "Set Booking Timeline = This Week; confirm the tightest reminder cadence fires and no other timeline branch runs." },
+            { name: "Branch: Within Two Weeks", how: "Set Booking Timeline = Within Two Weeks; confirm the medium cadence fires and no other timeline branch runs." },
+            { name: "Branch: This Month", how: "Set Booking Timeline = This Month; confirm the slower cadence fires and no other timeline branch runs." },
+            { name: "Branch: Just Browsing", how: "Set Booking Timeline = Just Browsing; confirm the lightest nurture cadence fires and no other timeline branch runs." },
+            { name: "Branch: else/blank fallback", how: "Leave Booking Timeline empty/unrecognized; confirm the fallback cadence fires (no branch silently dropped)." },
+            { name: "Opportunity creation", how: "New lead with no existing opportunity → confirm exactly ONE open lead opportunity is created." },
+            { name: "Duplicate-opportunity guard", how: "Re-fire on a lead that already has an open opportunity → confirm it reuses the existing opp and does NOT create a second." },
+            { name: "Booking stop condition", how: "Book the appointment mid-drip → confirm the Booking Engine removes Lead-NeedsBooking and sets appt_booked, and all remaining reminders stop (drip exits)." },
+            { name: "No-booking completion", how: "Lead never books → confirm the drip runs its full cadence to completion without stalling or looping." }
+          ]
         },
         { name: "Booking Cancellation Follow-Up",
           trigger: { type: "Appointment Status Changed → Cancelled" },
