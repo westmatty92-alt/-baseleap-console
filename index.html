@@ -182,6 +182,10 @@
   .bp-tg-name{flex:1;min-width:0;display:flex;align-items:center;gap:6px;background:none;border:none;padding:0;font:inherit;color:var(--depth);text-align:left;cursor:pointer}
   .bp-tg-chip{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--run);background:rgba(0,168,120,.1);border-radius:5px;padding:2px 6px}
   .bp-tg-checklist{padding:8px 14px 12px 44px;background:var(--canvas);border-bottom:1px solid var(--line)}
+  /* the shared checklist renderer is colored for the DARK detail panel (--d-text/--d-muted);
+     re-color it for this LIGHT test-gate panel, matching the .bp-subrow/.bp-tg-name convention */
+  .bp-tg-checklist .bp-ck-lbl{color:var(--depth)}
+  .bp-tg-checklist .disc-how{color:var(--muted)}
   /* Automation detail — dark decision-surface (same --d-* tokens as Finalize) */
   .bp-detail{margin:0 -24px -24px;padding:24px 24px 64px;background:var(--d-bg);min-height:calc(100vh - 168px);color:var(--d-text);box-shadow:inset 0 14px 18px -16px rgba(0,0,0,.7)}
   .bp-back{background:none;border:none;color:var(--run);font-size:13px;font-weight:600;cursor:pointer;padding:6px 0;margin-bottom:8px}
