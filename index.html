@@ -1130,7 +1130,12 @@ const ENGINE_SEED = [
             "Internal payment alert: client name, amount, date, transaction ID"
           ],
           must_not: ["identify the service","apply service tags","send booking details"],
-          tests: ["payment after booking (normal path)","payment before booking (exercises retry + create fallback)","verify tags, fields, opportunity, email, SMS, alert — and that it fired ONCE"]
+          tests: [
+            { name: "Payment after booking (normal path)", how: "Send a Success payment for a contact whose booking already created an open opportunity; confirm Find Opportunity locates it and updates to stage Paid/Booked, status Won, value = Last Payment Amount." },
+            { name: "Payment before booking (retry + create fallback)", how: "Send a Success payment before any opportunity exists; confirm the 1-min wait + re-find run, and when still not found the workflow creates a Paid-Booked / Won opportunity with value = amount." },
+            { name: "Duplicate-fire guard", how: "Re-deliver the same Payment Received event on an already-Paid contact; confirm the If/Else on the Paid tag ends the workflow — no second tags, no duplicate revenue, no repeat email/SMS." },
+            { name: "Full side-effects, fired once", how: "On a single success, confirm every effect lands exactly once: tags Paid + Stripe-Payment-Confirmed; fields Last Payment Amount/Date + Stripe Transaction ID; opportunity update; confirmation email; confirmation SMS; internal alert." }
+          ]
         },
         {
           name: "Stripe Payment Failed (Core)",
@@ -1146,7 +1151,12 @@ const ENGINE_SEED = [
             "Cleanup: remove SYS – Guard Check"
           ],
           must_not: ["process membership payments, renewals, or cancellations"],
-          tests: ["failed one-time service payment","successful membership purchase (guard exits, not marked failed)","failed membership renewal (guard exits, Membership Engine handles)"]
+          tests: [
+            { name: "Failed one-time service payment (happy path)", how: "Fire a Failed payment on a non-membership contact; confirm tag Payment-Failed is added and the calm 'payment unsuccessful — update your card' notification sends." },
+            { name: "Membership guard — successful membership purchase", how: "Fire the transient Failed event that accompanies a membership checkout; confirm the membership-exclusion guard removes SYS – Guard Check and ends WITHOUT adding Payment-Failed." },
+            { name: "Membership guard — failed membership renewal", how: "Fire a failed membership renewal; confirm the guard exits so the Membership Engine handles it — Payment-Failed is not applied here." },
+            { name: "Guard-tag cleanup", how: "On the non-membership path, confirm SYS – Guard Check is removed at the end, leaving no residual guard tag on the contact." }
+          ]
         },
         {
           name: "Stripe Refund Issued (Core)",
@@ -1160,7 +1170,11 @@ const ENGINE_SEED = [
             "Optional: revoke transaction-linked referral/credit eligibility (never claw back already-issued rewards unless policy requires)",
             "Optional internal alert"
           ],
-          tests: ["full refund (entitlement removed, logged, opportunity corrected)","refund after service completion (overrides completed lifecycle)"]
+          tests: [
+            { name: "Full refund (normal path)", how: "Issue a full refund on a Paid contact; confirm tag Refunded is added, Paid + Stripe-Payment-Confirmed removed, refund fields (Last Refund Amount/Date, Stripe Refund Transaction ID) log using Current Date, and the paid opportunity is corrected to a refunded state." },
+            { name: "Refund after service completion", how: "Refund a contact whose opportunity already reached a completed lifecycle; confirm the refunded state overrides completed and the opportunity is corrected." },
+            { name: "Opportunity-not-found path", how: "Issue a refund where no paid opportunity exists; confirm Find Opportunity takes the not-found branch and ends cleanly without error." }
+          ]
         },
         { name: "Coupon / Review-Credit Redemption",
           trigger: { type: "checkout.session.completed with coupon applied" },
