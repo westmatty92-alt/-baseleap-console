@@ -1101,6 +1101,11 @@ async function loadAutomationData(clientId){
    Seeded once via seedEngineCatalog() from the browser console;
    full-depth specs from the Stay Radiant SOP (Notion Engine
    Catalog is the human-facing master).
+   TEST MATRIX: each automation's `tests` MUST be [{name, how}] (name = short
+   scenario label; how = click-level setup+action+expected, deploy.tasks[].how
+   depth) — never a bare/joined string (collapses to one unreadable test-gate
+   row). NOT validator-enforced (catalog is hand-seeded); honor it by hand.
+   See CLAUDE.md → DATA CONTRACTS → engine_catalog test-matrix authoring standard.
 ============================================================ */
 const ENGINE_SEED = [
   {
