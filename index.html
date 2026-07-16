@@ -110,6 +110,22 @@
   .plan-warn-title{color:#E24B4A;font-weight:700;font-size:14px;margin-bottom:6px}
   .plan-warn-item{color:#E24B4A;font-size:13px;margin-bottom:2px}
   .step-badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:10px;background:var(--canvas);border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+  /* Build-folder grid — each build_plans row is one segregated build ("folder") */
+  .bp-folders{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px;margin-top:6px}
+  .bp-folder{position:relative;text-align:left;border:1px solid var(--line);border-radius:10px;background:var(--surface);padding:16px 14px 12px;cursor:pointer;font-family:inherit;display:flex;flex-direction:column;gap:4px;transition:border-color .12s,box-shadow .12s}
+  .bp-folder:hover{border-color:var(--run);box-shadow:0 2px 10px rgba(0,168,120,.10)}
+  .bp-folder-tab{position:absolute;top:-1px;left:16px;width:40px;height:6px;border-radius:0 0 4px 4px;background:var(--volt);opacity:.75}
+  .bp-folder-name{font-size:14px;font-weight:600;color:var(--ink);margin-top:4px;line-height:1.3}
+  .bp-folder-meta{font-size:12px;color:var(--muted)}
+  .bp-folder-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px}
+  .bp-folder-status{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;padding:2px 8px;border-radius:20px;border:1px solid var(--line);color:var(--muted)}
+  .bp-folder-status.st-done{color:var(--run);border-color:var(--run)}
+  .bp-folder-status.st-building,.bp-folder-status.st-testing{color:#B5730A;border-color:#E8C08A}
+  .bp-folder-date{font-size:11px;color:var(--muted)}
+  .bp-folder-new{align-items:center;justify-content:center;color:var(--run);font-weight:600;font-size:14px;border-style:dashed;flex-direction:row;gap:6px;min-height:96px}
+  .bp-folder-new:hover{border-color:var(--run);background:rgba(0,168,120,.04)}
+  .bp-folder-new:disabled{opacity:.6;cursor:default}
+  .bp-folder-plus{font-size:20px;line-height:1}
   /* Build-Plan Depth: expandable node workflow + manifest inside a step card */
   .depth-toggle{background:none;border:none;padding:0;font-size:12px;font-weight:600;color:var(--run);cursor:pointer;margin:6px 0 2px}
   .depth-box{border-top:1px dashed var(--line);margin-top:8px;padding-top:8px}
@@ -417,7 +433,7 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 ============================================================ */
 function freshAudit(){ return { tab:"guide", guideNotes:{}, captureText:"", summary:null, sessionId:null, loaded:false, analyzing:false, msg:"", stackForm:null, stackOtherFlags:{}, extracting:false }; }
 function freshAutomation(){ return { tab:"gaps", loaded:false, msg:"", gaps:[], drafts:{}, assessing:{}, errors:{}, assessingAll:false, validatingAll:false, progress:"", finBusy:{}, finBulkBusy:false, finMsg:"" }; }
-function freshBuildPlan(){ return { loaded:false, msg:"", plan:null, steps:[], draft:null, draftGaps:null, generating:false, saving:false, expanded:{}, panel:null, zoom:1, pan:{x:0,y:0} }; }
+function freshBuildPlan(){ return { loaded:false, msg:"", plans:[], activePlanId:null, planCounts:{}, plan:null, steps:[], draft:null, draftGaps:null, generating:false, saving:false, expanded:{}, panel:null, zoom:1, pan:{x:0,y:0} }; }
 function freshSetup(){ return { loaded:false, msg:"", run:null, preflight:null, diff:null, running:false, busy:false }; }
 
 const S = {
@@ -2895,17 +2911,14 @@ async function generateBuildPlan(){
   S.buildPlan.generating = false; renderAutomation();
 }
 
-// "Generate new plan" — append-only regenerate. Clears the LOADED plan locally
-// (never deletes the DB row: the old build_plans row + its setup_runs audit stay
-// intact — that FK is RESTRICT precisely so audit is never destroyed). Re-enters
-// generation; saving appends a NEW build_plans row that loadBuildPlanData then
-// treats as latest. The prior plan's setup-run history stays tied to the prior
-// plan id by design (audit records what ran against THAT plan). Nothing is written
-// until the operator saves the draft, so cancelling changes nothing on disk.
-function regenerateBuildPlan(){
+// "+ New build" — starts a NEW, SEGREGATED build folder. Append-only: each saved
+// build is its own build_plans row (a returning-client add-on is a new folder, never
+// merged into a prior one). Leaves the folder grid locally (no DB delete — old rows +
+// their setup_runs audit stay intact; that FK is RESTRICT so audit is never destroyed).
+// Nothing is written until the operator saves the draft, so cancelling changes nothing.
+function startNewBuild(){
   if(S.buildPlan.generating) return;
-  if(!confirm("Generate a new build plan?\n\nThe current saved plan stays in the database and its Setup Agent history is preserved. A new plan is created only when you save the draft — it then supersedes this one on next load.")) return;
-  S.buildPlan.plan = null; S.buildPlan.steps = [];   // local only — no DB delete
+  S.buildPlan.activePlanId = null; S.buildPlan.plan = null; S.buildPlan.steps = [];   // local only — no DB delete
   generateBuildPlan();
 }
 
@@ -2951,6 +2964,11 @@ async function saveBuildPlan(){
     }
     S.buildPlan.plan = plan;
     S.buildPlan.steps = steps.slice().sort((a, b) => a.position - b.position);
+    S.buildPlan.plans = [plan, ...S.buildPlan.plans];   // new folder, newest first
+    S.buildPlan.activePlanId = plan.id;                 // open the just-saved build
+    S.buildPlan.planCounts = { ...S.buildPlan.planCounts, [plan.id]: {
+      engines: new Set(S.buildPlan.steps.filter(s => s.agent === "automation" && s.gap_id).map(s => s.gap_id)).size,
+      steps: S.buildPlan.steps.length } };
     S.buildPlan.draft = null; S.buildPlan.draftGaps = null;   // draft is spent — the saved rows are now the truth
     setBuildPlanMsg("Plan saved ✓");
   }catch(e){
@@ -2969,22 +2987,63 @@ async function rollbackBuildPlan(planId, why){
     : `Save failed: ${why}. Rolled back — nothing was saved. Draft kept; try again.`);
 }
 
-// Latest plan per client + its steps in topological position order.
+// ALL build "folders" for a client — each build_plans row is one segregated build
+// (append-only; a returning-client add-on is a NEW row, never merged). Defaults to the
+// folder GRID (no plan open); opening a folder loads its steps. Loading every plan (not
+// just the latest) is also the substrate the future per-client map/ledger will read
+// across — those are client-level aggregations over S.buildPlan.plans, NOT folders.
 async function loadBuildPlanData(clientId){
   try{
     const { data: plans, error } = await sb.from("build_plans").select("*")
-      .eq("client_id", clientId).order("created_at", { ascending: false }).limit(1);
+      .eq("client_id", clientId).order("created_at", { ascending: false });
     if(error) throw new Error(error.message);
-    S.buildPlan.plan = (plans && plans[0]) || null;
-    S.buildPlan.steps = [];
-    if(S.buildPlan.plan){
-      const { data: steps, error: e2 } = await sb.from("build_steps").select("*")
-        .eq("build_plan_id", S.buildPlan.plan.id).order("position");
-      if(e2) throw new Error(e2.message);
-      S.buildPlan.steps = steps || [];
-    }
+    S.buildPlan.plans = plans || [];
+    S.buildPlan.planCounts = await loadBuildFolderCounts(S.buildPlan.plans);
+    S.buildPlan.activePlanId = null; S.buildPlan.plan = null; S.buildPlan.steps = [];   // grid view
   }catch(e){ setBuildPlanMsg("Load failed: " + e.message); }
   S.buildPlan.loaded = true;
+  renderAutomation();
+}
+
+// {planId: {engines, steps}} for folder labels — engines = distinct gap_id on
+// automation steps, steps = total. One read across all this client's plans, tallied
+// client-side; on error labels degrade to 0 rather than break the grid.
+async function loadBuildFolderCounts(plans){
+  const counts = {};
+  plans.forEach(p => counts[p.id] = { engines: 0, steps: 0 });
+  if(!plans.length) return counts;
+  const { data: rows, error } = await sb.from("build_steps")
+    .select("build_plan_id, gap_id, agent").in("build_plan_id", plans.map(p => p.id));
+  if(error || !rows) return counts;
+  const gapsByPlan = {};
+  rows.forEach(r => {
+    const c = counts[r.build_plan_id]; if(!c) return;
+    c.steps++;
+    if(r.agent === "automation" && r.gap_id)
+      (gapsByPlan[r.build_plan_id] = gapsByPlan[r.build_plan_id] || new Set()).add(r.gap_id);
+  });
+  Object.keys(gapsByPlan).forEach(pid => counts[pid].engines = gapsByPlan[pid].size);
+  return counts;
+}
+
+// Open one build folder — load its steps, reset the engine-detail panel so a stale
+// popup from another folder can't bleed through.
+async function openBuildFolder(planId){
+  const plan = S.buildPlan.plans.find(p => p.id === planId);
+  if(!plan) return;
+  S.buildPlan.activePlanId = planId; S.buildPlan.plan = plan; S.buildPlan.panel = null; S.buildPlan.steps = [];
+  try{
+    const { data: steps, error } = await sb.from("build_steps").select("*")
+      .eq("build_plan_id", planId).order("position");
+    if(error) throw new Error(error.message);
+    S.buildPlan.steps = steps || [];
+  }catch(e){ setBuildPlanMsg("Load failed: " + e.message); }
+  renderAutomation();
+}
+
+// Back to the folder grid (clears the open plan; the grid re-renders from S.buildPlan.plans).
+function closeBuildFolder(){
+  S.buildPlan.activePlanId = null; S.buildPlan.plan = null; S.buildPlan.steps = []; S.buildPlan.panel = null;
   renderAutomation();
 }
 
@@ -3040,9 +3099,10 @@ function renderFinalizeBar(f){
 
 function finalizeToPlan(){
   S.automation.tab = "plan";
+  // land on the build-folder grid — starting a new build is explicit ("+ New build"),
+  // never auto-generated (a client may already have segregated build folders).
+  S.buildPlan.activePlanId = null; S.buildPlan.plan = null; S.buildPlan.steps = []; S.buildPlan.panel = null;
   renderAutomation();
-  // fresh client state loads first; generation only auto-starts on a truly empty plan slate
-  if(S.buildPlan.loaded && !S.buildPlan.plan && !S.buildPlan.draft && !S.buildPlan.generating) generateBuildPlan();
 }
 
 function setFinalizeMsg(t){ S.automation.finMsg = t; const el = document.getElementById("finalize-msg"); if(el) el.textContent = t; }
@@ -3129,9 +3189,12 @@ function renderFinalizeBody(){
 /* ---- Build-plan subtab UI ---- */
 function renderBuildPlanBody(){
   const body = document.getElementById("automation-body");
-  if(!S.buildPlan.loaded){ body.innerHTML = `<div class="audit-empty">Loading build plan…</div>`; loadBuildPlanData(S.activeClientId); return; }
-  // precedence: a saved plan is the truth; a draft only shows before any save
-  const inner = S.buildPlan.plan ? renderSavedPlan() : S.buildPlan.draft ? renderDraftReview() : renderPlanEmpty();
+  if(!S.buildPlan.loaded){ body.innerHTML = `<div class="audit-empty">Loading builds…</div>`; loadBuildPlanData(S.activeClientId); return; }
+  // precedence: a draft (new build being reviewed) takes over; else an OPEN folder
+  // shows its saved plan; else the client's folder grid.
+  const inner = S.buildPlan.draft ? renderDraftReview()
+    : S.buildPlan.activePlanId ? renderSavedPlan()
+    : renderBuildFolderGrid();
   body.innerHTML = inner + `<div class="msg" id="buildplan-msg" style="margin-top:10px">${esc(S.buildPlan.msg)}</div>`;
   autoSizeNotes();
 }
@@ -3146,12 +3209,36 @@ function autoSizeNotes(){
   });
 }
 
-function renderPlanEmpty(){
+// The build-folder grid — one card per build_plans row for the active client. Each is a
+// segregated build (its own engines); "+ New build" starts another. Empty → prompt.
+function renderBuildFolderGrid(){
+  const plans = S.buildPlan.plans || [], gen = S.buildPlan.generating;
+  const newCard = `<button class="bp-folder bp-folder-new" onclick="startNewBuild()" ${gen?"disabled":""}><span class="bp-folder-plus">+</span> ${gen?"Generating…":"New build"}</button>`;
+  if(!plans.length){
+    return `
+      <div class="card">
+        <div class="phase-t">No builds yet</div>
+        <div class="msg" style="margin-bottom:12px">Each build is a folder of engines generated from this client's accepted gaps. Validate gaps on the Feasibility tab, accept them on Finalize, then start a build.</div>
+        <div class="bp-folders">${newCard}</div>
+      </div>`;
+  }
+  const cards = plans.map(p => {
+    const c = (S.buildPlan.planCounts && S.buildPlan.planCounts[p.id]) || { engines:0, steps:0 };
+    const when = p.created_at ? new Date(p.created_at).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"}) : "";
+    const st = p.status || "queued";
+    return `
+      <button class="bp-folder" onclick="openBuildFolder('${p.id}')">
+        <div class="bp-folder-tab"></div>
+        <div class="bp-folder-name">${esc(p.title || "Untitled build")}</div>
+        <div class="bp-folder-meta">${c.engines} engine${c.engines===1?"":"s"} · ${c.steps} step${c.steps===1?"":"s"}</div>
+        <div class="bp-folder-foot"><span class="bp-folder-status st-${esc(st)}">${esc(st)}</span><span class="bp-folder-date">${esc(when)}</span></div>
+      </button>`;
+  }).join("");
   return `
     <div class="card">
-      <div class="phase-t">No build plan yet</div>
-      <div class="msg" style="margin-bottom:12px">Generates ONE dependency-ordered plan (setup + automation steps) from this client's accepted gaps. Validate gaps on the Feasibility tab, then mark them accepted on the Finalize tab.</div>
-      <button class="btn-primary" style="width:auto" onclick="generateBuildPlan()" ${S.buildPlan.generating?"disabled":""}>${S.buildPlan.generating?"Generating plan…":"Generate build plan"}</button>
+      <div class="phase-h">Builds${S.activeClient ? " · " + esc(S.activeClient.business_name) : ""}</div>
+      <div class="phase-t">${plans.length} build${plans.length===1?"":"s"} for this client</div>
+      <div class="bp-folders">${cards}${newCard}</div>
     </div>`;
 }
 
@@ -3649,11 +3736,11 @@ function renderSavedPlan(){
   const done = steps.filter(s => s.status === "done").length;
   const head = `
     <div class="card">
+      <button class="bp-back" onclick="closeBuildFolder()">← All builds</button>
       <div class="phase-h">Build plan · ${esc(p.status || "")}</div>
       <div class="phase-t">${esc(p.title || "Untitled plan")}</div>
       <div class="msg">${esc(p.summary || "")}</div>
       <div class="msg" style="margin-top:6px">${done} of ${steps.length} steps done</div>
-      <div style="margin-top:10px"><button class="btn-ghost" style="width:auto" onclick="regenerateBuildPlan()" ${S.buildPlan.generating?"disabled":""}>${S.buildPlan.generating?"Generating…":"Generate new plan"}</button></div>
     </div>`;
   // CRM always shown; App / Agent Builder only when steps of that track exist.
   const sections = TRACK_ORDER
