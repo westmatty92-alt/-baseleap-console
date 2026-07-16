@@ -110,6 +110,22 @@
   .plan-warn-title{color:#E24B4A;font-weight:700;font-size:14px;margin-bottom:6px}
   .plan-warn-item{color:#E24B4A;font-size:13px;margin-bottom:2px}
   .step-badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:10px;background:var(--canvas);border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+  /* Build-folder grid — each build_plans row is one segregated build ("folder") */
+  .bp-folders{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px;margin-top:6px}
+  .bp-folder{position:relative;text-align:left;border:1px solid var(--line);border-radius:10px;background:var(--surface);padding:16px 14px 12px;cursor:pointer;font-family:inherit;display:flex;flex-direction:column;gap:4px;transition:border-color .12s,box-shadow .12s}
+  .bp-folder:hover{border-color:var(--run);box-shadow:0 2px 10px rgba(0,168,120,.10)}
+  .bp-folder-tab{position:absolute;top:-1px;left:16px;width:40px;height:6px;border-radius:0 0 4px 4px;background:var(--volt);opacity:.75}
+  .bp-folder-name{font-size:14px;font-weight:600;color:var(--ink);margin-top:4px;line-height:1.3}
+  .bp-folder-meta{font-size:12px;color:var(--muted)}
+  .bp-folder-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px}
+  .bp-folder-status{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;padding:2px 8px;border-radius:20px;border:1px solid var(--line);color:var(--muted)}
+  .bp-folder-status.st-done{color:var(--run);border-color:var(--run)}
+  .bp-folder-status.st-building,.bp-folder-status.st-testing{color:#B5730A;border-color:#E8C08A}
+  .bp-folder-date{font-size:11px;color:var(--muted)}
+  .bp-folder-new{align-items:center;justify-content:center;color:var(--run);font-weight:600;font-size:14px;border-style:dashed;flex-direction:row;gap:6px;min-height:96px}
+  .bp-folder-new:hover{border-color:var(--run);background:rgba(0,168,120,.04)}
+  .bp-folder-new:disabled{opacity:.6;cursor:default}
+  .bp-folder-plus{font-size:20px;line-height:1}
   /* Build-Plan Depth: expandable node workflow + manifest inside a step card */
   .depth-toggle{background:none;border:none;padding:0;font-size:12px;font-weight:600;color:var(--run);cursor:pointer;margin:6px 0 2px}
   .depth-box{border-top:1px dashed var(--line);margin-top:8px;padding-top:8px}
@@ -417,7 +433,7 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 ============================================================ */
 function freshAudit(){ return { tab:"guide", guideNotes:{}, captureText:"", summary:null, sessionId:null, loaded:false, analyzing:false, msg:"", stackForm:null, stackOtherFlags:{}, extracting:false }; }
 function freshAutomation(){ return { tab:"gaps", loaded:false, msg:"", gaps:[], drafts:{}, assessing:{}, errors:{}, assessingAll:false, validatingAll:false, progress:"", finBusy:{}, finBulkBusy:false, finMsg:"" }; }
-function freshBuildPlan(){ return { loaded:false, msg:"", plan:null, steps:[], draft:null, draftGaps:null, generating:false, saving:false, expanded:{}, panel:null, zoom:1, pan:{x:0,y:0} }; }
+function freshBuildPlan(){ return { loaded:false, msg:"", plans:[], activePlanId:null, planCounts:{}, plan:null, steps:[], draft:null, draftGaps:null, generating:false, saving:false, expanded:{}, panel:null, zoom:1, pan:{x:0,y:0} }; }
 function freshSetup(){ return { loaded:false, msg:"", run:null, preflight:null, diff:null, running:false, busy:false }; }
 
 const S = {
@@ -1101,6 +1117,11 @@ async function loadAutomationData(clientId){
    Seeded once via seedEngineCatalog() from the browser console;
    full-depth specs from the Stay Radiant SOP (Notion Engine
    Catalog is the human-facing master).
+   TEST MATRIX: each automation's `tests` MUST be [{name, how}] (name = short
+   scenario label; how = click-level setup+action+expected, deploy.tasks[].how
+   depth) — never a bare/joined string (collapses to one unreadable test-gate
+   row). NOT validator-enforced (catalog is hand-seeded); honor it by hand.
+   See CLAUDE.md → DATA CONTRACTS → engine_catalog test-matrix authoring standard.
 ============================================================ */
 const ENGINE_SEED = [
   {
@@ -1130,7 +1151,12 @@ const ENGINE_SEED = [
             "Internal payment alert: client name, amount, date, transaction ID"
           ],
           must_not: ["identify the service","apply service tags","send booking details"],
-          tests: ["payment after booking (normal path)","payment before booking (exercises retry + create fallback)","verify tags, fields, opportunity, email, SMS, alert — and that it fired ONCE"]
+          tests: [
+            { name: "Payment after booking (normal path)", how: "Send a Success payment for a contact whose booking already created an open opportunity; confirm Find Opportunity locates it and updates to stage Paid/Booked, status Won, value = Last Payment Amount." },
+            { name: "Payment before booking (retry + create fallback)", how: "Send a Success payment before any opportunity exists; confirm the 1-min wait + re-find run, and when still not found the workflow creates a Paid-Booked / Won opportunity with value = amount." },
+            { name: "Duplicate-fire guard", how: "Re-deliver the same Payment Received event on an already-Paid contact; confirm the If/Else on the Paid tag ends the workflow — no second tags, no duplicate revenue, no repeat email/SMS." },
+            { name: "Full side-effects, fired once", how: "On a single success, confirm every effect lands exactly once: tags Paid + Stripe-Payment-Confirmed; fields Last Payment Amount/Date + Stripe Transaction ID; opportunity update; confirmation email; confirmation SMS; internal alert." }
+          ]
         },
         {
           name: "Stripe Payment Failed (Core)",
@@ -1146,7 +1172,12 @@ const ENGINE_SEED = [
             "Cleanup: remove SYS – Guard Check"
           ],
           must_not: ["process membership payments, renewals, or cancellations"],
-          tests: ["failed one-time service payment","successful membership purchase (guard exits, not marked failed)","failed membership renewal (guard exits, Membership Engine handles)"]
+          tests: [
+            { name: "Failed one-time service payment (happy path)", how: "Fire a Failed payment on a non-membership contact; confirm tag Payment-Failed is added and the calm 'payment unsuccessful — update your card' notification sends." },
+            { name: "Membership guard — successful membership purchase", how: "Fire the transient Failed event that accompanies a membership checkout; confirm the membership-exclusion guard removes SYS – Guard Check and ends WITHOUT adding Payment-Failed." },
+            { name: "Membership guard — failed membership renewal", how: "Fire a failed membership renewal; confirm the guard exits so the Membership Engine handles it — Payment-Failed is not applied here." },
+            { name: "Guard-tag cleanup", how: "On the non-membership path, confirm SYS – Guard Check is removed at the end, leaving no residual guard tag on the contact." }
+          ]
         },
         {
           name: "Stripe Refund Issued (Core)",
@@ -1160,7 +1191,11 @@ const ENGINE_SEED = [
             "Optional: revoke transaction-linked referral/credit eligibility (never claw back already-issued rewards unless policy requires)",
             "Optional internal alert"
           ],
-          tests: ["full refund (entitlement removed, logged, opportunity corrected)","refund after service completion (overrides completed lifecycle)"]
+          tests: [
+            { name: "Full refund (normal path)", how: "Issue a full refund on a Paid contact; confirm tag Refunded is added, Paid + Stripe-Payment-Confirmed removed, refund fields (Last Refund Amount/Date, Stripe Refund Transaction ID) log using Current Date, and the paid opportunity is corrected to a refunded state." },
+            { name: "Refund after service completion", how: "Refund a contact whose opportunity already reached a completed lifecycle; confirm the refunded state overrides completed and the opportunity is corrected." },
+            { name: "Opportunity-not-found path", how: "Issue a refund where no paid opportunity exists; confirm Find Opportunity takes the not-found branch and ends cleanly without error." }
+          ]
         },
         { name: "Coupon / Review-Credit Redemption",
           trigger: { type: "checkout.session.completed with coupon applied" },
@@ -1199,7 +1234,18 @@ const ENGINE_SEED = [
             "Branch on Booking Timeline: This Week (tightest cadence) · Within Two Weeks (medium) · This Month (slower) · Just Browsing (lightest nurture) · Else/blank fallback"
           ],
           stop_condition: "All reminders stop once the lead books: the Booking Engine removes Lead-NeedsBooking and sets appt_booked, which exits the drip.",
-          tests: "A form mapping · B This Week · C Within Two Weeks · D This Month · E Just Browsing · F else/blank · G opportunity creation · H duplicate guard · I booking stop · J no-booking completion"
+          tests: [
+            { name: "Facebook form field mapping", how: "Submit a test Facebook lead form; confirm Interested Service, Booking Timeline, and Launch Location Qualified land in the correct custom fields (single-line text) with no capitalization/wording mismatch." },
+            { name: "Branch: This Week", how: "Set Booking Timeline = This Week; confirm the tightest reminder cadence fires and no other timeline branch runs." },
+            { name: "Branch: Within Two Weeks", how: "Set Booking Timeline = Within Two Weeks; confirm the medium cadence fires and no other timeline branch runs." },
+            { name: "Branch: This Month", how: "Set Booking Timeline = This Month; confirm the slower cadence fires and no other timeline branch runs." },
+            { name: "Branch: Just Browsing", how: "Set Booking Timeline = Just Browsing; confirm the lightest nurture cadence fires and no other timeline branch runs." },
+            { name: "Branch: else/blank fallback", how: "Leave Booking Timeline empty/unrecognized; confirm the fallback cadence fires (no branch silently dropped)." },
+            { name: "Opportunity creation", how: "New lead with no existing opportunity → confirm exactly ONE open lead opportunity is created." },
+            { name: "Duplicate-opportunity guard", how: "Re-fire on a lead that already has an open opportunity → confirm it reuses the existing opp and does NOT create a second." },
+            { name: "Booking stop condition", how: "Book the appointment mid-drip → confirm the Booking Engine removes Lead-NeedsBooking and sets appt_booked, and all remaining reminders stop (drip exits)." },
+            { name: "No-booking completion", how: "Lead never books → confirm the drip runs its full cadence to completion without stalling or looping." }
+          ]
         },
         { name: "Booking Cancellation Follow-Up",
           trigger: { type: "Appointment Status Changed → Cancelled" },
@@ -2101,16 +2147,17 @@ const DESIGN_DOCTRINE_PROMPT = `AUTOMATION DESIGN DOCTRINE (how you decide the n
 8. Delays are timing, not logic: never "wait and hope" — wait, re-find, then branch on what exists. Every delay has a reason.`;
 
 const FORMULATE_CONTRACT_PROMPT = `OUTPUT — respond ONLY with valid JSON, no markdown, exactly this shape:
-{"spec":{"purpose":"one sentence","automations":[{"name":"workflow name","trigger":{"type":"exact GHL trigger","filters":{}},"final_rule":"When [trigger] happens, if [guard passes], update [state], then [action], unless [failure condition].","nodes":[{"type":"trigger","config":"exact trigger + filters","deploy":{"input":"what the operator enters/selects here for THIS client","guardrail":"what must NOT be changed here"}}],"tests":["test matrix items"]}]},"manifest":{"requires_tags":["tags this engine reads/branches on"],"creates_tags":["tags it sets"],"requires_fields":[{"name":"field name","type":"text|number|currency|date","object":"contact|opportunity"}]},"deployment":{"branding":{"<area>":"what changes per client"},"business_rules":{"math_operations":["every hardcoded number that changes per client"]},"never_touch":["architectural rules that break the engine if edited"]}}
+{"spec":{"purpose":"one sentence","automations":[{"name":"workflow name","trigger":{"type":"exact GHL trigger","filters":{}},"final_rule":"When [trigger] happens, if [guard passes], update [state], then [action], unless [failure condition].","nodes":[{"type":"trigger","config":"exact trigger + filters","deploy":{"input":"what the operator enters/selects here for THIS client","guardrail":"what must NOT be changed here"}}],"tests":[{"name":"short scenario label","how":"setup + action + expected observable result"}]}]},"manifest":{"requires_tags":["tags this engine reads/branches on"],"creates_tags":["tags it sets"],"requires_fields":[{"name":"field name","type":"text|number|currency|date","object":"contact|opportunity"}]},"deployment":{"branding":{"<area>":"what changes per client"},"business_rules":{"math_operations":["every hardcoded number that changes per client"]},"never_touch":["architectural rules that break the engine if edited"]}}
 Field rules:
 - spec: catalog-grade — a builder executes it without more research. Trigger semantics match the business event exactly; design every trigger for re-entry/duplicates (processed-state tags, find-before-create); value-awarding steps gate on Payment Received.
 - final_rule: fill the template with THIS automation's specifics — it is the spine the nodes expand from.
 - nodes: the ordered node-by-node workflow exactly as assembled in the GHL builder. Each node = {"type","config"}; type is one of trigger|guard|wait|action|update|condition|webhook|handoff|end (webhook = external webhook-out call — never fold it into action; update = field/tag/record state change). The first node is always the trigger; the second is the guard (doctrine rule 3). condition nodes add "yes":[nodes] and "no":[nodes] branch arrays (branches may end with an end node). A condition's "yes" AND "no" must EACH contain at least one node — a fallback-less If/Else is invalid in EITHER direction; neither branch may ever be empty, no matter which side means "stop" and which means "continue." Whenever ONE side is just stop/end and the OTHER is "continue the main flow," it is NOT a condition — it is a guard, and you write the guard's condition as the STOP side so its met-branch ends: (a) "if X → stop, otherwise continue" → guard "config":"If X → end" (the empty-"no" trap); (b) "if X → continue, otherwise stop" → invert it: guard "config":"If NOT X → end" (the empty-"yes" trap). Both render as if-met→end / if-not-met→continue. Reserve condition for when BOTH outcomes carry their own distinct steps — neither side a bare stop. config is one precise sentence of settings.
+- node-graph COMPLETENESS — the graph is the literal, executable path, NOT a summary: every behavior you declare ANYWHERE in this automation's own output (deployment.business_rules.math_operations, timing, sequencing, formatting) must ALSO exist in the graph, as one of: a node's config when it governs that node directly (a wait's duration/interval, a formatter's rounding/currency format, a branch's threshold number); the node ORDER or branches when it's a sequence (deposit → progress → final = those nodes in that order); or the node's deploy.input (tunable per client) / deploy.guardrail (must-not-change). Concretely: N declared timed touches → N wait nodes with the matching intervals; a stated halt/stop condition → an explicit guard; a currency/number-format rule → a Math/Text formatter node (or a guardrail on the node that formats). If a math_operations or timing rule has no node, either add the node or you over-declared — the deployment card and the node graph must describe the SAME engine, with no timing/behavior living only in prose.
 - node "action" (the EXACT native GHL step name for that node, from the Trigger/Action vocabulary — e.g. "Send Email", "Send SMS", "Add Contact Tag", "Update Contact Field", "Update Opportunity", "Wait", "If/Else", "Inbound Webhook", "Appointment Status", "Pipeline Stage Changed", "Contact Tag"): set it whenever you know the native step; it becomes the node's label in the graph (config stays the plain-language "what it does"). Omit only when no native step fits.
-- node "deploy" (OPTIONAL, per node): the per-node setup instructions for a FUTURE client deploying this snapshot — {"input": what the operator must enter or select at this node for this client (delays, thresholds, the trigger event, coupon codes, links), "assets": copy/links/media to attach — MESSAGE-SENDING nodes only (email/SMS sends), "guardrail": what must NOT be changed here (a rule that breaks the engine if edited), "tasks": [{"text":"short imperative build task","how":"exact GHL how-to"}] — the physical setup a builder must DO before this node works (build the email template, create the coupon in GHL Payments→Coupons, register the A2P number, retrieve the review link); include on nodes needing a real-world artifact, omit where none}. Include ONLY the buckets that apply to that node; OMIT deploy entirely on pure state-change nodes (set field / add tag) that need no per-client input. Draw these from the SAME facts as the deployment tiers — branding → assets, business_rules numbers/the trigger → input, never_touch → guardrail — so each rule lands on the node it governs.
+- node "deploy" (OPTIONAL, per node): the per-node setup instructions for a FUTURE client deploying this snapshot — {"input": what the operator must enter or select at this node for this client (delays, thresholds, the trigger event, coupon codes, links), "assets": copy/links/media to attach — MESSAGE-SENDING nodes only (email/SMS sends), "guardrail": what must NOT be changed here (a rule that breaks the engine if edited), "tasks": [{"text":"short imperative build task","how":"the exact click-level GHL how-to — executable WITHOUT further research: the menu path, what to name the artifact, the exact values/fields to enter, and how to verify it worked"}] — the physical setup a builder must DO before this node works (build the email template, create the coupon in GHL Payments→Coupons, register the A2P number, retrieve the review link); include on nodes needing a real-world artifact, omit where none}. Include ONLY the buckets that apply to that node; OMIT deploy entirely on pure state-change nodes (set field / add tag) that need no per-client input. Draw these from the SAME facts as the deployment tiers — branding → assets, business_rules numbers/the trigger → input, never_touch → guardrail — so each rule lands on the node it governs. Two how-depth cases builders always get shorted — spell these out fully, never a one-liner: (a) INBOUND WEBHOOK / trigger artifacts — state where the webhook URL comes from and what to name it, the EXPECTED INBOUND PAYLOAD shape and its named fields (the exact keys the caller/n8n will POST), and a real-fire verification (send a test payload → the exact field or record that must update); (b) EMAIL/SMS TEMPLATE artifacts (message-sending nodes) — LIST by name the actual merge fields the copy uses ({{contact.first_name}}, {{contact.name}}, {{custom_values.*}}, opportunity fields), where the template is saved, and a send-time check that every field renders.
 - multi-branch If/Else (OPTIONAL): when a guard/condition genuinely has 3+ outcomes (GHL If/Else supports up to 5 condition branches + a None fallback), give the node a "branches" array INSTEAD of yes/no: [{"when":"this branch's condition set (AND/OR)","to":[the nodes on this branch — often ending in an end node]}]. Max 5. Do NOT include the None/else path in branches — the None path is simply the nodes that FOLLOW this node (the main flow continues there). A simple duplicate-prevention guard stays the single-condition "config":"If X → end" form (rendered as if-met/if-not-met); use branches only for real 3+-way splits.
 - manifest: classify by doctrine rule 2 — every tag the engine reads or sets and every custom field it needs, named exactly as the nodes reference them. The engine is not buildable until it declares these. A field's "object" = which GHL record it lives on: omit it for contact fields (the default); set "opportunity" only when the field genuinely belongs on the deal/opportunity record.
-- tests: the REAL test matrix for THIS automation, not generic phrases. One entry each for: the happy path end-to-end; EVERY guard (prove the duplicate-prevention actually blocks a re-fire); EVERY condition branch — the YES and the NO separately; each webhook ROUND-TRIP (it fires AND the response writes back the expected field); the exit condition (the automation stops on the right tag/state). Each test names the setup, the action, and the expected observable result.
+- tests: the REAL test matrix for THIS automation, not generic phrases. Each item is a {"name","how"} object (REQUIRED — never a bare string): name = a short scenario label (e.g. "Duplicate-fire guard", "Cap branch YES"); how = the click-level what-to-verify — the setup, the action, and the expected observable result — at the same depth as deploy.tasks[].how. One entry each for: the happy path end-to-end; EVERY guard (prove the duplicate-prevention actually blocks a re-fire); EVERY condition branch — the YES and the NO separately; each webhook ROUND-TRIP (it fires AND the response writes back the expected field); the exit condition (the automation stops on the right tag/state).
 - deployment: the three-tier guide for FUTURE clients of this engine — branding (names/copy/links), business_rules incl. math_operations (the most-forgotten tier), never_touch (the architecture).
 - This engine is DESIGNED, NOT PROVEN — tests must name what to verify live before trusting it.`;
 
@@ -2288,12 +2335,14 @@ function countNodeTypes(nodes, counts = { guard: 0, condition: 0 }){
 // counting mismatch and make formulate flaky; the floor only rejects trivial output.
 function validateAutomationTests(a, at){
   if(!Array.isArray(a.tests) || !a.tests.length) throw new Error(at + ": tests must be a non-empty array");
-  a.tests.forEach((t, i) => {   // dual-shape: legacy string OR {name, how} (how optional)
-    if(typeof t === "string"){ if(!t.trim()) throw new Error(`${at}: tests[${i}] must be a non-empty string`); }
-    else if(t && typeof t === "object" && !Array.isArray(t)){
-      if(typeof t.name !== "string" || !t.name.trim()) throw new Error(`${at}: tests[${i}].name must be a non-empty string`);
-      if(t.how != null && (typeof t.how !== "string" || !t.how.trim())) throw new Error(`${at}: tests[${i}].how must be a non-empty string when present`);
-    } else throw new Error(`${at}: tests[${i}] must be a string or {name, how}`);
+  a.tests.forEach((t, i) => {   // REQUIRED shape: {name, how}, both non-empty. A bare
+    // string (no expandable how) or a {name} with no how is the thin-test bug class that
+    // shipped lead_response/payments_stripe — rejected outright so every AI test carries
+    // real expandable how detail. (testMatrixItems stays string-tolerant for legacy/catalog
+    // rendering; only AI-generated output is gated here.)
+    if(!t || typeof t !== "object" || Array.isArray(t)) throw new Error(`${at}: tests[${i}] must be a {name, how} object (bare strings are no longer accepted)`);
+    if(typeof t.name !== "string" || !t.name.trim()) throw new Error(`${at}: tests[${i}].name must be a non-empty string`);
+    if(typeof t.how !== "string" || !t.how.trim()) throw new Error(`${at}: tests[${i}].how must be a non-empty string`);
   });
   const c = countNodeTypes(a.nodes);
   const floor = c.guard + c.condition;
@@ -2862,17 +2911,14 @@ async function generateBuildPlan(){
   S.buildPlan.generating = false; renderAutomation();
 }
 
-// "Generate new plan" — append-only regenerate. Clears the LOADED plan locally
-// (never deletes the DB row: the old build_plans row + its setup_runs audit stay
-// intact — that FK is RESTRICT precisely so audit is never destroyed). Re-enters
-// generation; saving appends a NEW build_plans row that loadBuildPlanData then
-// treats as latest. The prior plan's setup-run history stays tied to the prior
-// plan id by design (audit records what ran against THAT plan). Nothing is written
-// until the operator saves the draft, so cancelling changes nothing on disk.
-function regenerateBuildPlan(){
+// "+ New build" — starts a NEW, SEGREGATED build folder. Append-only: each saved
+// build is its own build_plans row (a returning-client add-on is a new folder, never
+// merged into a prior one). Leaves the folder grid locally (no DB delete — old rows +
+// their setup_runs audit stay intact; that FK is RESTRICT so audit is never destroyed).
+// Nothing is written until the operator saves the draft, so cancelling changes nothing.
+function startNewBuild(){
   if(S.buildPlan.generating) return;
-  if(!confirm("Generate a new build plan?\n\nThe current saved plan stays in the database and its Setup Agent history is preserved. A new plan is created only when you save the draft — it then supersedes this one on next load.")) return;
-  S.buildPlan.plan = null; S.buildPlan.steps = [];   // local only — no DB delete
+  S.buildPlan.activePlanId = null; S.buildPlan.plan = null; S.buildPlan.steps = [];   // local only — no DB delete
   generateBuildPlan();
 }
 
@@ -2918,6 +2964,11 @@ async function saveBuildPlan(){
     }
     S.buildPlan.plan = plan;
     S.buildPlan.steps = steps.slice().sort((a, b) => a.position - b.position);
+    S.buildPlan.plans = [plan, ...S.buildPlan.plans];   // new folder, newest first
+    S.buildPlan.activePlanId = plan.id;                 // open the just-saved build
+    S.buildPlan.planCounts = { ...S.buildPlan.planCounts, [plan.id]: {
+      engines: new Set(S.buildPlan.steps.filter(s => s.agent === "automation" && s.gap_id).map(s => s.gap_id)).size,
+      steps: S.buildPlan.steps.length } };
     S.buildPlan.draft = null; S.buildPlan.draftGaps = null;   // draft is spent — the saved rows are now the truth
     setBuildPlanMsg("Plan saved ✓");
   }catch(e){
@@ -2936,22 +2987,63 @@ async function rollbackBuildPlan(planId, why){
     : `Save failed: ${why}. Rolled back — nothing was saved. Draft kept; try again.`);
 }
 
-// Latest plan per client + its steps in topological position order.
+// ALL build "folders" for a client — each build_plans row is one segregated build
+// (append-only; a returning-client add-on is a NEW row, never merged). Defaults to the
+// folder GRID (no plan open); opening a folder loads its steps. Loading every plan (not
+// just the latest) is also the substrate the future per-client map/ledger will read
+// across — those are client-level aggregations over S.buildPlan.plans, NOT folders.
 async function loadBuildPlanData(clientId){
   try{
     const { data: plans, error } = await sb.from("build_plans").select("*")
-      .eq("client_id", clientId).order("created_at", { ascending: false }).limit(1);
+      .eq("client_id", clientId).order("created_at", { ascending: false });
     if(error) throw new Error(error.message);
-    S.buildPlan.plan = (plans && plans[0]) || null;
-    S.buildPlan.steps = [];
-    if(S.buildPlan.plan){
-      const { data: steps, error: e2 } = await sb.from("build_steps").select("*")
-        .eq("build_plan_id", S.buildPlan.plan.id).order("position");
-      if(e2) throw new Error(e2.message);
-      S.buildPlan.steps = steps || [];
-    }
+    S.buildPlan.plans = plans || [];
+    S.buildPlan.planCounts = await loadBuildFolderCounts(S.buildPlan.plans);
+    S.buildPlan.activePlanId = null; S.buildPlan.plan = null; S.buildPlan.steps = [];   // grid view
   }catch(e){ setBuildPlanMsg("Load failed: " + e.message); }
   S.buildPlan.loaded = true;
+  renderAutomation();
+}
+
+// {planId: {engines, steps}} for folder labels — engines = distinct gap_id on
+// automation steps, steps = total. One read across all this client's plans, tallied
+// client-side; on error labels degrade to 0 rather than break the grid.
+async function loadBuildFolderCounts(plans){
+  const counts = {};
+  plans.forEach(p => counts[p.id] = { engines: 0, steps: 0 });
+  if(!plans.length) return counts;
+  const { data: rows, error } = await sb.from("build_steps")
+    .select("build_plan_id, gap_id, agent").in("build_plan_id", plans.map(p => p.id));
+  if(error || !rows) return counts;
+  const gapsByPlan = {};
+  rows.forEach(r => {
+    const c = counts[r.build_plan_id]; if(!c) return;
+    c.steps++;
+    if(r.agent === "automation" && r.gap_id)
+      (gapsByPlan[r.build_plan_id] = gapsByPlan[r.build_plan_id] || new Set()).add(r.gap_id);
+  });
+  Object.keys(gapsByPlan).forEach(pid => counts[pid].engines = gapsByPlan[pid].size);
+  return counts;
+}
+
+// Open one build folder — load its steps, reset the engine-detail panel so a stale
+// popup from another folder can't bleed through.
+async function openBuildFolder(planId){
+  const plan = S.buildPlan.plans.find(p => p.id === planId);
+  if(!plan) return;
+  S.buildPlan.activePlanId = planId; S.buildPlan.plan = plan; S.buildPlan.panel = null; S.buildPlan.steps = [];
+  try{
+    const { data: steps, error } = await sb.from("build_steps").select("*")
+      .eq("build_plan_id", planId).order("position");
+    if(error) throw new Error(error.message);
+    S.buildPlan.steps = steps || [];
+  }catch(e){ setBuildPlanMsg("Load failed: " + e.message); }
+  renderAutomation();
+}
+
+// Back to the folder grid (clears the open plan; the grid re-renders from S.buildPlan.plans).
+function closeBuildFolder(){
+  S.buildPlan.activePlanId = null; S.buildPlan.plan = null; S.buildPlan.steps = []; S.buildPlan.panel = null;
   renderAutomation();
 }
 
@@ -3007,9 +3099,10 @@ function renderFinalizeBar(f){
 
 function finalizeToPlan(){
   S.automation.tab = "plan";
+  // land on the build-folder grid — starting a new build is explicit ("+ New build"),
+  // never auto-generated (a client may already have segregated build folders).
+  S.buildPlan.activePlanId = null; S.buildPlan.plan = null; S.buildPlan.steps = []; S.buildPlan.panel = null;
   renderAutomation();
-  // fresh client state loads first; generation only auto-starts on a truly empty plan slate
-  if(S.buildPlan.loaded && !S.buildPlan.plan && !S.buildPlan.draft && !S.buildPlan.generating) generateBuildPlan();
 }
 
 function setFinalizeMsg(t){ S.automation.finMsg = t; const el = document.getElementById("finalize-msg"); if(el) el.textContent = t; }
@@ -3096,9 +3189,12 @@ function renderFinalizeBody(){
 /* ---- Build-plan subtab UI ---- */
 function renderBuildPlanBody(){
   const body = document.getElementById("automation-body");
-  if(!S.buildPlan.loaded){ body.innerHTML = `<div class="audit-empty">Loading build plan…</div>`; loadBuildPlanData(S.activeClientId); return; }
-  // precedence: a saved plan is the truth; a draft only shows before any save
-  const inner = S.buildPlan.plan ? renderSavedPlan() : S.buildPlan.draft ? renderDraftReview() : renderPlanEmpty();
+  if(!S.buildPlan.loaded){ body.innerHTML = `<div class="audit-empty">Loading builds…</div>`; loadBuildPlanData(S.activeClientId); return; }
+  // precedence: a draft (new build being reviewed) takes over; else an OPEN folder
+  // shows its saved plan; else the client's folder grid.
+  const inner = S.buildPlan.draft ? renderDraftReview()
+    : S.buildPlan.activePlanId ? renderSavedPlan()
+    : renderBuildFolderGrid();
   body.innerHTML = inner + `<div class="msg" id="buildplan-msg" style="margin-top:10px">${esc(S.buildPlan.msg)}</div>`;
   autoSizeNotes();
 }
@@ -3113,12 +3209,36 @@ function autoSizeNotes(){
   });
 }
 
-function renderPlanEmpty(){
+// The build-folder grid — one card per build_plans row for the active client. Each is a
+// segregated build (its own engines); "+ New build" starts another. Empty → prompt.
+function renderBuildFolderGrid(){
+  const plans = S.buildPlan.plans || [], gen = S.buildPlan.generating;
+  const newCard = `<button class="bp-folder bp-folder-new" onclick="startNewBuild()" ${gen?"disabled":""}><span class="bp-folder-plus">+</span> ${gen?"Generating…":"New build"}</button>`;
+  if(!plans.length){
+    return `
+      <div class="card">
+        <div class="phase-t">No builds yet</div>
+        <div class="msg" style="margin-bottom:12px">Each build is a folder of engines generated from this client's accepted gaps. Validate gaps on the Feasibility tab, accept them on Finalize, then start a build.</div>
+        <div class="bp-folders">${newCard}</div>
+      </div>`;
+  }
+  const cards = plans.map(p => {
+    const c = (S.buildPlan.planCounts && S.buildPlan.planCounts[p.id]) || { engines:0, steps:0 };
+    const when = p.created_at ? new Date(p.created_at).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"}) : "";
+    const st = p.status || "queued";
+    return `
+      <button class="bp-folder" onclick="openBuildFolder('${p.id}')">
+        <div class="bp-folder-tab"></div>
+        <div class="bp-folder-name">${esc(p.title || "Untitled build")}</div>
+        <div class="bp-folder-meta">${c.engines} engine${c.engines===1?"":"s"} · ${c.steps} step${c.steps===1?"":"s"}</div>
+        <div class="bp-folder-foot"><span class="bp-folder-status st-${esc(st)}">${esc(st)}</span><span class="bp-folder-date">${esc(when)}</span></div>
+      </button>`;
+  }).join("");
   return `
     <div class="card">
-      <div class="phase-t">No build plan yet</div>
-      <div class="msg" style="margin-bottom:12px">Generates ONE dependency-ordered plan (setup + automation steps) from this client's accepted gaps. Validate gaps on the Feasibility tab, then mark them accepted on the Finalize tab.</div>
-      <button class="btn-primary" style="width:auto" onclick="generateBuildPlan()" ${S.buildPlan.generating?"disabled":""}>${S.buildPlan.generating?"Generating plan…":"Generate build plan"}</button>
+      <div class="phase-h">Builds${S.activeClient ? " · " + esc(S.activeClient.business_name) : ""}</div>
+      <div class="phase-t">${plans.length} build${plans.length===1?"":"s"} for this client</div>
+      <div class="bp-folders">${cards}${newCard}</div>
     </div>`;
 }
 
@@ -3616,11 +3736,11 @@ function renderSavedPlan(){
   const done = steps.filter(s => s.status === "done").length;
   const head = `
     <div class="card">
+      <button class="bp-back" onclick="closeBuildFolder()">← All builds</button>
       <div class="phase-h">Build plan · ${esc(p.status || "")}</div>
       <div class="phase-t">${esc(p.title || "Untitled plan")}</div>
       <div class="msg">${esc(p.summary || "")}</div>
       <div class="msg" style="margin-top:6px">${done} of ${steps.length} steps done</div>
-      <div style="margin-top:10px"><button class="btn-ghost" style="width:auto" onclick="regenerateBuildPlan()" ${S.buildPlan.generating?"disabled":""}>${S.buildPlan.generating?"Generating…":"Generate new plan"}</button></div>
     </div>`;
   // CRM always shown; App / Agent Builder only when steps of that track exist.
   const sections = TRACK_ORDER
