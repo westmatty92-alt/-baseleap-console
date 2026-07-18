@@ -79,6 +79,43 @@ completes, any failure aborts generation with an aggregated error naming each fa
 gap. Routing/validators/write path untouched (anti-backwards constraint); per-call
 max_tokens + stop_reason checks live inside the unmodified call functions (Bug #17).
 
+## Builds module — navigation restructure & folder-scoped tabs (locked July 18 2026; plan: docs/planning/nav-restructure-builds-tabs.md)
+The left-nav "Automation agent" becomes **Builds**; "Gap report" and "Proposal" are
+removed as separate nav items. All five surfaces move to live as TABS INSIDE each build
+folder, confirmed order: **Feasibility → Gap Report → Finalize → Build Plan → Proposal**.
+The folder GRID (one card per `build_plans` row) is unchanged; opening a folder shows a
+5-tab shell. Organizing principle: **Feasibility is the shared client-level gap-qualification
+layer; everything downstream of "which gaps are in this build" is folder-scoped and FROZEN
+with the saved build.**
+- **Scope binding (migration 012, `build_plan_gaps`):** per-folder gap scope. `build_plan_id`
+  → ON DELETE CASCADE; `gap_id` → NO cascade (the folder's frozen snapshot must survive a
+  client-pool gap edit; a since-deleted gap renders "— gap no longer in catalog"). `selection`
+  CHECK `accepted|declined`, `UNIQUE(build_plan_id, gap_id)`, RLS on `operator_id`. The
+  client-level `gaps.selection` is RETAINED-BUT-DORMANT (additive-only; build scope now reads
+  `build_plan_gaps`). Table count moves seven → eight once 012 is live.
+- **Flow 2 (draft-then-save, unchanged safety):** the 5-tab shell renders for a build in BOTH
+  an unsaved draft (Finalize ACTIVE, Gap Report/Proposal live previews, Build Plan = draft
+  review) and a saved folder. NOTHING is written until Save, which commits `build_plans` +
+  `build_steps` + `build_plan_gaps` atomically — no empty pre-created folders.
+- **Bimodal Finalize:** ACTIVE picker pre-save (accept/decline/reset → draft selection, not
+  client `gaps.selection`); read-only **"Scope locked"** record post-save (Volt lock banner +
+  one-line immutable-record explanation + an ENABLED, pre-seeded "+ Start a new build to
+  re-scope" CTA + read-only ✓ scope rows, no accept/decline bar). Re-scoping a saved build =
+  a NEW build (append-only); scope is never re-edited in place.
+- **Gap Report / Proposal (built fresh, folder-scoped):** documents generated from the
+  folder's FROZEN `build_plan_gaps`; regenerable as documents WITHOUT changing scope. This
+  cycle wires their tab placement + scope binding only; full generation/copy is a follow-on
+  per module (`gap_reports`/`proposals` gain `build_plan_id`; column set designed then).
+- **Delete inside an open folder (block + archive):** count `setup_runs` for the plan. 0 runs
+  → verified hard-delete (`.delete().select()`; `build_steps` + `build_plan_gaps` cascade) →
+  grid. ≥1 run → BLOCKED (the `setup_runs.build_plan_id` FK is NO ACTION / RESTRICT-like) with
+  an explanation + archive via `build_plans.status = 'archived'`. `setup_runs` is NEVER
+  deleted — it is the provisioning audit trail the RESTRICT protects. All writes `.select()`-verified.
+- Build order (each its own review): 012 schema → nav rename + subtab removal + tab-shell
+  scaffold → Finalize folder-scoped + `build_plan_gaps` wiring → scope-locked post-save →
+  delete + archive → Gap Report/Proposal placement. Out of scope: full Gap Report/Proposal
+  copy design, retiring `gaps.selection`, System Composer (Order 15.99).
+
 ## Feasibility gate (the core business rule, enforced by data)
 Gaps are written by the Audit Assistant with `validation_status = 'pending'`. The Automation Agent
 sets `feasible`, `mechanism`, `estimated_hours`, and flips `validation_status` to `validated`.
