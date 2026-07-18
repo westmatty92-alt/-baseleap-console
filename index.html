@@ -1645,10 +1645,14 @@ const REVIEW_ENGINE = {
           { type: "end",     config: "Stop" }
         ],
         tests: [
-          "Happy path: fire the client's completion signal on a test contact (mark Showed / move pipeline stage to Job Complete) → after the delay the email (and SMS if enabled) arrives with the correct platform links; Last Review Request Date set; review-requested tag applied",
-          "Guard re-fire: fire the completion signal on the same contact again → workflow ends at the guard, no second ask",
-          "Maxed guard: a contact carrying review_credit_maxed gets no ask",
-          "Exit condition: booking, cancelled, and no-show events never trigger the ask (the client's completion signal only)"
+          { name: "Happy path — completion signal fires the ask",
+            how: "On a fresh test contact with no review-requested tag, fire this client's completion signal (mark the appointment Showed, or move the pipeline stage to the completion stage e.g. Job Complete / Won). Confirm the eligibility guard passes, Last Review Request Date is set to now, and tag review-requested is added; then after the 2–12h request_delay the review-request email arrives carrying the correct primary + secondary platform links with one CTA. If the optional SMS is enabled, confirm it also arrives after its short delay from the A2P-approved number." },
+          { name: "Guard — re-fire on an already-asked contact",
+            how: "Fire the completion signal a second time on the same contact (now carrying review-requested). Confirm the eligibility guard takes the 'already asked' branch and ends — no second Last Review Request Date write, no second email or SMS." },
+          { name: "Guard — maxed contact gets no review ask",
+            how: "Fire the completion signal on a contact carrying review_credit_maxed. Confirm the eligibility guard takes the 'credit maxed' branch and ends — no ask is sent." },
+          { name: "Exit condition — only the verified completion event fires",
+            how: "On a test contact, generate a booking, a cancellation, and a no-show (and for appointment businesses, an event on a Service Booking calendar). Confirm none of them start the workflow — only the client's verified completion signal (Appointment Showed / completion pipeline stage) does." }
         ]
       },
       {
@@ -1691,11 +1695,16 @@ const REVIEW_ENGINE = {
             ] }
         ],
         tests: [
-          "Happy path: add google_review_done to an eligible contact → Google Review Completed = Yes, balance +$15, lifetime +$15, thank-you coupon email received",
-          "Guard re-fire: add google_review_done again → per-platform dedupe ends the workflow, no double credit",
-          "Maxed guard: a contact carrying review_credit_maxed gets no credit",
-          "Cap branch YES: lifetime reaches exactly $30 → Review Incentive Status = Maxed, review_credit_maxed added, thank-you email still sends",
-          "Cap branch NO: lifetime under $30 → no maxing, thank-you email sends"
+          { name: "Happy path — verified Google review credited",
+            how: "On an eligible contact (no review_credit_maxed tag, Google Review Completed ≠ Yes), add tag google_review_done. Confirm both guards pass, Google Review Completed is set to Yes, Review Credit Balance increases by $15 (credit_per_review), Review Credits Earned (Lifetime) increases by $15, and the thank-you email with the review coupon (REVIEW15 / REVIEW30) is received." },
+          { name: "Guard — Google already credited (per-platform dedupe)",
+            how: "Add google_review_done again to a contact whose Google Review Completed is already Yes. Confirm the per-platform dedupe guard ends the workflow — no second $15, Review Credit Balance and Lifetime unchanged, no second thank-you email." },
+          { name: "Guard — Google credit blocked when maxed",
+            how: "Add google_review_done to a contact carrying review_credit_maxed. Confirm the $30 lifetime-cap guard ends the workflow before any credit — Google Review Completed, balance, and lifetime are all untouched." },
+          { name: "Cap YES (Google) — lifetime reaches $30",
+            how: "Set a contact's Review Credits Earned (Lifetime) to $15, then add google_review_done so this credit brings lifetime to exactly $30. Confirm the condition takes the YES branch: Review Incentive Status = Maxed, tag review_credit_maxed added, and the thank-you coupon email still sends." },
+          { name: "Cap NO (Google) — lifetime stays under $30",
+            how: "On a contact with $0 lifetime, add google_review_done (lifetime becomes $15, under the $30 cap). Confirm the condition takes the NO branch: no Maxed status, no review_credit_maxed tag, and the thank-you coupon email sends." }
         ]
       },
       {
@@ -1738,11 +1747,16 @@ const REVIEW_ENGINE = {
             ] }
         ],
         tests: [
-          "Happy path: add facebook_review_done to an eligible contact → Facebook Review Completed = Yes, balance +$15, lifetime +$15, thank-you coupon email received",
-          "Guard re-fire: add facebook_review_done again → per-platform dedupe ends the workflow, no double credit",
-          "Maxed guard: a contact carrying review_credit_maxed gets no credit",
-          "Cap branch YES: lifetime reaches exactly $30 → Review Incentive Status = Maxed, review_credit_maxed added, thank-you email still sends",
-          "Cap branch NO: lifetime under $30 → no maxing, thank-you email sends"
+          { name: "Happy path — verified Facebook review credited",
+            how: "On an eligible contact (no review_credit_maxed tag, Facebook Review Completed ≠ Yes), add tag facebook_review_done. Confirm both guards pass, Facebook Review Completed is set to Yes, Review Credit Balance increases by $15 (credit_per_review), Review Credits Earned (Lifetime) increases by $15, and the thank-you email with the review coupon (REVIEW15 / REVIEW30) is received." },
+          { name: "Guard — Facebook already credited (per-platform dedupe)",
+            how: "Add facebook_review_done again to a contact whose Facebook Review Completed is already Yes. Confirm the per-platform dedupe guard ends the workflow — no second $15, Review Credit Balance and Lifetime unchanged, no second thank-you email." },
+          { name: "Guard — Facebook credit blocked when maxed",
+            how: "Add facebook_review_done to a contact carrying review_credit_maxed. Confirm the $30 lifetime-cap guard ends the workflow before any credit — Facebook Review Completed, balance, and lifetime are all untouched." },
+          { name: "Cap YES (Facebook) — lifetime reaches $30",
+            how: "Set a contact's Review Credits Earned (Lifetime) to $15, then add facebook_review_done so this credit brings lifetime to exactly $30. Confirm the condition takes the YES branch: Review Incentive Status = Maxed, tag review_credit_maxed added, and the thank-you coupon email still sends." },
+          { name: "Cap NO (Facebook) — lifetime stays under $30",
+            how: "On a contact with $0 lifetime, add facebook_review_done (lifetime becomes $15, under the $30 cap). Confirm the condition takes the NO branch: no Maxed status, no review_credit_maxed tag, and the thank-you coupon email sends." }
         ]
       },
       {
@@ -1764,10 +1778,14 @@ const REVIEW_ENGINE = {
           { type: "end",     config: "Stop — redemption logged, reuse prevented" }
         ],
         tests: [
-          "Happy path: checkout with REVIEW15 on an eligible contact → balance decremented once, Review Credit Eligible removed, Last Redemption Date set",
-          "Wrong coupon: checkout with a non-review coupon → guard ends the workflow, nothing changes",
-          "Reuse attempt: second redemption after eligibility was removed → guard blocks it",
-          "Round-trip: Stripe enforces the coupon, GHL enforces eligibility — verify both fire on the same test checkout"
+          { name: "Happy path — valid coupon redemption",
+            how: "On an eligible contact carrying Review Credit Eligible, complete a Stripe checkout applying REVIEW15. Confirm the checkout.session.completed webhook fires, the guard passes (valid coupon + eligibility present), Review Credit Balance is decremented once by the redeemed amount, tag Review Credit Eligible is removed, and Last Redemption Date is set to now." },
+          { name: "Guard — wrong coupon rejected",
+            how: "Complete a checkout applying a non-review coupon (not REVIEW15 / REVIEW30). Confirm the guard ends the workflow — no balance decrement, Review Credit Eligible left intact, Last Redemption Date unchanged." },
+          { name: "Guard — reuse blocked after eligibility removed",
+            how: "After a successful redemption has already removed Review Credit Eligible, fire a second checkout webhook with REVIEW15 on the same contact. Confirm the guard's eligibility-absent condition blocks it — Review Credit Balance is not decremented a second time and nothing changes." },
+          { name: "Webhook round-trip — Stripe + GHL both enforce",
+            how: "On one test checkout, verify the two-sided enforcement: Stripe validates and applies the coupon at checkout, and the GHL webhook automation independently enforces eligibility (Review Credit Eligible present). Confirm the checkout.session.completed webhook actually reaches GHL and that both the coupon check and the eligibility check must be satisfied for the credit to redeem." }
         ]
       }
     ],
