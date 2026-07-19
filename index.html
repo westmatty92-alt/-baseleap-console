@@ -106,6 +106,28 @@
   .sev-high{border-left:3px solid #E24B4A}
   .sev-medium{border-left:3px solid #EF9F27}
   .sev-low{border-left:3px solid #639922}
+  .doc-wrap{max-width:760px}
+  .doc-head{border-bottom:1px solid var(--line);padding-bottom:14px;margin-bottom:18px}
+  .doc-title{font-size:20px;font-weight:700;color:var(--ink)}
+  .doc-sub{font-size:13px;color:var(--muted);margin-top:4px}
+  .doc-cue{display:inline-block;margin-top:10px;font-size:11px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;padding:3px 10px;border-radius:20px;border:1px solid var(--line);color:var(--muted)}
+  .doc-cue.frozen{color:var(--run);border-color:var(--run)}
+  .doc-cue.preview{color:#B5730A;border-color:#E8C08A}
+  .doc-gap{border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:12px;background:var(--surface)}
+  .doc-gap.sev-high{border-left:3px solid #E24B4A}
+  .doc-gap.sev-medium{border-left:3px solid #EF9F27}
+  .doc-gap.sev-low{border-left:3px solid #639922}
+  .doc-gap-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+  .doc-gap-title{font-size:15px;font-weight:600;color:var(--ink)}
+  .doc-gap-sev{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+  .doc-gap-problem{margin-top:8px;font-size:13px;color:var(--ink);line-height:1.5;opacity:.85}
+  .doc-gap-cost{margin-top:8px;font-size:12.5px;color:var(--muted)}
+  .doc-gap-cost span{font-weight:600;color:var(--ink)}
+  .doc-line{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:11px 4px;border-bottom:1px solid var(--line)}
+  .doc-line-title{font-size:14px;color:var(--ink)}
+  .doc-line-meta{font-size:12px;color:var(--muted);white-space:nowrap}
+  .doc-total{margin-top:16px;font-size:15px;font-weight:700;color:var(--ink);text-align:right}
+  .doc-note{font-size:12px;color:var(--muted);line-height:1.5;margin-top:14px}
   .plan-warn{border:2px solid #E24B4A;background:rgba(226,75,74,.06);border-radius:10px;padding:12px 14px;margin-bottom:14px}
   .plan-warn-title{color:#E24B4A;font-weight:700;font-size:14px;margin-bottom:6px}
   .plan-warn-item{color:#E24B4A;font-size:13px;margin-bottom:2px}
@@ -2130,19 +2152,95 @@ function renderBuildsGrid(){
   body.innerHTML = renderBuildFolderGrid() + `<div class="msg" id="buildplan-msg" style="margin-top:10px">${esc(S.buildPlan.msg)}</div>`;
 }
 
-// Gap Report / Proposal — folder-scoped, built fresh in step 6 (placeholders for now).
+// Gap Report / Proposal — folder-scoped documents (§8). Bimodal like Finalize: while
+// composing they PREVIEW off the draft's accepted selection; a saved folder renders the
+// FROZEN build_plan_gaps scope. This step wires placement + scope binding + real content
+// from existing gap fields (band/estimated_hours pricing). AI copy generation, market-rate
+// cost reference, and branded export are deferred (separate future items).
+
+// The gaps this build's Gap Report / Proposal render from — bimodal:
+//   composing (unsaved) → PREVIEW off the draft's accepted selection (S.automation.gaps + sel);
+//   saved folder        → the FROZEN build_plan_gaps scope (S.buildPlan.scope ⋈ gaps).
+// ready=false → underlying data not loaded (caller triggers the loader); a saved-scope row
+// whose gap was since removed comes back as {missing:true}.
+function currentBuildGaps(){
+  if(S.buildPlan.activePlanId && !S.buildPlan.composing){
+    if(S.buildPlan.scope === null || S.buildPlan.scopePlanId !== S.buildPlan.activePlanId)
+      return { frozen:true, ready:false, err:"", gaps:[] };
+    return { frozen:true, ready:true, err:S.buildPlan.scopeErr,
+      gaps: (S.buildPlan.scope || []).map(r => r.gaps || { missing:true }) };
+  }
+  if(!S.automation.loaded) return { frozen:false, ready:false, err:"", gaps:[] };
+  const sel = S.buildPlan.sel || {};
+  return { frozen:false, ready:true, err:"",
+    gaps: S.automation.gaps.filter(g => g.validation_status === "validated" && sel[g.id] === "accepted") };
+}
+
+// Ensures the right data is loaded (kicks a loader + returns null → caller returns), else
+// returns the present (non-drift) gaps + drift count + mode flag.
+function buildDocData(){
+  const b = currentBuildGaps();
+  if(!b.ready){
+    document.getElementById("automation-body").innerHTML = `<div class="audit-empty">Loading…</div>`;
+    if(S.buildPlan.activePlanId && !S.buildPlan.composing) loadBuildScope(S.buildPlan.activePlanId);
+    else loadAutomationData(S.activeClientId);
+    return null;
+  }
+  const present = b.gaps.filter(g => !g.missing);
+  return { frozen:b.frozen, err:b.err, present, missing:b.gaps.length - present.length };
+}
+function docCue(frozen){
+  return frozen
+    ? `<span class="doc-cue frozen">Frozen · from this build's saved scope</span>`
+    : `<span class="doc-cue preview">Preview · current draft selection, not saved yet</span>`;
+}
+function docMissingNote(missing, noun){
+  return missing ? `<div class="doc-note">${missing} gap${missing===1?"":"s"} in this build's record ${missing===1?"is":"are"} no longer in the catalog — omitted from the ${noun}.</div>` : "";
+}
+function docEmpty(frozen){
+  return `<div class="audit-empty">No gaps in this build's scope yet — accept gaps on the Finalize tab${frozen?"":", then save the build"}.</div>`;
+}
+
 function renderGapReportBody(){
+  const d = buildDocData(); if(!d) return;
+  const rows = d.present.length ? d.present.map(g => `
+    <div class="doc-gap sev-${esc(g.severity||"medium")}">
+      <div class="doc-gap-head">
+        <span class="doc-gap-title">${esc(g.title||"Untitled gap")}</span>
+        <span class="doc-gap-sev">${esc(g.severity||"medium")}</span>
+      </div>
+      ${g.problem ? `<div class="doc-gap-problem">${esc(g.problem)}</div>` : ""}
+      ${g.cost ? `<div class="doc-gap-cost"><span>Cost of inaction:</span> ${esc(g.cost)}</div>` : ""}
+    </div>`).join("") : docEmpty(d.frozen);
   document.getElementById("automation-body").innerHTML = `
-    <div class="card">
-      <div class="phase-t">Gap Report</div>
-      <div class="msg">Folder-scoped — this build's client-facing gap report, generated from its finalized scope. Built next.</div>
+    <div class="doc-wrap">
+      <div class="doc-head">
+        <div class="doc-title">Gap Report</div>
+        <div class="doc-sub">${esc(S.activeClient.business_name)} · ${d.present.length} gap${d.present.length===1?"":"s"}</div>
+        ${docCue(d.frozen)}
+      </div>
+      ${d.err ? `<div class="doc-note">Couldn't load scope: ${esc(d.err)}</div>` : rows + docMissingNote(d.missing, "report")}
     </div>`;
 }
+
 function renderProposalBody(){
+  const d = buildDocData(); if(!d) return;
+  const rows = d.present.length ? d.present.map(g => {
+    const meta = [g.band, g.estimated_hours != null ? g.estimated_hours + "h" : null].filter(Boolean).join(" · ");
+    return `<div class="doc-line"><span class="doc-line-title">${esc(g.title||"Untitled gap")}</span>${meta ? `<span class="doc-line-meta">${esc(meta)}</span>` : ""}</div>`;
+  }).join("") : docEmpty(d.frozen);
   document.getElementById("automation-body").innerHTML = `
-    <div class="card">
-      <div class="phase-t">Proposal</div>
-      <div class="msg">Folder-scoped — this build's scoped proposal, built from its Gap Report and a package. Built next.</div>
+    <div class="doc-wrap">
+      <div class="doc-head">
+        <div class="doc-title">Proposal</div>
+        <div class="doc-sub">${esc(S.activeClient.business_name)} · scope &amp; indicative pricing</div>
+        ${docCue(d.frozen)}
+      </div>
+      ${d.err ? `<div class="doc-note">Couldn't load scope: ${esc(d.err)}</div>`
+        : rows
+          + (d.present.length ? `<div class="doc-total">${esc(finTotalsLine(d.present))}</div>` : "")
+          + docMissingNote(d.missing, "proposal")
+          + `<div class="doc-note">Indicative band-based pricing from validated feasibility. Market-rate cost reference and branded export are separate, later items.</div>`}
     </div>`;
 }
 
@@ -3349,7 +3447,7 @@ async function loadBuildScope(planId){
   S.buildPlan.scopeErr = "";
   try{
     const { data, error } = await sb.from("build_plan_gaps")
-      .select("gap_id, selection, gaps(id, title, band, estimated_hours)")
+      .select("gap_id, selection, gaps(id, title, band, estimated_hours, problem, cost, severity)")
       .eq("build_plan_id", planId).eq("selection", "accepted").order("created_at");
     if(error) throw new Error(error.message);
     S.buildPlan.scope = data || [];
