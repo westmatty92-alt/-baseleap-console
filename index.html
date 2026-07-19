@@ -375,9 +375,7 @@
     <div class="brand">Baseleap<span>.</span></div>
     <button class="nav-item" data-mod="research" onclick="switchModule('research')">Client research</button>
     <button class="nav-item active" data-mod="audit" onclick="switchModule('audit')">Audit assistant</button>
-    <button class="nav-item" data-mod="automation" onclick="switchModule('automation')">Automation agent</button>
-    <button class="nav-item" data-mod="report" onclick="switchModule('report')">Gap report</button>
-    <button class="nav-item" data-mod="proposal" onclick="switchModule('proposal')">Proposal</button>
+    <button class="nav-item" data-mod="automation" onclick="switchModule('automation')">Builds</button>
     <button class="nav-item" data-mod="setup" onclick="switchModule('setup')">Setup agent</button>
     <div class="nav-spacer"></div>
     <button class="signout" onclick="signOut()">Sign out</button>
@@ -433,7 +431,7 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 ============================================================ */
 function freshAudit(){ return { tab:"guide", guideNotes:{}, captureText:"", summary:null, sessionId:null, loaded:false, analyzing:false, msg:"", stackForm:null, stackOtherFlags:{}, extracting:false }; }
 function freshAutomation(){ return { tab:"gaps", loaded:false, msg:"", gaps:[], drafts:{}, assessing:{}, errors:{}, assessingAll:false, validatingAll:false, progress:"", finBusy:{}, finBulkBusy:false, finMsg:"" }; }
-function freshBuildPlan(){ return { loaded:false, msg:"", plans:[], activePlanId:null, planCounts:{}, plan:null, steps:[], draft:null, draftGaps:null, generating:false, saving:false, expanded:{}, panel:null, zoom:1, pan:{x:0,y:0} }; }
+function freshBuildPlan(){ return { loaded:false, msg:"", plans:[], activePlanId:null, planCounts:{}, plan:null, steps:[], draft:null, draftGaps:null, generating:false, saving:false, expanded:{}, panel:null, zoom:1, pan:{x:0,y:0}, tab:"plan", composing:false }; }
 function freshSetup(){ return { loaded:false, msg:"", run:null, preflight:null, diff:null, running:false, busy:false }; }
 
 const S = {
@@ -594,9 +592,7 @@ function switchModule(mod){
 const MODULES = {
   research:  { title: "Client research",  sub: "Pre-call brief, auto-built from the lead form." },
   audit:     { title: "Audit assistant",  sub: "Capture the call, surface gaps, draft the diagnosis." },
-  automation:{ title: "Automation agent", sub: "Feasibility gate — confirm each gap is buildable." },
-  report:    { title: "Gap report",       sub: "The client-facing report, built from validated gaps." },
-  proposal:  { title: "Proposal",         sub: "Scoped proposal from the gap report and a package." },
+  automation:{ title: "Builds", sub: "Each client's build folders — feasibility, finalize, plan, report & proposal live inside a build." },
   setup:     { title: "Setup agent",      sub: "GHL sub-account provisioning — creates the plan's tags & fields via API." },
 };
 
@@ -2055,23 +2051,68 @@ function renderAutomationCard(g){
     </div>`;
 }
 
+// Builds module. Top level = the folder GRID (no folder open, no draft, not composing a
+// new build). Opening a folder OR starting a new build enters the 5-tab shell
+// (Feasibility → Gap Report → Finalize → Build Plan → Proposal), driven by S.buildPlan.tab.
+// (Internal module key stays "automation"; the 36 renderAutomation call sites are unchanged.)
 function renderAutomation(){
   const content = document.getElementById("content");
-  const tabs = [["gaps","Feasibility"],["finalize","Finalize"],["plan","Build plan"]];
+  const inWorkspace = !!(S.buildPlan.activePlanId || S.buildPlan.draft || S.buildPlan.composing);
+  const panelOpen = inWorkspace && S.buildPlan.tab === "plan" && S.buildPlan.panel;
   content.innerHTML = `
-    ${(S.automation.tab === "plan" && S.buildPlan.panel) ? `<button class="bp-back" onclick="closeEnginePanel()">← Back to plan</button>` : ""}
-    <div class="panel-title">Automation agent</div>
-    <div class="panel-sub">${esc(S.activeClient.business_name)} — feasibility gate, then the build plan.</div>
-    <div class="subtabs">
-      ${tabs.map(([id,lbl]) => `<button class="subtab ${S.automation.tab===id?"active":""}" onclick="automationTab('${id}')">${lbl}</button>`).join("")}
-    </div>
+    ${panelOpen ? `<button class="bp-back" onclick="closeEnginePanel()">← Back to plan</button>` : ""}
+    <div class="panel-title">Builds</div>
+    <div class="panel-sub">${esc(S.activeClient.business_name)} — build folders; each build carries its own feasibility, finalize, plan, report &amp; proposal.</div>
+    ${(inWorkspace && !panelOpen) ? renderBuildsTabBar() : ""}
     <div id="automation-body"></div>`;
-  if(S.automation.tab === "plan") renderBuildPlanBody();
-  else if(S.automation.tab === "finalize") renderFinalizeBody();
-  else renderFeasibilityBody();
+  if(!inWorkspace){ renderBuildsGrid(); return; }
+  renderBuildsTabBody();
 }
 
-function automationTab(t){ S.automation.tab = t; renderAutomation(); }
+// The in-folder tab bar (+ a back control to the grid). Hidden when the engine-detail
+// panel is open (that view is full-page and carries its own "← Back to plan").
+function renderBuildsTabBar(){
+  const tabs = [["feasibility","Feasibility"],["report","Gap Report"],["finalize","Finalize"],["plan","Build Plan"],["proposal","Proposal"]];
+  return `
+    <button class="bp-back" onclick="closeBuildFolder()">← All builds</button>
+    <div class="subtabs">
+      ${tabs.map(([id,lbl]) => `<button class="subtab ${S.buildPlan.tab===id?"active":""}" onclick="buildsTab('${id}')">${lbl}</button>`).join("")}
+    </div>`;
+}
+function buildsTab(t){ S.buildPlan.tab = t; renderAutomation(); }
+
+// Route the active in-folder tab to its body (each writes into #automation-body).
+function renderBuildsTabBody(){
+  const t = S.buildPlan.tab;
+  if(t === "feasibility"){ renderFeasibilityBody(); return; }
+  if(t === "finalize"){ renderFinalizeBody(); return; }
+  if(t === "report"){ renderGapReportBody(); return; }
+  if(t === "proposal"){ renderProposalBody(); return; }
+  renderBuildPlanBody();   // "plan"
+}
+
+// Module-top folder grid (extracted from the old renderBuildPlanBody grid branch).
+function renderBuildsGrid(){
+  const body = document.getElementById("automation-body");
+  if(!S.buildPlan.loaded){ body.innerHTML = `<div class="audit-empty">Loading builds…</div>`; loadBuildPlanData(S.activeClientId); return; }
+  body.innerHTML = renderBuildFolderGrid() + `<div class="msg" id="buildplan-msg" style="margin-top:10px">${esc(S.buildPlan.msg)}</div>`;
+}
+
+// Gap Report / Proposal — folder-scoped, built fresh in step 6 (placeholders for now).
+function renderGapReportBody(){
+  document.getElementById("automation-body").innerHTML = `
+    <div class="card">
+      <div class="phase-t">Gap Report</div>
+      <div class="msg">Folder-scoped — this build's client-facing gap report, generated from its finalized scope. Built next.</div>
+    </div>`;
+}
+function renderProposalBody(){
+  document.getElementById("automation-body").innerHTML = `
+    <div class="card">
+      <div class="phase-t">Proposal</div>
+      <div class="msg">Folder-scoped — this build's scoped proposal, built from its Gap Report and a package. Built next.</div>
+    </div>`;
+}
 
 function renderFeasibilityBody(){
   const body = document.getElementById("automation-body");
@@ -2936,8 +2977,12 @@ async function generateBuildPlan(){
 // Nothing is written until the operator saves the draft, so cancelling changes nothing.
 function startNewBuild(){
   if(S.buildPlan.generating) return;
+  // Enter an UNSAVED new-build workspace (Flow 2): the 5-tab shell opens on Feasibility;
+  // nothing is written to the DB until the operator generates AND saves the draft.
   S.buildPlan.activePlanId = null; S.buildPlan.plan = null; S.buildPlan.steps = [];   // local only — no DB delete
-  generateBuildPlan();
+  S.buildPlan.draft = null; S.buildPlan.draftGaps = null; S.buildPlan.panel = null;
+  S.buildPlan.composing = true; S.buildPlan.tab = "feasibility";
+  renderAutomation();
 }
 
 // Draft steps → build_steps rows. Local refs become real UUIDs minted client-side,
@@ -2984,6 +3029,7 @@ async function saveBuildPlan(){
     S.buildPlan.steps = steps.slice().sort((a, b) => a.position - b.position);
     S.buildPlan.plans = [plan, ...S.buildPlan.plans];   // new folder, newest first
     S.buildPlan.activePlanId = plan.id;                 // open the just-saved build
+    S.buildPlan.composing = false; S.buildPlan.tab = "plan";   // leave the compose workspace; show the saved plan
     S.buildPlan.planCounts = { ...S.buildPlan.planCounts, [plan.id]: {
       engines: new Set(S.buildPlan.steps.filter(s => s.agent === "automation" && s.gap_id).map(s => s.gap_id)).size,
       steps: S.buildPlan.steps.length } };
@@ -3050,6 +3096,7 @@ async function openBuildFolder(planId){
   const plan = S.buildPlan.plans.find(p => p.id === planId);
   if(!plan) return;
   S.buildPlan.activePlanId = planId; S.buildPlan.plan = plan; S.buildPlan.panel = null; S.buildPlan.steps = [];
+  S.buildPlan.composing = false; S.buildPlan.draft = null; S.buildPlan.draftGaps = null; S.buildPlan.tab = "plan";   // open on the Build Plan tab
   try{
     const { data: steps, error } = await sb.from("build_steps").select("*")
       .eq("build_plan_id", planId).order("position");
@@ -3061,7 +3108,10 @@ async function openBuildFolder(planId){
 
 // Back to the folder grid (clears the open plan; the grid re-renders from S.buildPlan.plans).
 function closeBuildFolder(){
+  // Leave the build workspace back to the folder grid. An unsaved draft is discarded here
+  // (nothing was written to the DB); a saved folder just closes.
   S.buildPlan.activePlanId = null; S.buildPlan.plan = null; S.buildPlan.steps = []; S.buildPlan.panel = null;
+  S.buildPlan.draft = null; S.buildPlan.draftGaps = null; S.buildPlan.composing = false; S.buildPlan.tab = "plan";
   renderAutomation();
 }
 
@@ -3116,10 +3166,9 @@ function renderFinalizeBar(f){
 }
 
 function finalizeToPlan(){
-  S.automation.tab = "plan";
-  // land on the build-folder grid — starting a new build is explicit ("+ New build"),
-  // never auto-generated (a client may already have segregated build folders).
-  S.buildPlan.activePlanId = null; S.buildPlan.plan = null; S.buildPlan.steps = []; S.buildPlan.panel = null;
+  // In a build workspace, the Finalize CTA advances to the Build Plan tab, where Generate
+  // lives (composing) or the saved plan shows (open folder).
+  S.buildPlan.tab = "plan";
   renderAutomation();
 }
 
@@ -3208,13 +3257,26 @@ function renderFinalizeBody(){
 function renderBuildPlanBody(){
   const body = document.getElementById("automation-body");
   if(!S.buildPlan.loaded){ body.innerHTML = `<div class="audit-empty">Loading builds…</div>`; loadBuildPlanData(S.activeClientId); return; }
-  // precedence: a draft (new build being reviewed) takes over; else an OPEN folder
-  // shows its saved plan; else the client's folder grid.
+  // Build Plan TAB (grid moved to module top): a draft (new build being reviewed) takes
+  // over; else an OPEN folder shows its saved plan; else (composing a new build, nothing
+  // generated yet) the Generate prompt.
   const inner = S.buildPlan.draft ? renderDraftReview()
     : S.buildPlan.activePlanId ? renderSavedPlan()
-    : renderBuildFolderGrid();
+    : renderComposeGenerate();
   body.innerHTML = inner + `<div class="msg" id="buildplan-msg" style="margin-top:10px">${esc(S.buildPlan.msg)}</div>`;
   autoSizeNotes();
+}
+
+// Build Plan tab while composing a new build (no draft yet): accept gaps on Finalize,
+// then generate. Generate lives here now — "+ New build" no longer auto-generates.
+function renderComposeGenerate(){
+  const gen = S.buildPlan.generating;
+  return `
+    <div class="card">
+      <div class="phase-t">New build</div>
+      <div class="msg" style="margin-bottom:12px">Accept this build's gaps on the Finalize tab, then generate the plan. Nothing is saved until you save the draft.</div>
+      <button class="btn-primary" style="width:auto" onclick="generateBuildPlan()" ${gen?"disabled":""}>${gen ? (S.buildPlan.msg || "Generating…") : "Generate build plan"}</button>
+    </div>`;
 }
 
 // Scroller fix: the notes content (review flag / spec / deployment dumps) lays out
