@@ -348,6 +348,20 @@
   .fin-badges{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
   .fin-badge{font-size:11px;font-weight:500;padding:2px 9px;border-radius:10px;background:rgba(255,255,255,.05);border:1px solid var(--d-line);color:var(--d-muted);white-space:nowrap}
   .fin-problem{margin-top:10px;font-size:13px;color:var(--d-muted);line-height:1.5;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}
+  .scope-lock{background:linear-gradient(180deg,rgba(0,212,160,.10),rgba(0,212,160,.03));border:1px solid rgba(0,212,160,.35);border-radius:12px;padding:18px 20px;box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}
+  .scope-lock-h{font-size:16px;font-weight:700;color:var(--volt);margin-bottom:8px}
+  .scope-lock-msg{font-size:13px;color:var(--d-text);line-height:1.5;max-width:60ch}
+  .scope-lock-cta{margin-top:14px;background:var(--volt);color:var(--midnight);border:none;padding:10px 16px;border-radius:10px;font-size:13.5px;font-weight:600;cursor:pointer;transition:background .2s ease,color .2s ease}
+  .scope-lock-cta:hover{background:var(--run);color:#fff}
+  .scope-included{margin-top:22px}
+  .scope-included-h{font-size:12px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;color:var(--d-muted);margin-bottom:10px}
+  .scope-row{display:flex;align-items:center;gap:12px;background:var(--depth);border:1px solid var(--d-line);border-left:3px solid var(--ok);border-radius:10px;padding:12px 16px;margin-top:8px}
+  .scope-row.missing{border-left-color:var(--d-line);opacity:.6}
+  .scope-check{color:var(--ok);font-weight:700;font-size:14px}
+  .scope-row.missing .scope-check{color:var(--d-muted)}
+  .scope-title{flex:1;font-size:14px;font-weight:500;color:var(--d-text-strong)}
+  .scope-row.missing .scope-title{font-style:italic;color:var(--d-muted);font-weight:400}
+  .scope-meta{font-size:12px;color:var(--d-muted);white-space:nowrap}
   .audit-empty{color:var(--muted);font-size:13px;padding:24px 0}
   .stack-row{display:flex;align-items:center;gap:10px;margin-bottom:10px}
   .stack-row label{width:150px;flex-shrink:0;font-size:12px;color:var(--muted)}
@@ -433,7 +447,7 @@ function freshAudit(){ return { tab:"guide", guideNotes:{}, captureText:"", summ
 function freshAutomation(){ return { tab:"gaps", loaded:false, msg:"", gaps:[], drafts:{}, assessing:{}, errors:{}, assessingAll:false, validatingAll:false, progress:"" }; }
 // sel = the active compose session's folder-scoped gap-selection map ({gapId: 'accepted'|'declined'};
 // undecided = absent). Committed to build_plan_gaps on Save; never the dormant client gaps.selection.
-function freshBuildPlan(){ return { loaded:false, msg:"", plans:[], activePlanId:null, planCounts:{}, plan:null, steps:[], draft:null, draftGaps:null, generating:false, saving:false, expanded:{}, panel:null, zoom:1, pan:{x:0,y:0}, tab:"plan", composing:false, sel:{} }; }
+function freshBuildPlan(){ return { loaded:false, msg:"", plans:[], activePlanId:null, planCounts:{}, plan:null, steps:[], draft:null, draftGaps:null, generating:false, saving:false, expanded:{}, panel:null, zoom:1, pan:{x:0,y:0}, tab:"plan", composing:false, sel:{}, scope:null, scopePlanId:null, scopeErr:"" }; }
 function freshSetup(){ return { loaded:false, msg:"", run:null, preflight:null, diff:null, running:false, busy:false }; }
 
 const S = {
@@ -2980,14 +2994,16 @@ async function generateBuildPlan(){
 // merged into a prior one). Leaves the folder grid locally (no DB delete — old rows +
 // their setup_runs audit stay intact; that FK is RESTRICT so audit is never destroyed).
 // Nothing is written until the operator saves the draft, so cancelling changes nothing.
-function startNewBuild(){
+// seed (optional) pre-selects gaps for a re-scope clone (§7); tab (optional) is the landing
+// tab. Cold "+ New build" passes neither → empty scope, opens on Feasibility.
+function startNewBuild(seed, tab){
   if(S.buildPlan.generating) return;
-  // Enter an UNSAVED new-build workspace (Flow 2): the 5-tab shell opens on Feasibility;
+  // Enter an UNSAVED new-build workspace (Flow 2): the 5-tab shell opens on the landing tab;
   // nothing is written to the DB until the operator generates AND saves the draft.
   S.buildPlan.activePlanId = null; S.buildPlan.plan = null; S.buildPlan.steps = [];   // local only — no DB delete
   S.buildPlan.draft = null; S.buildPlan.draftGaps = null; S.buildPlan.panel = null;
-  S.buildPlan.sel = {};   // cold-start scope (§7 re-scope will pre-seed this in step 4)
-  S.buildPlan.composing = true; S.buildPlan.tab = "feasibility";
+  S.buildPlan.sel = (seed && typeof seed === "object") ? { ...seed } : {};   // pre-seeded re-scope, else cold start
+  S.buildPlan.composing = true; S.buildPlan.tab = tab || "feasibility";
   renderAutomation();
 }
 
@@ -3234,10 +3250,12 @@ function renderFinalizeBody(){
   // record is step 4; a minimal placeholder stands in until then so the active picker never
   // renders against an empty local map for an already-saved build.
   if(S.buildPlan.activePlanId && !S.buildPlan.composing){
-    body.innerHTML = `<div class="fin-surface"><div class="fin-col"><div class="card">
-      <div class="phase-t">🔒 Scope locked</div>
-      <div class="msg">This build's scope was frozen when it was saved. The read-only scope record lands next (step 4).</div>
-    </div></div></div>`;
+    // Load this folder's frozen scope (build_plan_gaps ⋈ gaps) once; the scopePlanId guard
+    // forces a reload when a different folder is opened.
+    if(S.buildPlan.scope === null || S.buildPlan.scopePlanId !== S.buildPlan.activePlanId){
+      body.innerHTML = `<div class="audit-empty">Loading scope…</div>`; loadBuildScope(S.buildPlan.activePlanId); return;
+    }
+    body.innerHTML = renderScopeLocked();
     return;
   }
   // Mode A — UNSAVED compose session: the active accept/decline/reset picker, writing to
@@ -3257,6 +3275,59 @@ function renderFinalizeBody(){
         : `<div class="fin-empty">No validated gaps yet — qualify gaps on the Feasibility tab first.</div>`}
       ${f.pending ? `<div class="fin-note">${f.pending} gap${f.pending === 1 ? " is" : "s are"} still awaiting feasibility — assess ${f.pending === 1 ? "it" : "them"} on the Feasibility tab if ${f.pending === 1 ? "it's" : "they're"} in scope.</div>` : ""}
     </div></div>`;
+}
+
+// Load a saved folder's FROZEN scope — build_plan_gaps joined to gaps for display. Default
+// embed = LEFT join: a gap since removed/hidden from the client pool returns gaps=null and
+// renders "gap no longer in catalog" rather than vanishing (§7).
+async function loadBuildScope(planId){
+  S.buildPlan.scopeErr = "";
+  try{
+    const { data, error } = await sb.from("build_plan_gaps")
+      .select("gap_id, selection, gaps(id, title, band, estimated_hours)")
+      .eq("build_plan_id", planId).eq("selection", "accepted").order("created_at");
+    if(error) throw new Error(error.message);
+    S.buildPlan.scope = data || [];
+  }catch(e){
+    S.buildPlan.scope = []; S.buildPlan.scopeErr = e.message;
+  }
+  S.buildPlan.scopePlanId = planId;
+  renderAutomation();
+}
+
+// The post-save "Scope locked" record (§7): a Volt lock banner naming WHY the buttons are
+// gone (immutable record) + an enabled re-scope CTA + a read-only ✓ list of included gaps.
+function renderScopeLocked(){
+  const rows = S.buildPlan.scope || [];
+  const hours = rows.reduce((t, r) => t + ((r.gaps && r.gaps.estimated_hours) || 0), 0);
+  const list = rows.map(r => {
+    const g = r.gaps;
+    if(!g) return `<div class="scope-row missing"><span class="scope-check">✓</span><span class="scope-title">— gap no longer in catalog</span></div>`;
+    const meta = [g.band, g.estimated_hours != null ? g.estimated_hours + "h" : null].filter(Boolean).join(" · ");
+    return `<div class="scope-row"><span class="scope-check">✓</span><span class="scope-title">${esc(g.title)}</span>${meta ? `<span class="scope-meta">${esc(meta)}</span>` : ""}</div>`;
+  }).join("");
+  return `
+    <div class="fin-surface"><div class="fin-col">
+      <div class="scope-lock">
+        <div class="scope-lock-h">🔒 Scope locked</div>
+        <div class="scope-lock-msg">This build's scope was set when it was generated and is frozen — a saved build is an immutable record. To change which gaps are included, start a new build.</div>
+        <button class="scope-lock-cta" onclick="reScopeBuild()">+ Start a new build to re-scope</button>
+      </div>
+      ${S.buildPlan.scopeErr
+        ? `<div class="fin-note">Couldn't load this build's scope: ${esc(S.buildPlan.scopeErr)}</div>`
+        : `<div class="scope-included">
+            <div class="scope-included-h">Included in this build · ${rows.length} gap${rows.length === 1 ? "" : "s"}${hours ? ` · ${hours}h` : ""}</div>
+            ${rows.length ? list : `<div class="fin-empty">No gaps recorded for this build.</div>`}
+          </div>`}
+    </div></div>`;
+}
+
+// Re-scope = start a NEW build (append-only; the saved one stays frozen) pre-seeded with THIS
+// folder's included gaps, landing on Finalize so the cloned selection is visible to adjust.
+function reScopeBuild(){
+  const seed = {};
+  (S.buildPlan.scope || []).forEach(r => { if(r.gaps) seed[r.gaps.id] = "accepted"; });
+  startNewBuild(seed, "finalize");
 }
 
 /* ---- Build-plan subtab UI ---- */
