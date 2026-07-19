@@ -122,6 +122,22 @@
   .bp-folder-status.st-done{color:var(--run);border-color:var(--run)}
   .bp-folder-status.st-building,.bp-folder-status.st-testing{color:#B5730A;border-color:#E8C08A}
   .bp-folder-date{font-size:11px;color:var(--muted)}
+  .bp-folder-status.st-archived{color:var(--muted);border-color:var(--line);opacity:.8}
+  .bp-folder.archived{opacity:.6}
+  .bp-folder.archived:hover{opacity:.85}
+  .bp-arch-toggle{margin-top:12px;background:none;border:1px solid var(--line);color:var(--muted);font-size:12px;padding:6px 12px;border-radius:8px;cursor:pointer;transition:border-color .15s,color .15s}
+  .bp-arch-toggle:hover{border-color:var(--run);color:var(--run)}
+  .bp-head-top{display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .bp-del-btn{background:none;border:1px solid var(--line);color:var(--muted);font-size:12px;font-weight:500;padding:6px 12px;border-radius:8px;cursor:pointer;transition:border-color .15s,color .15s}
+  .bp-del-btn:hover{border-color:var(--err);color:var(--err)}
+  .bp-del-panel{margin-top:12px;padding:14px 16px;border:1px solid var(--line);border-radius:10px;background:var(--bg)}
+  .bp-del-panel.danger{border-color:rgba(239,68,68,.35);background:rgba(239,68,68,.05)}
+  .bp-del-panel span{font-size:13px;color:var(--ink);line-height:1.5}
+  .bp-del-actions{display:flex;gap:8px;margin-top:12px}
+  .bp-del-yes{background:var(--err);color:#fff;border:none;padding:8px 14px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer}
+  .bp-del-yes:disabled,.bp-del-archive:disabled,.bp-del-no:disabled{opacity:.5;pointer-events:none}
+  .bp-del-archive{background:var(--volt);color:var(--midnight);border:none;padding:8px 14px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer}
+  .bp-del-no{background:none;border:1px solid var(--line);color:var(--muted);padding:8px 14px;border-radius:8px;font-size:13px;cursor:pointer}
   .bp-folder-new{align-items:center;justify-content:center;color:var(--run);font-weight:600;font-size:14px;border-style:dashed;flex-direction:row;gap:6px;min-height:96px}
   .bp-folder-new:hover{border-color:var(--run);background:rgba(0,168,120,.04)}
   .bp-folder-new:disabled{opacity:.6;cursor:default}
@@ -447,7 +463,7 @@ function freshAudit(){ return { tab:"guide", guideNotes:{}, captureText:"", summ
 function freshAutomation(){ return { tab:"gaps", loaded:false, msg:"", gaps:[], drafts:{}, assessing:{}, errors:{}, assessingAll:false, validatingAll:false, progress:"" }; }
 // sel = the active compose session's folder-scoped gap-selection map ({gapId: 'accepted'|'declined'};
 // undecided = absent). Committed to build_plan_gaps on Save; never the dormant client gaps.selection.
-function freshBuildPlan(){ return { loaded:false, msg:"", plans:[], activePlanId:null, planCounts:{}, plan:null, steps:[], draft:null, draftGaps:null, generating:false, saving:false, expanded:{}, panel:null, zoom:1, pan:{x:0,y:0}, tab:"plan", composing:false, sel:{}, scope:null, scopePlanId:null, scopeErr:"" }; }
+function freshBuildPlan(){ return { loaded:false, msg:"", plans:[], activePlanId:null, planCounts:{}, plan:null, steps:[], draft:null, draftGaps:null, generating:false, saving:false, expanded:{}, panel:null, zoom:1, pan:{x:0,y:0}, tab:"plan", composing:false, sel:{}, scope:null, scopePlanId:null, scopeErr:"", del:null, showArchived:false }; }
 function freshSetup(){ return { loaded:false, msg:"", run:null, preflight:null, diff:null, running:false, busy:false }; }
 
 const S = {
@@ -2095,7 +2111,7 @@ function renderBuildsTabBar(){
       ${tabs.map(([id,lbl]) => `<button class="subtab ${S.buildPlan.tab===id?"active":""}" onclick="buildsTab('${id}')">${lbl}</button>`).join("")}
     </div>`;
 }
-function buildsTab(t){ S.buildPlan.tab = t; renderAutomation(); }
+function buildsTab(t){ S.buildPlan.del = null; S.buildPlan.tab = t; renderAutomation(); }
 
 // Route the active in-folder tab to its body (each writes into #automation-body).
 function renderBuildsTabBody(){
@@ -3129,7 +3145,7 @@ async function openBuildFolder(planId){
   const plan = S.buildPlan.plans.find(p => p.id === planId);
   if(!plan) return;
   S.buildPlan.activePlanId = planId; S.buildPlan.plan = plan; S.buildPlan.panel = null; S.buildPlan.steps = [];
-  S.buildPlan.composing = false; S.buildPlan.draft = null; S.buildPlan.draftGaps = null; S.buildPlan.sel = {}; S.buildPlan.tab = "plan";   // open on the Build Plan tab
+  S.buildPlan.composing = false; S.buildPlan.draft = null; S.buildPlan.draftGaps = null; S.buildPlan.sel = {}; S.buildPlan.del = null; S.buildPlan.tab = "plan";   // open on the Build Plan tab
   try{
     const { data: steps, error } = await sb.from("build_steps").select("*")
       .eq("build_plan_id", planId).order("position");
@@ -3144,9 +3160,58 @@ function closeBuildFolder(){
   // Leave the build workspace back to the folder grid. An unsaved draft is discarded here
   // (nothing was written to the DB); a saved folder just closes.
   S.buildPlan.activePlanId = null; S.buildPlan.plan = null; S.buildPlan.steps = []; S.buildPlan.panel = null;
-  S.buildPlan.draft = null; S.buildPlan.draftGaps = null; S.buildPlan.composing = false; S.buildPlan.sel = {}; S.buildPlan.tab = "plan";
+  S.buildPlan.draft = null; S.buildPlan.draftGaps = null; S.buildPlan.composing = false; S.buildPlan.sel = {}; S.buildPlan.del = null; S.buildPlan.tab = "plan";
   renderAutomation();
 }
+
+/* ---- Delete / archive a build (§9). Two-layer safety: a setup_runs COUNT picks
+   delete-vs-archive for the UX; setup_runs.build_plan_id is an FK with NO cascade
+   (RESTRICT-like), so the DB itself BLOCKS a hard-delete that would orphan provisioning
+   history even if the count is wrong/RLS-hidden. setup_runs is NEVER deleted. ---- */
+
+// Entry: count this build's setup_runs, then branch to confirm (0) or blocked+archive (≥1).
+async function deleteBuild(){
+  const p = S.buildPlan.plan; if(!p || (S.buildPlan.del && S.buildPlan.del.busy)) return;
+  S.buildPlan.del = { phase:"checking" }; renderAutomation();
+  const { count, error } = await sb.from("setup_runs")
+    .select("id", { count:"exact", head:true }).eq("build_plan_id", p.id);
+  if(error){ S.buildPlan.del = { phase:"error", msg:"Couldn't check setup runs: " + error.message }; renderAutomation(); return; }
+  S.buildPlan.del = (count && count > 0) ? { phase:"blocked", runs:count } : { phase:"confirm" };
+  renderAutomation();
+}
+
+// 0-run path: verified hard-delete. build_steps + build_plan_gaps cascade; setup_runs (none)
+// would block it at the FK. .select() confirms exactly one row was removed.
+async function hardDeleteBuild(){
+  const p = S.buildPlan.plan; if(!p || !S.buildPlan.del || S.buildPlan.del.busy) return;
+  S.buildPlan.del = { phase:"confirm", busy:true }; renderAutomation();
+  const { data, error } = await sb.from("build_plans").delete().eq("id", p.id).select();
+  if(error || !data || data.length !== 1){
+    S.buildPlan.del = { phase:"error", msg:`Delete failed: ${error ? error.message : "no row returned"} — nothing was deleted.` };
+    renderAutomation(); return;
+  }
+  S.buildPlan.plans = (S.buildPlan.plans || []).filter(x => x.id !== p.id);
+  S.buildPlan.del = null; S.buildPlan.loaded = false; S.buildPlan.msg = "Build deleted.";
+  closeBuildFolder();   // to the grid; loaded=false forces a fresh reload
+}
+
+// ≥1-run path: archive via status (never delete — the audit trail the FK protects).
+// UPDATE does NOT re-stamp operator_id (RLS already covers it). .select().single() verifies.
+async function archiveBuild(){
+  const p = S.buildPlan.plan; if(!p || !S.buildPlan.del || S.buildPlan.del.busy) return;
+  S.buildPlan.del = { phase:"blocked", runs:(S.buildPlan.del.runs || 0), busy:true }; renderAutomation();
+  const { data, error } = await sb.from("build_plans").update({ status:"archived" }).eq("id", p.id).select().single();
+  if(error || !data){
+    S.buildPlan.del = { phase:"error", msg:`Archive failed: ${error ? error.message : "no row returned"}.` };
+    renderAutomation(); return;
+  }
+  S.buildPlan.plans = (S.buildPlan.plans || []).map(x => x.id === p.id ? data : x);
+  S.buildPlan.del = null; S.buildPlan.loaded = false; S.buildPlan.msg = "Build archived.";
+  closeBuildFolder();
+}
+
+function cancelDelete(){ S.buildPlan.del = null; renderAutomation(); }
+function toggleArchived(){ S.buildPlan.showArchived = !S.buildPlan.showArchived; renderAutomation(); }
 
 /* ---- Finalize tab: the gap-finalization decision surface (folder-scoped) ----
    Bridge between feasibility and the build plan. Reads this client's validated gaps,
@@ -3369,9 +3434,12 @@ function autoSizeNotes(){
 // The build-folder grid — one card per build_plans row for the active client. Each is a
 // segregated build (its own engines); "+ New build" starts another. Empty → prompt.
 function renderBuildFolderGrid(){
-  const plans = S.buildPlan.plans || [], gen = S.buildPlan.generating;
+  const all = S.buildPlan.plans || [], gen = S.buildPlan.generating;
+  const archived = all.filter(p => (p.status || "") === "archived");
+  const active = all.filter(p => (p.status || "") !== "archived");
+  const showArch = S.buildPlan.showArchived;
   const newCard = `<button class="bp-folder bp-folder-new" onclick="startNewBuild()" ${gen?"disabled":""}><span class="bp-folder-plus">+</span> ${gen?"Generating…":"New build"}</button>`;
-  if(!plans.length){
+  if(!all.length){
     return `
       <div class="card">
         <div class="phase-t">No builds yet</div>
@@ -3379,23 +3447,30 @@ function renderBuildFolderGrid(){
         <div class="bp-folders">${newCard}</div>
       </div>`;
   }
-  const cards = plans.map(p => {
+  // Archived hidden by default (§9/§10); the toggle appends them (dimmed) after the active set.
+  const shown = showArch ? active.concat(archived) : active;
+  const cards = shown.map(p => {
     const c = (S.buildPlan.planCounts && S.buildPlan.planCounts[p.id]) || { engines:0, steps:0 };
     const when = p.created_at ? new Date(p.created_at).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"}) : "";
     const st = p.status || "queued";
+    const isArch = st === "archived";
     return `
-      <button class="bp-folder" onclick="openBuildFolder('${p.id}')">
+      <button class="bp-folder${isArch?" archived":""}" onclick="openBuildFolder('${p.id}')">
         <div class="bp-folder-tab"></div>
         <div class="bp-folder-name">${esc(p.title || "Untitled build")}</div>
         <div class="bp-folder-meta">${c.engines} engine${c.engines===1?"":"s"} · ${c.steps} step${c.steps===1?"":"s"}</div>
         <div class="bp-folder-foot"><span class="bp-folder-status st-${esc(st)}">${esc(st)}</span><span class="bp-folder-date">${esc(when)}</span></div>
       </button>`;
   }).join("");
+  const archToggle = archived.length
+    ? `<button class="bp-arch-toggle" onclick="toggleArchived()">${showArch ? "Hide" : "Show"} archived (${archived.length})</button>`
+    : "";
   return `
     <div class="card">
       <div class="phase-h">Builds${S.activeClient ? " · " + esc(S.activeClient.business_name) : ""}</div>
-      <div class="phase-t">${plans.length} build${plans.length===1?"":"s"} for this client</div>
+      <div class="phase-t">${active.length} active build${active.length===1?"":"s"} for this client${archived.length ? ` · ${archived.length} archived` : ""}</div>
       <div class="bp-folders">${cards}${newCard}</div>
+      ${archToggle}
     </div>`;
 }
 
@@ -3893,11 +3968,15 @@ function renderSavedPlan(){
   const done = steps.filter(s => s.status === "done").length;
   const head = `
     <div class="card">
-      <button class="bp-back" onclick="closeBuildFolder()">← All builds</button>
+      <div class="bp-head-top">
+        <button class="bp-back" onclick="closeBuildFolder()">← All builds</button>
+        ${S.buildPlan.del ? "" : `<button class="bp-del-btn" onclick="deleteBuild()">Delete build</button>`}
+      </div>
       <div class="phase-h">Build plan · ${esc(p.status || "")}</div>
       <div class="phase-t">${esc(p.title || "Untitled plan")}</div>
       <div class="msg">${esc(p.summary || "")}</div>
       <div class="msg" style="margin-top:6px">${done} of ${steps.length} steps done</div>
+      ${renderDeletePanel()}
     </div>`;
   // CRM always shown; App / Agent Builder only when steps of that track exist.
   const sections = TRACK_ORDER
@@ -3905,6 +3984,27 @@ function renderSavedPlan(){
     .map(tr => renderPlanSection(tr, steps.filter(s => stepTrack(s) === tr)))
     .join("");
   return head + renderManifestCard(steps) + sections;
+}
+
+// Delete/archive control panel (§9). Idle → "" (the header shows just the Delete button);
+// otherwise a phase-specific inline panel — no native confirm() dialog (state-driven via
+// S.buildPlan.del: {phase:"checking"|"confirm"|"blocked"|"error", runs?, busy?, msg?}).
+function renderDeletePanel(){
+  const del = S.buildPlan.del;
+  if(!del) return "";
+  if(del.phase === "checking") return `<div class="bp-del-panel"><span>Checking setup runs…</span></div>`;
+  if(del.phase === "error") return `<div class="bp-del-panel danger"><span>${esc(del.msg)}</span>
+    <div class="bp-del-actions"><button class="bp-del-no" onclick="cancelDelete()">Dismiss</button></div></div>`;
+  if(del.phase === "blocked") return `<div class="bp-del-panel"><span>This build has ${del.runs} setup run${del.runs===1?"":"s"} recorded — its provisioning history can't be safely deleted. Archive it instead.</span>
+    <div class="bp-del-actions">
+      <button class="bp-del-archive" onclick="archiveBuild()" ${del.busy?"disabled":""}>${del.busy?"Archiving…":"Archive instead"}</button>
+      <button class="bp-del-no" onclick="cancelDelete()" ${del.busy?"disabled":""}>Cancel</button>
+    </div></div>`;
+  return `<div class="bp-del-panel danger"><span>Delete this build permanently? Its steps and frozen scope go with it. This can't be undone.</span>
+    <div class="bp-del-actions">
+      <button class="bp-del-yes" onclick="hardDeleteBuild()" ${del.busy?"disabled":""}>${del.busy?"Deleting…":"Confirm delete"}</button>
+      <button class="bp-del-no" onclick="cancelDelete()" ${del.busy?"disabled":""}>Cancel</button>
+    </div></div>`;
 }
 
 // A test-gate is an ordinary automation step the planner ends an engine's chain
