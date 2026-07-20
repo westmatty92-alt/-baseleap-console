@@ -2152,13 +2152,14 @@ function renderBuildsGrid(){
   body.innerHTML = renderBuildFolderGrid() + `<div class="msg" id="buildplan-msg" style="margin-top:10px">${esc(S.buildPlan.msg)}</div>`;
 }
 
-// Gap Report / Proposal — folder-scoped documents (§8). Bimodal like Finalize: while
-// composing they PREVIEW off the draft's accepted selection; a saved folder renders the
-// FROZEN build_plan_gaps scope. This step wires placement + scope binding + real content
+// Proposal — folder-scoped document (§8). Bimodal like Finalize: while composing it
+// PREVIEWS off the draft's accepted selection; a saved folder renders the FROZEN
+// build_plan_gaps scope. This step wires placement + scope binding + real content
 // from existing gap fields (band/estimated_hours pricing). AI copy generation, market-rate
 // cost reference, and branded export are deferred (separate future items).
+// (Gap Report is CLIENT-LEVEL — see renderGapReportBody; it does NOT use currentBuildGaps.)
 
-// The gaps this build's Gap Report / Proposal render from — bimodal:
+// The gaps this build's Proposal renders from — bimodal:
 //   composing (unsaved) → PREVIEW off the draft's accepted selection (S.automation.gaps + sel);
 //   saved folder        → the FROZEN build_plan_gaps scope (S.buildPlan.scope ⋈ gaps).
 // ready=false → underlying data not loaded (caller triggers the loader); a saved-scope row
@@ -2201,9 +2202,33 @@ function docEmpty(frozen){
   return `<div class="audit-empty">No gaps in this build's scope yet — accept gaps on the Finalize tab${frozen?"":", then save the build"}.</div>`;
 }
 
+// The client's validated gaps — the shared source for BOTH Feasibility's Validated list and
+// the client-level Gap Report (DRY; same reuse reasoning as finTotalsLine in step 6). Callers
+// guard on S.automation.loaded and kick loadAutomationData (as Feasibility does). NOTE: the
+// decline filter is NOT baked in here — Feasibility shows all validated; only Gap Report excludes.
+function clientValidatedGaps(){
+  return S.automation.gaps.filter(g => g.validation_status === "validated");
+}
+// Client-level "decided not to pursue." The dormant client-scoped gaps.selection column
+// (migration 005: proposed|accepted|declined) is the ONLY client-wide decision signal — a
+// per-build decline (build_plan_gaps / S.buildPlan.sel) is folder-scoped and DELIBERATELY
+// not consulted by the client-level Gap Report. A named set/predicate (not an inline
+// === "declined") so a future decided-against state is added in ONE place. NOTE: dormant
+// since 012 — no current UI writes 'declined' here, so today this excludes only legacy rows.
+const GAP_DECIDED_AGAINST = new Set(["declined"]);
+function gapDecidedAgainst(g){ return GAP_DECIDED_AGAINST.has(g.selection); }
+
+// Gap Report is CLIENT-LEVEL (revision to what step 6 shipped): the FULL set of validated gaps
+// for the client — same source as Feasibility's Validated list — minus any the client has
+// decided not to pursue. NOT this build's accepted/frozen scope, so it carries none of the
+// frozen/preview/drift machinery. (Proposal stays per-build via currentBuildGaps.)
 function renderGapReportBody(){
-  const d = buildDocData(); if(!d) return;
-  const rows = d.present.length ? d.present.map(g => `
+  if(!S.automation.loaded){
+    document.getElementById("automation-body").innerHTML = `<div class="audit-empty">Loading gaps…</div>`;
+    loadAutomationData(S.activeClientId); return;
+  }
+  const gaps = clientValidatedGaps().filter(g => !gapDecidedAgainst(g));
+  const rows = gaps.length ? gaps.map(g => `
     <div class="doc-gap sev-${esc(g.severity||"medium")}">
       <div class="doc-gap-head">
         <span class="doc-gap-title">${esc(g.title||"Untitled gap")}</span>
@@ -2211,15 +2236,15 @@ function renderGapReportBody(){
       </div>
       ${g.problem ? `<div class="doc-gap-problem">${esc(g.problem)}</div>` : ""}
       ${g.cost ? `<div class="doc-gap-cost"><span>Cost of inaction:</span> ${esc(g.cost)}</div>` : ""}
-    </div>`).join("") : docEmpty(d.frozen);
+    </div>`).join("") : `<div class="audit-empty">No validated gaps for this client yet — validate gaps on the Feasibility tab.</div>`;
   document.getElementById("automation-body").innerHTML = `
     <div class="doc-wrap">
       <div class="doc-head">
         <div class="doc-title">Gap Report</div>
-        <div class="doc-sub">${esc(S.activeClient.business_name)} · ${d.present.length} gap${d.present.length===1?"":"s"}</div>
-        ${docCue(d.frozen)}
+        <div class="doc-sub">${esc(S.activeClient.business_name)} · ${gaps.length} validated gap${gaps.length===1?"":"s"}</div>
+        <span class="doc-cue">Client-wide · all validated gaps, not scoped to this build</span>
       </div>
-      ${d.err ? `<div class="doc-note">Couldn't load scope: ${esc(d.err)}</div>` : rows + docMissingNote(d.missing, "report")}
+      ${rows}
     </div>`;
 }
 
@@ -2248,7 +2273,7 @@ function renderFeasibilityBody(){
   const body = document.getElementById("automation-body");
   if(!S.automation.loaded){ body.innerHTML = `<div class="audit-empty">Loading gaps…</div>`; loadAutomationData(S.activeClientId); return; }
   const pending = S.automation.gaps.filter(g => g.validation_status === "pending");
-  const validated = S.automation.gaps.filter(g => g.validation_status === "validated");
+  const validated = clientValidatedGaps();
   const stackText = summarizeStack(S.activeClient.current_stack);
   body.innerHTML = `
     <div class="card">
