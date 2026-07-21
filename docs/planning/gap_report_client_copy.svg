@@ -1,0 +1,71 @@
+<svg width="760" height="548" viewBox="0 0 760 548" xmlns="http://www.w3.org/2000/svg" font-family="Inter, system-ui, sans-serif">
+<rect width="760" height="548" fill="#0D1F2D"/>
+<defs><marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<text x="40" y="30" fill="#F4F5F0" font-size="15" font-weight="700">Gap Report — AI-synthesized client copy (two-phase, migration 013)</text>
+<text x="40" y="48" fill="#8B97A0" font-size="11">raw audit transcript → synthesized client-facing sections · client-level Gap Report (Order 15.997)</text>
+
+<!-- RAW GAP -->
+<rect x="40" y="70" width="180" height="60" rx="10" fill="#993556" stroke="#D4537E"/>
+<text x="130" y="95" fill="#FBEAF0" font-size="13" font-weight="700" text-anchor="middle">gaps.problem / cost</text>
+<text x="130" y="113" fill="#F4C0D1" font-size="11" text-anchor="middle">raw transcript · internal only</text>
+
+<!-- PHASE 1 -->
+<rect x="300" y="70" width="196" height="60" rx="10" fill="#0F6E56" stroke="#1D9E75"/>
+<text x="398" y="95" fill="#E1F5EE" font-size="13" font-weight="700" text-anchor="middle">Phase 1 — Conclusion + Cost</text>
+<text x="398" y="113" fill="#9FE1CB" font-size="11" text-anchor="middle">from raw transcript · on validate</text>
+
+<!-- CLIENT_COPY store -->
+<rect x="576" y="150" width="170" height="120" rx="10" fill="#0C447C" stroke="#378ADD"/>
+<text x="661" y="176" fill="#E6F1FB" font-size="13" font-weight="700" text-anchor="middle">gaps.client_copy</text>
+<text x="661" y="197" fill="#B5D4F4" font-size="11" text-anchor="middle">problem · cost</text>
+<text x="661" y="214" fill="#B5D4F4" font-size="11" text-anchor="middle">solution · savings</text>
+<text x="661" y="231" fill="#B5D4F4" font-size="11" text-anchor="middle">route · phase</text>
+<text x="661" y="252" fill="#7FA9D6" font-size="11" text-anchor="middle">+ fingerprint (stale)</text>
+
+<!-- SOLUTION SOURCE -->
+<rect x="40" y="252" width="180" height="78" rx="10" fill="#2C2C2A" stroke="#888780"/>
+<text x="130" y="276" fill="#D3D1C7" font-size="13" font-weight="700" text-anchor="middle">Solution source</text>
+<text x="130" y="295" fill="#B4B2A9" font-size="11" text-anchor="middle">3-tier: catalog spec →</text>
+<text x="130" y="311" fill="#B4B2A9" font-size="11" text-anchor="middle">stub+mechanism → build step</text>
+
+<!-- PHASE 2 -->
+<rect x="300" y="256" width="196" height="60" rx="10" fill="#2E2856" stroke="#7F77DD"/>
+<text x="398" y="281" fill="#CECBF6" font-size="13" font-weight="700" text-anchor="middle">Phase 2 — Solution + Savings</text>
+<text x="398" y="299" fill="#AFA9EC" font-size="11" text-anchor="middle">grounded · once build exists</text>
+
+<!-- GAP REPORT render -->
+<rect x="300" y="430" width="330" height="64" rx="10" fill="#114B5F" stroke="#2E8BA6"/>
+<text x="465" y="455" fill="#DCF0F6" font-size="13" font-weight="700" text-anchor="middle">Gap Report render — client-level</text>
+<text x="465" y="474" fill="#9FD2E0" font-size="11" text-anchor="middle">ungenerated · interim · incomplete · complete</text>
+
+<!-- arrows -->
+<line x1="220" y1="100" x2="296" y2="100" stroke="#888780" stroke-width="1.5" marker-end="url(#a)"/>
+<text x="258" y="92" fill="#B4B2A9" font-size="10" text-anchor="middle">validate</text>
+
+<path d="M496 100 L536 100 L536 178 L572 178" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#a)"/>
+<text x="536" y="150" fill="#9FE1CB" font-size="10" text-anchor="middle">phase: conclusion</text>
+
+<line x1="220" y1="291" x2="296" y2="291" stroke="#888780" stroke-width="1.5" marker-end="url(#a)"/>
+<text x="258" y="283" fill="#B4B2A9" font-size="10" text-anchor="middle">grounds</text>
+
+<path d="M496 286 L536 286 L536 226 L572 226" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#a)"/>
+<text x="536" y="264" fill="#AFA9EC" font-size="10" text-anchor="middle">phase: complete</text>
+
+<!-- continuity (dashed = data dependency, not a planned edge) -->
+<path d="M576 208 L516 208 L516 336 L440 336 L440 318" fill="none" stroke="#7F77DD" stroke-width="1.2" stroke-dasharray="5 3" marker-end="url(#a)"/>
+<text x="470" y="352" fill="#9B93E4" font-size="10" text-anchor="middle">Phase 1 text → continuity</text>
+
+<!-- render edge -->
+<path d="M661 270 L661 400 L465 400 L465 428" fill="none" stroke="#2E8BA6" stroke-width="1.5" marker-end="url(#a)"/>
+<text x="600" y="393" fill="#9FD2E0" font-size="10" text-anchor="middle">renders (raw never shown)</text>
+
+<!-- timing note -->
+<text x="398" y="376" fill="#8B97A0" font-size="10" text-anchor="middle">cataloged → at validate  ·  formulate → at build-save (kickBuildGapCopy)</text>
+
+<!-- legend / footnotes -->
+<line x1="40" y1="516" x2="70" y2="516" stroke="#888780" stroke-width="1.5"/>
+<text x="78" y="520" fill="#8B97A0" font-size="10">solid = built (all nodes shipped)</text>
+<line x1="300" y1="516" x2="330" y2="516" stroke="#7F77DD" stroke-width="1.2" stroke-dasharray="5 3"/>
+<text x="338" y="520" fill="#8B97A0" font-size="10">dashed = continuity data-flow (not a planned edge)</text>
+<text x="40" y="538" fill="#6E7A82" font-size="10">guards: per-gap copyBusy lock + copyAll bulk guard · anti-paraphrase doctrine is the core safeguard</text>
+</svg>

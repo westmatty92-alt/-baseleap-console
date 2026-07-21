@@ -106,6 +106,11 @@ with the saved build.**
   folder's FROZEN `build_plan_gaps`; regenerable as documents WITHOUT changing scope. This
   cycle wires their tab placement + scope binding only; full generation/copy is a follow-on
   per module (`gap_reports`/`proposals` gain `build_plan_id`; column set designed then).
+  **REVISED after this cycle:** Gap Report is now CLIENT-LEVEL (the full set of validated
+  gaps for the client, NOT folder-scoped — mirrors Feasibility; see the `gaps` contract) and
+  renders AI-SYNTHESIZED client-facing copy (`gaps.client_copy`, two-phase, migration 013,
+  Order 15.997). Proposal stays per-build / folder-scoped and unchanged. Proposal copy
+  generation is still the open follow-on.
 - **Delete inside an open folder (block + archive):** count `setup_runs` for the plan. 0 runs
   → verified hard-delete (`.delete().select()`; `build_steps` + `build_plan_gaps` cascade) →
   grid. ≥1 run → BLOCKED (the `setup_runs.build_plan_id` FK is NO ACTION / RESTRICT-like) with
@@ -113,8 +118,9 @@ with the saved build.**
   deleted — it is the provisioning audit trail the RESTRICT protects. All writes `.select()`-verified.
 - Build order (each its own review): 012 schema → nav rename + subtab removal + tab-shell
   scaffold → Finalize folder-scoped + `build_plan_gaps` wiring → scope-locked post-save →
-  delete + archive → Gap Report/Proposal placement. Out of scope: full Gap Report/Proposal
-  copy design, retiring `gaps.selection`, System Composer (Order 15.99).
+  delete + archive → Gap Report/Proposal placement. Out of scope of THAT cycle: retiring
+  `gaps.selection`, System Composer (Order 15.99). (Gap Report copy: DONE — Order 15.997,
+  migration 013. Proposal copy: still pending.)
 
 ## Feasibility gate (the core business rule, enforced by data)
 Gaps are written by the Audit Assistant with `validation_status = 'pending'`. The Automation Agent
