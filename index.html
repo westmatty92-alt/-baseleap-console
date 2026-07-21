@@ -120,9 +120,20 @@
   .doc-gap-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
   .doc-gap-title{font-size:15px;font-weight:600;color:var(--ink)}
   .doc-gap-sev{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
-  .doc-gap-problem{margin-top:8px;font-size:13px;color:var(--ink);line-height:1.5;opacity:.85}
-  .doc-gap-cost{margin-top:8px;font-size:12.5px;color:var(--muted)}
-  .doc-gap-cost span{font-weight:600;color:var(--ink)}
+  /* Synthesized client copy — four labeled sections + per-gap states (migration 013) */
+  .doc-gap-sec{margin-top:12px}
+  .doc-gap-sec-h{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:700;margin-bottom:3px}
+  .doc-gap-sec-b{font-size:13px;color:var(--ink);line-height:1.55}
+  .doc-gap-sec.pending .doc-gap-sec-b{color:var(--muted);font-style:italic}
+  .doc-tag{display:inline-block;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--run);border:1px solid var(--run);border-radius:10px;padding:1px 7px;margin-left:6px;vertical-align:middle}
+  .doc-gap-actions{margin-top:12px;padding-top:10px;border-top:1px dashed var(--line);display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .doc-gap-flag{font-size:11px;font-weight:600;color:#B5730A}
+  .doc-gap-when{font-size:11px;color:var(--muted)}
+  .doc-link{font-size:12px;font-weight:600;color:var(--volt);background:none;border:none;padding:0;cursor:pointer;font-family:inherit}
+  .doc-link:hover{text-decoration:underline}
+  .doc-raw{margin-top:8px;font-size:12.5px;color:var(--muted);line-height:1.5;border-left:2px solid var(--line);padding-left:10px}
+  .doc-raw b{color:var(--ink);font-weight:600}
+  .doc-raw-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#B5730A;margin-top:10px}
   .doc-line{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:11px 4px;border-bottom:1px solid var(--line)}
   .doc-line-title{font-size:14px;color:var(--ink)}
   .doc-line-meta{font-size:12px;color:var(--muted);white-space:nowrap}
@@ -482,7 +493,7 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
    GLOBAL STATE  (S.* is reset on every client switch)
 ============================================================ */
 function freshAudit(){ return { tab:"guide", guideNotes:{}, captureText:"", summary:null, sessionId:null, loaded:false, analyzing:false, msg:"", stackForm:null, stackOtherFlags:{}, extracting:false }; }
-function freshAutomation(){ return { tab:"gaps", loaded:false, msg:"", gaps:[], drafts:{}, assessing:{}, errors:{}, assessingAll:false, validatingAll:false, progress:"" }; }
+function freshAutomation(){ return { tab:"gaps", loaded:false, msg:"", gaps:[], drafts:{}, assessing:{}, errors:{}, assessingAll:false, validatingAll:false, progress:"", copyBusy:{}, copyAll:false }; }
 // sel = the active compose session's folder-scoped gap-selection map ({gapId: 'accepted'|'declined'};
 // undecided = absent). Committed to build_plan_gaps on Save; never the dormant client gaps.selection.
 function freshBuildPlan(){ return { loaded:false, msg:"", plans:[], activePlanId:null, planCounts:{}, plan:null, steps:[], draft:null, draftGaps:null, generating:false, saving:false, expanded:{}, panel:null, zoom:1, pan:{x:0,y:0}, tab:"plan", composing:false, sel:{}, scope:null, scopePlanId:null, scopeErr:"", del:null, showArchived:false }; }
@@ -2001,6 +2012,10 @@ async function validateGap(gapId){
   syncDraftFromGap(gapId, data);              // keep the card showing what's actually saved
   setAutomationMsg("Validated ✓ — will appear in the Gap Report.");
   renderAutomation();
+  // Event-driven Gap Report copy: a freshly validated gap is Gap-Report-eligible, so (re)generate
+  // its client copy when absent or when the source changed. NOT awaited — validate stays
+  // responsive and an AI error surfaces via setAutomationMsg without ever failing the validate.
+  if(g.client_copy == null || g.client_copy_fingerprint !== fingerprintGapSource(g)){ generateGapCopy(gapId); }
 }
 
 async function unvalidateGap(gapId){
@@ -2218,31 +2233,338 @@ function clientValidatedGaps(){
 const GAP_DECIDED_AGAINST = new Set(["declined"]);
 function gapDecidedAgainst(g){ return GAP_DECIDED_AGAINST.has(g.selection); }
 
+/* ============================================================
+   GAP REPORT — CLIENT-FACING SYNTHESIZED COPY (migration 013)
+   Two-phase: Phase 1 (Conclusion + Cost) from the raw transcript at validate;
+   Phase 2 (Solution + Savings) once grounding exists (catalog spec immediately;
+   a formulate gap's build step at build-save). Phase 2 ALWAYS receives Phase 1's
+   text for continuity. The anti-paraphrase doctrine is the core safeguard — the
+   real test is reading generated output, not that it merely parses.
+============================================================ */
+
+// Shared doctrine — reused by both phase prompts (mirrors DESIGN_DOCTRINE_PROMPT composition).
+const GAPCOPY_DOCTRINE = `THE CORE SAFEGUARD — SYNTHESIZE, DO NOT PARAPHRASE:
+- Formalizing the transcript is a FAILURE, not the task. "If they text me I see it, but if I'm with a client it sits" reworded to "When a client texts, the owner sees it, but if occupied it waits" is REJECTED — the same anecdote in a suit.
+- State the STRUCTURAL failure the anecdote is evidence of: what breaks, under what condition, and the business consequence. Correct: "Inbound text enquiries are triaged manually, so whenever the owner is occupied they go unanswered and prospective customers are lost." Name the mechanism, not the story.
+- Drop the anecdote, the quoted speech, and the I/me/my/we/our voice entirely. Third person: "the business", "the owner", "customers".
+
+NEVER FABRICATE:
+- Introduce NO number — percentage, dollar, hours, counts ("40% of leads", "$2,000/month", "3 hours a day") — that is not in the source. No figure in source → describe qualitatively.
+- Internal build-hours are our cost to deliver, NOT client time saved — never present them as savings.
+
+CLIENT-SAFE:
+- No internal tool/vendor/architecture terms (Stripe, GoHighLevel/GHL, tags, fields, webhooks, n8n, pipelines) unless the source shows the client already uses that named tool. Speak in the prospect's business language.
+
+LENGTH — a hard cap that forces synthesis:
+- Each section is 1-2 sentences, ~45 words max. You cannot fit the transcript; you must distill it.`;
+
+// PHASE 1 — Conclusion + Cost (raw transcript is the only input).
+const GAPCOPY_CONCLUSION_SYSTEM = `You convert RAW internal audit notes about ONE business problem into the opening two sections of a client-facing Gap Report a prospect will read: the Conclusion of the problem, and the Conclusion of the cost of inaction. The raw notes are first-person interview transcript. SYNTHESIZE them — do not reword them.
+
+${GAPCOPY_DOCTRINE}
+
+THE TWO SECTIONS:
+1. problem — the conclusion of what the problem IS: the structural gap, synthesized from the raw problem notes.
+2. cost — the conclusion of the cost of inaction: what it keeps costing the business, synthesized from the raw cost notes (qualitative unless the source gives a figure).
+
+OUTPUT — respond ONLY with valid JSON, no markdown, exactly:
+{"problem":"…","cost":"…"}
+Both values non-empty strings. No other keys.`;
+
+// PHASE 2 — Solution + Savings (given Phase 1's text + a grounded solution source).
+const GAPCOPY_SOLUTION_SYSTEM = `You write the closing two sections of a client-facing Gap Report a prospect will read: the Solution, and What It Saves. You are given the Conclusion and Cost already written for THIS gap, plus a SOLUTION SOURCE describing the automation that addresses it. SYNTHESIZE — do not reword source material.
+
+${GAPCOPY_DOCTRINE}
+
+CONTINUITY (these two sections JOIN an existing report — they are not written in isolation):
+- Read the provided Conclusion and Cost. Your Solution and Savings must read as the SAME document about the SAME business: same vocabulary for the problem, same register, no contradiction.
+- ADVANCE the narrative — do NOT restate the problem or the cost. Solution resolves what the Conclusion named; Savings describes what the Cost you were given stops losing.
+
+THE TWO SECTIONS:
+3. solution — a brief plain-language description of the automation that fixes it, grounded ONLY in the SOLUTION SOURCE. A proven catalog design → describe an established solution; this client's build spec → describe what will be built. Never invent capabilities absent from the source.
+4. savings — the time/money the business gets back, tied to the Cost you were given, qualitative unless the source gives a figure.
+
+OUTPUT — respond ONLY with valid JSON, no markdown, exactly:
+{"solution":"…","savings":"…"}
+Both values non-empty strings. No other keys.`;
+
+function gapConclusionUserMsg(g){
+  return [
+    `BUSINESS: ${S.activeClient.business_name} — ${S.activeClient.industry || "industry n/a"}`,
+    `GAP TITLE: ${g.title || "(untitled)"}`,
+    ``,
+    `RAW PROBLEM (internal transcript — SYNTHESIZE, do NOT reword):`,
+    g.problem || "(none)",
+    ``,
+    `RAW COST OF INACTION (internal transcript — SYNTHESIZE):`,
+    g.cost || "(none)",
+  ].join("\n");
+}
+
+// Phase 2 gets Phase 1's output as continuity context. band + hours are DELIBERATELY withheld
+// from both calls — pricing is the Proposal's job; withholding the price anchor + build hours
+// structurally removes the temptation to fabricate a figure in "savings".
+function gapSolutionUserMsg(g, src, conclusion){
+  return [
+    `BUSINESS: ${S.activeClient.business_name} — ${S.activeClient.industry || "industry n/a"}`,
+    `GAP TITLE: ${g.title || "(untitled)"}`,
+    ``,
+    `ALREADY-WRITTEN CONCLUSION (for continuity — do NOT repeat it):`,
+    `Problem: ${conclusion.problem}`,
+    `Cost: ${conclusion.cost}`,
+    ``,
+    `SOLUTION SOURCE (Tier ${src.tier} — ground the solution ONLY in this):`,
+    src.text,
+    ``,
+    `FEASIBILITY (internal context; do not quote): approach=${g.approach || "?"}`,
+  ].join("\n");
+}
+
+// Validator factory — same checks, different key sets. First-person + no-fabrication + length
+// are structural guards; they CANNOT catch "grammatically fine but still paraphrase" — only
+// reading real output does (the blocking live test).
+function makeCopyValidator(keys){
+  return function(c){
+    if(!c || typeof c !== "object" || Array.isArray(c)) throw new Error("not an object");
+    for(const k of keys){
+      if(typeof c[k] !== "string" || !c[k].trim()) throw new Error(`${k} missing/empty`);
+      if(c[k].length > 400) throw new Error(`${k} too long (${c[k].length} chars) — synthesize, don't transcribe`);
+    }
+    const extra = Object.keys(c).filter(k => !keys.includes(k));
+    if(extra.length) throw new Error("unexpected keys: " + extra.join(","));
+    const firstPerson = /\b(i|me|my|mine|we|us|our|ours)\b/i;
+    for(const k of keys){ if(firstPerson.test(c[k])) throw new Error(`${k} uses first person — must be third-person synthesis`); }
+  };
+}
+const validateConclusionCopy = makeCopyValidator(["problem","cost"]);
+const validateSolutionCopy   = makeCopyValidator(["solution","savings"]);
+
+// Engine catalog is client-INDEPENDENT (global engines) → cached module-wide, NOT in
+// resetClientState. One fetch serves every gap's solution-source resolution + bulk generation.
+async function ensureCatalog(){
+  if(!S.catalog){ const list = await listEngines(); S.catalog = new Map((list || []).map(e => [e.engine_key, e])); }
+  return S.catalog;
+}
+
+// Cheap non-crypto hash (djb2) of the SOURCE inputs — change-detection only, not security.
+// Any edit to the raw problem/cost, the matched engine, or the feasibility mechanism/approach
+// flips it → client_copy_fingerprint mismatch → the copy is stale → regenerate.
+function fingerprintGapSource(g){
+  const s = [g.problem, g.cost, g.matched_engine, g.mechanism, g.approach].map(x => x || "").join("");
+  let h = 5381; for(let i = 0; i < s.length; i++){ h = ((h << 5) + h + s.charCodeAt(i)) | 0; }
+  return String(h >>> 0);
+}
+
+// The artifact-carrying automation step for a formulate gap (Phase-2 grounding). A gap can
+// appear in several builds (build_plan_gaps is unique per plan+gap, not per gap), so this may
+// span plans — prefer a step with a deployment story, else the first automation step. Returns
+// null when no build exists yet (→ Phase 2 stays deferred, the interim state).
+async function buildStepForGap(gapId){
+  const { data } = await sb.from("build_steps").select("*").eq("gap_id", gapId).eq("agent", "automation");
+  if(!data || !data.length) return null;
+  return data.find(s => s.deployment) || data[0];
+}
+
+// The Solution section's grounding, by route. Tier 1 (deep matched engine) uses the CATALOG
+// spec — deliberately NOT any client's deployed build (Gap Report is client-level, and the
+// catalog spec is the canonical design). Tier 2: a named-but-thin engine stub + the gap's
+// mechanism. Tier 3a: a formulate gap that now HAS a build — grounded in that build step's
+// title/detail/changes_note (build_steps has NO spec column; the FORMULATE spec is split into
+// manifest/workflow/deployment). Tier 3b: formulate, no build yet → DEFERRED (interim state).
+function gapSolutionSource(g, engine, buildStep){
+  if(engine && isDeepEngine(engine)){
+    const spec = engine.spec || {};
+    const caps = (spec.automations || []).map(a => a && a.name).filter(Boolean).join("; ");
+    return { tier:1, route:"cataloged",
+      text:`MATCHED ENGINE — proven catalog design (use its SPEC, never a deployed build):\n`
+         + `name: ${engine.name}\npurpose: ${spec.purpose || engine.summary || ""}\n`
+         + `capabilities: ${caps}\nsummary: ${engine.summary || ""}` };
+  }
+  if(engine){
+    return { tier:2, route:"cataloged",
+      text:`MATCHED ENGINE — catalog stub (no full spec yet):\nname: ${engine.name}\n`
+         + `summary: ${engine.summary || ""}\nper-gap mechanism: ${g.mechanism || ""}\napproach: ${g.approach || ""}` };
+  }
+  if(buildStep){
+    const dep = buildStep.deployment || {};
+    return { tier:3, route:"formulated",
+      text:`CUSTOM BUILD for this client (this gap's build step):\n`
+         + `what gets built: ${buildStep.title || ""}\ndetail: ${buildStep.detail || ""}\n`
+         + `changes: ${dep.changes_note || ""}` };
+  }
+  return { tier:0, route:"formulated", deferred:true, text:"" };   // Tier 3b — defer Phase 2
+}
+
+// Full generation for one gap: Phase 1 always; Phase 2 when grounded (else leave interim).
+// Phase 2 ALWAYS receives Phase 1's `base` for continuity. A Phase-2 failure keeps Phase 1
+// (the gap stays at phase:"conclusion"), never discarding the good Conclusion/Cost.
+async function generateGapCopy(gapId){
+  const g = S.automation.gaps.find(x => x.id === gapId);
+  if(!g || g.validation_status !== "validated") return;
+  if(S.automation.copyBusy[gapId]) return;                 // per-gap in-flight guard (mirrors assessing{})
+  S.automation.copyBusy[gapId] = true; renderAutomation(); // set before async; render shows "Generating…"
+  try{
+    let base;
+    try{
+      base = await aiJsonWithRetry({ system:GAPCOPY_CONCLUSION_SYSTEM, userMsg:gapConclusionUserMsg(g),
+        max_tokens:800, validate:validateConclusionCopy, what:`gapcopy/conclusion (${g.title || g.id})` });
+    }catch(e){ setAutomationMsg("Conclusion copy failed: " + e.message); return; }   // finally still clears
+
+    const engine = g.matched_engine ? (await ensureCatalog()).get(g.matched_engine) : null;
+    const buildStep = engine ? null : await buildStepForGap(g.id);   // only a formulate gap needs the build lookup
+    const src = gapSolutionSource(g, engine, buildStep);
+    let sol = { solution:null, savings:null }, phase = "conclusion";
+    if(!src.deferred){
+      try{
+        sol = await aiJsonWithRetry({ system:GAPCOPY_SOLUTION_SYSTEM, userMsg:gapSolutionUserMsg(g, src, base),
+          max_tokens:800, validate:validateSolutionCopy, what:`gapcopy/solution (${g.title || g.id})` });
+        phase = "complete";
+      }catch(e){ setAutomationMsg("Solution copy failed: " + e.message); }   // keep Phase 1; stay interim
+    }
+    const now = new Date().toISOString();
+    const copy = { ...base, ...sol, route:src.route, phase, generated_at:now,
+      solution_at: phase === "complete" ? now : null };
+    const { data, error } = await sb.from("gaps")
+      .update({ client_copy:copy, client_copy_fingerprint:fingerprintGapSource(g) })
+      .eq("id", gapId).select().single();
+    if(error){ setAutomationMsg("Copy save failed: " + error.message); return; }   // finally still clears
+    Object.assign(g, data);
+  } finally {
+    delete S.automation.copyBusy[gapId]; renderAutomation();   // clear after async, always
+  }
+}
+
+// The "once a build exists" event — called from the build-save flow for each formulate gap in
+// the saved scope. Runs ONLY Phase 2, feeding the stored Phase-1 copy for continuity. No render:
+// it upgrades in the background while the operator is on the Build Plan tab.
+async function advanceGapCopyPhase2(g, buildStep){
+  const c = g.client_copy;
+  if(!c || c.phase === "complete") return;
+  const src = gapSolutionSource(g, null, buildStep);
+  if(src.deferred) return;
+  if(S.automation.copyBusy[g.id]) return;          // shared per-gap lock with generateGapCopy
+  S.automation.copyBusy[g.id] = true;              // set (no render: background upgrade during build-save)
+  try{
+    let sol;
+    try{
+      sol = await aiJsonWithRetry({ system:GAPCOPY_SOLUTION_SYSTEM, userMsg:gapSolutionUserMsg(g, src, c),
+        max_tokens:800, validate:validateSolutionCopy, what:`gapcopy/solution (${g.title || g.id})` });
+    }catch(e){ setAutomationMsg("Solution copy failed: " + e.message); return; }   // finally still clears
+    const copy = { ...c, ...sol, route:src.route, phase:"complete", solution_at:new Date().toISOString() };
+    const { data, error } = await sb.from("gaps").update({ client_copy:copy }).eq("id", g.id).select().single();
+    if(error){ setAutomationMsg("Copy save failed: " + error.message); return; }   // finally still clears
+    Object.assign(g, data);
+  } finally {
+    delete S.automation.copyBusy[g.id];            // clear, always
+  }
+}
+
+// Once a build is saved, advance any FORMULATE gap's Gap Report copy from Phase 1 (Conclusion +
+// Cost) to Phase 2 (Solution + Savings), now grounded in the just-created build step — the "once
+// a build exists" event. Fire-and-forget: never blocks or faults the save. Cataloged gaps are
+// skipped (their Phase 2 already ran at validate from the catalog spec). advanceGapCopyPhase2
+// self-guards on copyBusy and no-ops when there's no Phase-1 base or it's already complete. Uses
+// the just-inserted `steps` in hand — no query — preferring the step that carries a deployment.
+function kickBuildGapCopy(draftGaps, steps){
+  for(const dg of (draftGaps || [])){
+    if(dg.matched_engine) continue;                                 // formulate gaps only
+    const g = S.automation.gaps.find(x => x.id === dg.id) || dg;    // upgrade the canonical UI object
+    const forGap = (steps || []).filter(s => s.gap_id === dg.id && s.agent === "automation");
+    const step = forGap.find(s => s.deployment) || forGap[0];
+    if(step) advanceGapCopyPhase2(g, step);
+  }
+}
+
+// Bulk backfill from the Gap Report header: generate for validated gaps with no copy or stale
+// copy. Sequential — a client has a handful of gaps, so no special throttling is needed.
+async function generateAllGapCopy(){
+  if(S.automation.copyAll) return;                                     // bulk re-entrancy guard (mirrors assessingAll)
+  const todo = clientValidatedGaps().filter(g => !gapDecidedAgainst(g))
+    .filter(g => !S.automation.copyBusy[g.id])                         // skip gaps already generating
+    .filter(g => g.client_copy == null || g.client_copy_fingerprint !== fingerprintGapSource(g));
+  if(!todo.length){ setAutomationMsg("All Gap Report copy is up to date."); return; }
+  S.automation.copyAll = true; renderAutomation();
+  try{
+    setAutomationMsg(`Generating copy for ${todo.length} gap${todo.length===1?"":"s"}…`);
+    for(const g of todo){ await generateGapCopy(g.id); }               // sequential; each self-guards too
+    setAutomationMsg("Gap Report copy generated.");
+  } finally {
+    S.automation.copyAll = false; renderAutomation();                  // clear, always
+  }
+}
+
+// One labeled client-copy section. Empty text → the designed interim ("pending") state:
+// muted/italic placeholder (a formulate gap's Solution/Savings before its build exists, or a
+// failed Phase 2). The tag renders only on a populated section.
+function gapCopySection(label, text, opts){
+  opts = opts || {};
+  const pending = !text;
+  const tag = (opts.tag && !pending) ? `<span class="doc-tag">${esc(opts.tag)}</span>` : "";
+  const body = pending ? esc(opts.pendingText || "Pending.") : esc(text);
+  return `<div class="doc-gap-sec${pending?" pending":""}"><div class="doc-gap-sec-h">${esc(label)}${tag}</div><div class="doc-gap-sec-b">${body}</div></div>`;
+}
+
+function renderGapReportGap(g){
+  const sev = esc(g.severity || "medium");
+  const head = `<div class="doc-gap-head"><span class="doc-gap-title">${esc(g.title||"Untitled gap")}</span><span class="doc-gap-sev">${sev}</span></div>`;
+  const busy = !!S.automation.copyBusy[g.id];
+  const c = g.client_copy;
+  // STATE 1 — ungenerated (also where a Phase-1 failure lands: no row written): raw notes + Generate.
+  if(!c){
+    const raw = `${g.problem?`<div class="doc-raw"><b>Problem:</b> ${esc(g.problem)}</div>`:""}${g.cost?`<div class="doc-raw"><b>Cost:</b> ${esc(g.cost)}</div>`:""}`;
+    const action = busy ? `<span class="doc-gap-when">Generating…</span>`
+      : `<button class="doc-link" onclick="generateGapCopy('${g.id}')">Generate professional copy</button>`;
+    return `<div class="doc-gap sev-${sev}">${head}
+      <div class="doc-gap-sec pending"><div class="doc-gap-sec-b">Professional copy not generated yet.</div></div>
+      <div class="doc-raw-label">Internal notes — not shown to the client</div>${raw}
+      <div class="doc-gap-actions">${action}</div></div>`;
+  }
+  // STATES 2-4 — copy present. phase "conclusion" is EITHER a formulate gap awaiting its build
+  // (deferred, expected) OR a cataloged gap whose Phase 2 failed (incomplete) — distinguished here.
+  const stale = g.client_copy_fingerprint !== fingerprintGapSource(g);
+  const deferred   = c.phase === "conclusion" && c.route === "formulated";
+  const incomplete = c.phase === "conclusion" && c.route !== "formulated";
+  const solPending = deferred ? "Solution finalizes once this gap's build is planned."
+                              : "Solution copy didn't finish generating — use Regenerate.";
+  const savPending = deferred ? "Savings finalize with the solution."
+                              : "Savings copy didn't finish generating — use Regenerate.";
+  const solTag = (c.route === "formulated" && c.solution) ? "Custom build — designed for this client" : "";
+  const sections =
+    gapCopySection("Problem", c.problem) +
+    gapCopySection("Cost of inaction", c.cost) +
+    gapCopySection("Solution", c.solution, { tag: solTag, pendingText: solPending }) +
+    gapCopySection("What it saves", c.savings, { pendingText: savPending });
+  const flags = [];
+  if(stale) flags.push(`<span class="doc-gap-flag">Source changed since generated</span>`);
+  if(incomplete) flags.push(`<span class="doc-gap-flag">Solution copy incomplete — regenerate</span>`);
+  const action = busy ? `<span class="doc-gap-when">Generating…</span>`
+    : `<button class="doc-link" onclick="generateGapCopy('${g.id}')">Regenerate</button>`;
+  return `<div class="doc-gap sev-${sev}">${head}${sections}<div class="doc-gap-actions">${flags.join("")}${action}</div></div>`;
+}
+
 // Gap Report is CLIENT-LEVEL (revision to what step 6 shipped): the FULL set of validated gaps
 // for the client — same source as Feasibility's Validated list — minus any the client has
-// decided not to pursue. NOT this build's accepted/frozen scope, so it carries none of the
-// frozen/preview/drift machinery. (Proposal stays per-build via currentBuildGaps.)
+// decided not to pursue. NOT this build's accepted/frozen scope. Each gap renders its
+// client-facing synthesized copy (migration 013); raw problem/cost show ONLY in the ungenerated state.
 function renderGapReportBody(){
   if(!S.automation.loaded){
     document.getElementById("automation-body").innerHTML = `<div class="audit-empty">Loading gaps…</div>`;
     loadAutomationData(S.activeClientId); return;
   }
   const gaps = clientValidatedGaps().filter(g => !gapDecidedAgainst(g));
-  const rows = gaps.length ? gaps.map(g => `
-    <div class="doc-gap sev-${esc(g.severity||"medium")}">
-      <div class="doc-gap-head">
-        <span class="doc-gap-title">${esc(g.title||"Untitled gap")}</span>
-        <span class="doc-gap-sev">${esc(g.severity||"medium")}</span>
-      </div>
-      ${g.problem ? `<div class="doc-gap-problem">${esc(g.problem)}</div>` : ""}
-      ${g.cost ? `<div class="doc-gap-cost"><span>Cost of inaction:</span> ${esc(g.cost)}</div>` : ""}
-    </div>`).join("") : `<div class="audit-empty">No validated gaps for this client yet — validate gaps on the Feasibility tab.</div>`;
+  const anyTodo = gaps.some(g => g.client_copy == null || g.client_copy_fingerprint !== fingerprintGapSource(g));
+  const genAll = (gaps.length && anyTodo)
+    ? `<div style="margin-top:12px"><button class="btn-primary" style="width:auto" onclick="generateAllGapCopy()" ${S.automation.copyAll?"disabled":""}>${S.automation.copyAll?"Generating…":"Generate all missing"}</button></div>`
+    : "";
+  const rows = gaps.length ? gaps.map(renderGapReportGap).join("")
+    : `<div class="audit-empty">No validated gaps for this client yet — validate gaps on the Feasibility tab.</div>`;
   document.getElementById("automation-body").innerHTML = `
     <div class="doc-wrap">
       <div class="doc-head">
         <div class="doc-title">Gap Report</div>
         <div class="doc-sub">${esc(S.activeClient.business_name)} · ${gaps.length} validated gap${gaps.length===1?"":"s"}</div>
         <span class="doc-cue">Client-wide · all validated gaps, not scoped to this build</span>
+        ${genAll}
       </div>
       ${rows}
     </div>`;
@@ -3205,6 +3527,8 @@ async function saveBuildPlan(){
     S.buildPlan.planCounts = { ...S.buildPlan.planCounts, [plan.id]: {
       engines: new Set(S.buildPlan.steps.filter(s => s.agent === "automation" && s.gap_id).map(s => s.gap_id)).size,
       steps: S.buildPlan.steps.length } };
+    // Phase-2 Gap Report copy for this build's formulate gaps (the "once a build exists" event).
+    kickBuildGapCopy(S.buildPlan.draftGaps, steps);
     S.buildPlan.draft = null; S.buildPlan.draftGaps = null; S.buildPlan.sel = {};   // draft + its scope are spent — the saved rows are now the truth
     setBuildPlanMsg("Plan saved ✓");
   }catch(e){
