@@ -139,6 +139,95 @@
   .doc-line-meta{font-size:12px;color:var(--muted);white-space:nowrap}
   .doc-total{margin-top:16px;font-size:15px;font-weight:700;color:var(--ink);text-align:right}
   .doc-note{font-size:12px;color:var(--muted);line-height:1.5;margin-top:14px}
+  /* ============================================================
+     CLIENT-FACING GAP REPORT — branded preview / print view (.cr-*)
+     Round-3: FULL dark theme (Midnight throughout — cover AND body) + real
+     logo asset (assets/baseleap-logo.png, bg keyed transparent). Reference-1
+     cover + Reference-2 two-column body + Volt footer band (the one bright
+     accent). No prepared-date. @media print → clean Save-as-PDF (page breaks
+     + color-adjust for the dark fills + the logo image).
+  ============================================================ */
+  #client-report{position:fixed;inset:0;z-index:70;background:var(--midnight);overflow:auto;display:none}
+  .cr-toolbar{position:sticky;top:0;display:flex;justify-content:flex-end;gap:10px;padding:12px 20px;background:rgba(13,31,45,.92);backdrop-filter:blur(4px);border-bottom:1px solid rgba(0,212,160,.25);z-index:2}
+  .cr-doc{max-width:860px;margin:0 auto;background:var(--midnight)}
+  /* ---- Cover (Reference 1) ---- */
+  .cr-cover{position:relative;overflow:hidden;background:var(--midnight);color:#fff;padding:52px 60px 60px;min-height:60vh;display:flex;flex-direction:column}
+  .cr-cover::after{content:"";position:absolute;right:-160px;top:110px;width:620px;height:620px;border-radius:50%;background:radial-gradient(circle,rgba(0,212,160,.16),rgba(0,212,160,0) 70%);pointer-events:none}
+  .cr-logo{height:46px;width:auto;display:block;position:relative;z-index:1}
+  .cr-hero{margin-top:46px;display:flex;justify-content:center;position:relative;z-index:1}
+  .cr-dash{width:100%;max-width:600px;background:linear-gradient(160deg,#16304a,#0e2133);border:1px solid rgba(255,255,255,.09);border-radius:16px;box-shadow:0 26px 60px rgba(0,0,0,.42);overflow:hidden}
+  .cr-dash-bar{display:flex;align-items:center;gap:7px;padding:12px 16px;border-bottom:1px solid rgba(255,255,255,.07)}
+  .cr-dash-bar i{width:10px;height:10px;border-radius:50%;display:block}
+  .cr-dash-bar span{margin-left:8px;font-size:11px;color:#9AA3AD;letter-spacing:.04em}
+  .cr-dash-body{padding:20px 22px 24px}
+  .cr-tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:13px;margin-bottom:20px}
+  .cr-tile{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.06);border-radius:10px;padding:12px 14px}
+  .cr-tile .n{font-size:24px;font-weight:800;color:#fff;line-height:1}
+  .cr-tile .n b{color:var(--volt);font-weight:800}
+  .cr-tile .l{font-size:10px;color:#9AA3AD;margin-top:6px;letter-spacing:.04em}
+  .cr-charts{display:grid;grid-template-columns:1.6fr 1fr;gap:16px;align-items:center}
+  .cr-panel{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:10px;padding:14px}
+  .cr-panel .ph{font-size:10px;color:#9AA3AD;letter-spacing:.05em;text-transform:uppercase;margin-bottom:8px}
+  .cr-bars{display:flex;align-items:flex-end;gap:12px;height:72px;margin-top:10px}
+  .cr-bars i{flex:1;border-radius:3px 3px 0 0;display:block;min-height:6px}
+  .cr-cover-title{font-size:70px;font-weight:800;color:var(--volt);letter-spacing:-.01em;line-height:1;margin-top:auto;padding-top:44px;position:relative;z-index:1}
+  .cr-cover-div{height:1px;background:rgba(0,212,160,.5);margin:22px 0 18px;position:relative;z-index:1}
+  .cr-cover-meta{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;position:relative;z-index:1}
+  .cr-cover-for{font-size:17px;color:#fff}
+  .cr-cover-for b{font-weight:700}
+  .cr-cover-by{font-size:12px;color:var(--volt);letter-spacing:.05em;white-space:nowrap}
+  /* ---- Body (Reference 2) — dark theme: Midnight page, light text ---- */
+  .cr-body{padding:52px 60px 0}
+  .cr-h2{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--volt);margin-bottom:16px}
+  .cr-summary{font-size:18px;line-height:1.6;color:#F4F5F0}
+  .cr-summary b{color:var(--volt)}
+  .cr-rule{height:1px;background:rgba(0,212,160,.5);margin:40px 0}
+  .cr-sev-h{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;display:flex;align-items:center;gap:9px;margin:0 0 18px}
+  .cr-sev-dot{width:11px;height:11px;border-radius:50%}
+  /* Severity accents BRIGHTENED for legibility on Midnight (the light-bg
+     variants #C77C0E/#4E7D1B were too dark on a dark page). */
+  .cr-sev-high{color:#F26D6B}.cr-sev-medium{color:#F2A83C}.cr-sev-low{color:#8FCB50}
+  .cr-sev-high .cr-sev-dot{background:#F26D6B}
+  .cr-sev-medium .cr-sev-dot{background:#F2A83C}
+  .cr-sev-low .cr-sev-dot{background:#8FCB50}
+  .cr-gap{margin-bottom:32px;padding-bottom:32px;border-bottom:1px solid rgba(0,212,160,.35)}
+  .cr-gap-title{font-size:21px;font-weight:700;color:var(--volt);margin-bottom:20px;line-height:1.25}
+  .cr-grid2{display:grid;grid-template-columns:1fr 1fr;gap:24px 40px}
+  .cr-field-l{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:#F4F5F0;margin-bottom:6px}
+  .cr-field-b{font-size:14px;line-height:1.62;color:#fff}
+  /* Callout is an ELEVATED surface (lighter than the Midnight page) so it
+     reads as a raised card, not a same-color block that blends in. */
+  /* .cr-close wraps the callout + footer so they page-break as ONE unit (see
+     @media print) — the callout carries its own 60px side margin now that it
+     lives in .cr-close rather than inheriting .cr-body's padding. */
+  .cr-close{background:var(--midnight)}
+  .cr-callout{background:#142c3f;color:#fff;border-radius:14px;padding:30px 34px;border-left:6px solid var(--volt);margin:8px 60px 0}
+  .cr-callout-l{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.09em;color:var(--volt);margin-bottom:12px}
+  .cr-callout-t{font-size:23px;font-weight:700;margin-bottom:10px;color:#fff}
+  .cr-callout-b{font-size:15px;line-height:1.6;color:#C7CDD3}
+  /* ---- Footer band (Reference 2 teal band) — the one bright accent ---- */
+  .cr-footer{background:var(--volt);color:var(--midnight);margin-top:52px;padding:40px 60px;display:flex;justify-content:space-between;align-items:center;gap:24px}
+  .cr-footer-t{font-size:25px;font-weight:800}
+  .cr-footer-s{font-size:14px;margin-top:6px;color:#053f30}
+  .cr-footer-c{font-size:13px;text-align:right;line-height:1.7;color:#063a2d;font-weight:600}
+  @media print{
+    /* margin:0 so the Midnight fills the sheet EDGE TO EDGE — without this the
+       browser's default page margin leaves a white frame around the dark report. */
+    @page{margin:0}
+    body{background:var(--midnight)}
+    #app,#auth,.modal-overlay,.ni-overlay{display:none !important}
+    #client-report{position:static;overflow:visible;display:block !important;background:var(--midnight)}
+    .cr-toolbar{display:none !important}
+    .cr-doc{max-width:none;margin:0}
+    .cr-cover{min-height:96vh;page-break-after:always}
+    .cr-gap,.cr-callout,.cr-footer{page-break-inside:avoid}
+    .cr-sev-h{page-break-after:avoid}
+    /* Closing callout + footer break as ONE unit: if they don't fit together at
+       the bottom of the last content page they move together to the next page —
+       ADAPTIVE (no forced break, no orphaned footer). */
+    .cr-close{page-break-inside:avoid}
+    *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  }
   .plan-warn{border:2px solid #E24B4A;background:rgba(226,75,74,.06);border-radius:10px;padding:12px 14px;margin-bottom:14px}
   .plan-warn-title{color:#E24B4A;font-weight:700;font-size:14px;margin-bottom:6px}
   .plan-warn-item{color:#E24B4A;font-size:13px;margin-bottom:2px}
@@ -480,6 +569,9 @@
     <div class="ni-body" id="ni-body"></div>
   </div>
 </div>
+
+<!-- Client-facing Gap Report — branded preview / print view (populated by renderClientReport) -->
+<div id="client-report"></div>
 
 <script>
 /* ============================================================
@@ -2556,6 +2648,14 @@ function renderGapReportBody(){
   const genAll = (gaps.length && anyTodo)
     ? `<div style="margin-top:12px"><button class="btn-primary" style="width:auto" onclick="generateAllGapCopy()" ${S.automation.copyAll?"disabled":""}>${S.automation.copyAll?"Generating…":"Generate all missing"}</button></div>`
     : "";
+  const ready = gaps.filter(g => g.client_copy && g.client_copy.phase === "complete");
+  const notReady = gaps.length - ready.length;
+  const preview = gaps.length
+    ? `<div style="margin-top:12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+         <button class="btn-primary" style="width:auto" onclick="openClientReport()" ${ready.length?"":"disabled"}>Preview</button>
+         ${notReady ? `<span class="doc-gap-flag">${notReady} validated gap${notReady===1?"":"s"} not yet client-ready — generate copy first</span>` : ""}
+       </div>`
+    : "";
   const rows = gaps.length ? gaps.map(renderGapReportGap).join("")
     : `<div class="audit-empty">No validated gaps for this client yet — validate gaps on the Feasibility tab.</div>`;
   document.getElementById("automation-body").innerHTML = `
@@ -2565,10 +2665,170 @@ function renderGapReportBody(){
         <div class="doc-sub">${esc(S.activeClient.business_name)} · ${gaps.length} validated gap${gaps.length===1?"":"s"}</div>
         <span class="doc-cue">Client-wide · all validated gaps, not scoped to this build</span>
         ${genAll}
+        ${preview}
       </div>
       ${rows}
     </div>`;
 }
+
+/* ============================================================
+   CLIENT-FACING GAP REPORT — branded preview / print view (round 2)
+   A SEPARATE presentational view over the operator Gap Report tab.
+   Reads the SAME data (clientValidatedGaps ∖ decided-against), shows ONLY
+   gaps whose client_copy is COMPLETE (all four client-safe sections).
+   No AI, no DB — pure render of client_copy. Design references two brand
+   docs: Reference-1 cover + Reference-2 two-column body / teal footer band.
+============================================================ */
+// Agency contact for the footer band. ONE named constant on purpose: when
+// multi-tenant operator accounts land (Order 20, deferred), this repoints to
+// the logged-in operator's own email in one line — no template hunt. The url
+// is assembled from string parts so no bare-URL token exists in source (an
+// editor/preview auto-linkifier would otherwise mangle the literal); the
+// runtime value is exactly the plain string www.baseleap.co (a client sees it
+// verbatim — never markdown/link syntax).
+const CR_CONTACT = { email: "mgmt.baseleap@gmail.com", url: "www.baseleap" + ".co" };
+
+const CR_SEV_ORDER = ["high","medium","low"];
+const CR_SEV_LABEL = { high:"High priority", medium:"Medium priority", low:"Low priority" };
+const CR_SEV_COLOR = { high:"#E24B4A", medium:"#EF9F27", low:"#639922" };
+
+// Eligible for the client deliverable: validated, not decided-against, copy COMPLETE.
+function clientReportGaps(){
+  return clientValidatedGaps()
+    .filter(g => !gapDecidedAgainst(g))
+    .filter(g => g.client_copy && g.client_copy.phase === "complete");
+}
+// Highest-priority gap = first in severity order (high→med→low), list order within a band.
+function topPriorityGap(gaps){
+  for(const sev of CR_SEV_ORDER){ const hit = gaps.find(g => (g.severity||"medium") === sev); if(hit) return hit; }
+  return gaps[0] || null;
+}
+// REAL severity counts (unknown severity folds into medium) — the only numbers on the cover.
+function crSevCounts(gaps){
+  const c = { high:0, medium:0, low:0 };
+  gaps.forEach(g => { const s = g.severity||"medium"; if(c[s] == null) c.medium++; else c[s]++; });
+  return { ...c, total: gaps.length };
+}
+
+// Abstract dashboard hero (Reference 1). Stat tiles carry ONLY real counts; the bar
+// chart's three bars encode the REAL high/med/low split (heights ∝ counts); the donut
+// ring is purely decorative and UNLABELED — it asserts no figure (no fabrication).
+function crBars(counts){
+  const max = Math.max(counts.high, counts.medium, counts.low, 1);
+  const bar = (n, color) => {
+    const h = Math.round(Math.max(n / max, 0.08) * 100);
+    return `<i style="height:${h}%;background:linear-gradient(180deg,${color},${color}44)"></i>`;
+  };
+  return bar(counts.high, CR_SEV_COLOR.high) + bar(counts.medium, CR_SEV_COLOR.medium) + bar(counts.low, CR_SEV_COLOR.low);
+}
+function crHero(counts){
+  const ml = counts.medium + counts.low;
+  return `<div class="cr-hero"><div class="cr-dash">
+    <div class="cr-dash-bar"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i><span>Gap Analysis</span></div>
+    <div class="cr-dash-body">
+      <div class="cr-tiles">
+        <div class="cr-tile"><div class="n">${counts.total}</div><div class="l">GAPS IDENTIFIED</div></div>
+        <div class="cr-tile"><div class="n">${counts.high}<b> high</b></div><div class="l">PRIORITY</div></div>
+        <div class="cr-tile"><div class="n">${ml}</div><div class="l">MEDIUM &amp; LOW</div></div>
+      </div>
+      <div class="cr-charts">
+        <div class="cr-panel"><div class="ph">Gaps by severity</div><div class="cr-bars">${crBars(counts)}</div></div>
+        <div class="cr-panel" style="text-align:center"><div class="ph">&nbsp;</div>
+          <svg viewBox="0 0 100 100" width="104" height="104" aria-hidden="true">
+            <circle cx="50" cy="50" r="38" fill="none" stroke="rgba(255,255,255,.10)" stroke-width="12"/>
+            <circle cx="50" cy="50" r="38" fill="none" stroke="#00D4A0" stroke-width="12" stroke-dasharray="150 240" stroke-linecap="round" transform="rotate(-90 50 50)"/>
+            <circle cx="50" cy="50" r="4" fill="#00D4A0"/>
+          </svg></div>
+      </div>
+    </div></div></div>`;
+}
+// One section of a gap = a labeled cell in the two-column grid (Reference 2).
+function crField(label, text){
+  return `<div><div class="cr-field-l">${esc(label)}</div><div class="cr-field-b">${esc(text)}</div></div>`;
+}
+function crGapCard(g){
+  const c = g.client_copy;
+  return `<div class="cr-gap">
+    <div class="cr-gap-title">${esc(g.title || "Untitled gap")}</div>
+    <div class="cr-grid2">
+      ${crField("Problem", c.problem)}
+      ${crField("Cost of inaction", c.cost)}
+      ${crField("Solution", c.solution)}
+      ${crField("What it saves", c.savings)}
+    </div>
+  </div>`;
+}
+// Static combined-stakes framing — NO AI, NO figures.
+function crSummaryFraming(n){
+  return n === 1
+    ? "The gap below is an opportunity where the business is currently losing time, revenue, or momentum that a targeted automation can recover."
+    : `Together, these ${n} gaps mark where the business is currently losing time, revenue, or momentum. Each is addressable with a targeted automation; the sections below explain what each one is costing and what fixing it returns.`;
+}
+function renderClientReport(){
+  const el = document.getElementById("client-report");
+  const gaps = clientReportGaps();
+  const client = esc(S.activeClient.business_name);
+  const counts = crSevCounts(gaps);
+  const groups = CR_SEV_ORDER.map(sev => {
+    const inSev = gaps.filter(g => (g.severity||"medium") === sev);
+    if(!inSev.length) return "";
+    return `<div class="cr-sev-group">
+      <div class="cr-sev-h cr-sev-${sev}"><span class="cr-sev-dot"></span>${esc(CR_SEV_LABEL[sev])}</div>
+      ${inSev.map(crGapCard).join("")}</div>`;
+  }).join("");
+  const n = counts.total, top = topPriorityGap(gaps);
+  const rec = top ? `<div class="cr-callout">
+      <div class="cr-callout-l">Recommended starting point</div>
+      <div class="cr-callout-t">${esc(top.title || "Untitled gap")}</div>
+      <div class="cr-callout-b">We suggest starting here — it's the highest-priority gap, and addressing it first delivers the fastest return.</div>
+    </div>` : "";
+  el.innerHTML = `
+    <div class="cr-toolbar">
+      <button class="btn-ghost" onclick="closeClientReport()">Close</button>
+      <button class="btn-primary" style="width:auto" onclick="window.print()">Print / Save as PDF</button>
+    </div>
+    <div class="cr-doc">
+      <div class="cr-cover">
+        <img class="cr-logo" src="assets/baseleap-logo.png" alt="Baseleap">
+        ${crHero(counts)}
+        <div class="cr-cover-title">Gap Report</div>
+        <div class="cr-cover-div"></div>
+        <div class="cr-cover-meta">
+          <div class="cr-cover-for">Prepared for <b>${client}</b></div>
+          <div class="cr-cover-by">Prepared by BASELEAP</div>
+        </div>
+      </div>
+      <div class="cr-body">
+        <div class="cr-section">
+          <div class="cr-h2">Executive summary</div>
+          <div class="cr-summary"><b>${n} gap${n===1?"":"s"} identified.</b> ${crSummaryFraming(n)}</div>
+        </div>
+        <div class="cr-rule"></div>
+        ${groups}
+      </div>
+      <div class="cr-close">
+        ${rec}
+        <div class="cr-footer">
+          <div>
+            <div class="cr-footer-t">Ready to move forward?</div>
+            <div class="cr-footer-s">Contact us to scope your first build.</div>
+          </div>
+          <div class="cr-footer-c">${esc(CR_CONTACT.email)}<br>${esc(CR_CONTACT.url)}</div>
+        </div>
+      </div>
+    </div>`;
+}
+function openClientReport(){
+  if(!clientReportGaps().length){ setAutomationMsg("No client-ready gaps yet — generate copy first."); return; }
+  renderClientReport();
+  document.getElementById("client-report").style.display = "block";
+  document.addEventListener("keydown", crEscHandler);
+}
+function closeClientReport(){
+  document.getElementById("client-report").style.display = "none";
+  document.removeEventListener("keydown", crEscHandler);
+}
+function crEscHandler(e){ if(e.key === "Escape") closeClientReport(); }
 
 function renderProposalBody(){
   const d = buildDocData(); if(!d) return;
