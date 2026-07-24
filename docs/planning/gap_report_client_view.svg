@@ -1,0 +1,113 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="760" viewBox="0 0 1280 760" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#1A1A2E"/>
+    </marker>
+    <marker id="arrv" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#00A878"/>
+    </marker>
+  </defs>
+  <rect width="1280" height="760" fill="#F4F5F0"/>
+
+  <text x="40" y="46" font-size="24" font-weight="800" fill="#0D1F2D">Gap Report — client-facing preview / print view</text>
+  <text x="40" y="70" font-size="13" fill="#1A1A2E">A separate presentational view over the operator Gap Report tab. Reads the SAME client_copy data — no AI, no DB writes. Solid = exists today · green = this feature (all built). Print CSS drives Save-as-PDF.</text>
+
+  <!-- ================= ZONE 1: EXISTING DATA SOURCE ================= -->
+  <text x="40" y="118" font-size="15" font-weight="700" fill="#0D1F2D">1 · Existing data (untouched)</text>
+  <rect x="40" y="132" width="300" height="188" rx="12" fill="#FFFFFF" stroke="#0D1F2D" stroke-width="2"/>
+  <text x="60" y="160" font-size="13" font-weight="700" fill="#0D1F2D">gaps.client_copy  (migration 013)</text>
+  <line x1="60" y1="172" x2="320" y2="172" stroke="#E2E6E3" stroke-width="1"/>
+  <g font-size="12" fill="#1A1A2E">
+    <text x="60" y="196">problem   · cost</text>
+    <text x="60" y="218">solution  · savings</text>
+    <text x="60" y="240" fill="#5B6B73">phase: "conclusion" | "complete"</text>
+    <text x="60" y="262" fill="#5B6B73">route: "cataloged" | "formulated"</text>
+  </g>
+  <text x="60" y="292" font-size="11" fill="#5B6B73">Written by the two-phase pipeline:</text>
+  <text x="60" y="308" font-size="11" fill="#5B6B73">validate (P1) → build-save (P2)  — unchanged.</text>
+
+  <!-- ================= ZONE 2: OPERATOR ENTRY ================= -->
+  <text x="40" y="380" font-size="15" font-weight="700" fill="#0D1F2D">2 · Operator entry</text>
+  <rect x="40" y="394" width="300" height="150" rx="12" fill="#FFFFFF" stroke="#0D1F2D" stroke-width="2"/>
+  <text x="60" y="422" font-size="13" font-weight="700" fill="#0D1F2D">Gap Report tab (operator)</text>
+  <text x="60" y="444" font-size="12" fill="#1A1A2E">renderGapReportBody() — unchanged data logic</text>
+  <text x="60" y="470" font-size="11" fill="#5B6B73">New: "not yet client-ready" note when some</text>
+  <text x="60" y="486" font-size="11" fill="#5B6B73">validated gaps lack complete copy.</text>
+  <rect x="60" y="500" width="150" height="30" rx="8" fill="#00D4A0"/>
+  <text x="135" y="520" font-size="12" font-weight="700" fill="#0D1F2D" text-anchor="middle">Preview  ▶</text>
+  <text x="222" y="520" font-size="11" fill="#5B6B73">openClientReport()</text>
+
+  <!-- ================= ZONE 3: FILTER PIPELINE ================= -->
+  <text x="430" y="118" font-size="15" font-weight="700" fill="#0D1F2D">3 · clientReportGaps()  — the client-safe filter</text>
+  <rect x="430" y="132" width="360" height="412" rx="12" fill="#FFFFFF" stroke="#00A878" stroke-width="2"/>
+
+  <rect x="452" y="160" width="316" height="48" rx="8" fill="#F4F5F0" stroke="#0D1F2D" stroke-width="1.5"/>
+  <text x="610" y="182" font-size="12" font-weight="700" fill="#0D1F2D" text-anchor="middle">clientValidatedGaps()</text>
+  <text x="610" y="199" font-size="11" fill="#5B6B73" text-anchor="middle">validation_status === "validated"</text>
+
+  <line x1="610" y1="208" x2="610" y2="232" stroke="#00A878" stroke-width="2" marker-end="url(#arrv)"/>
+
+  <rect x="452" y="234" width="316" height="48" rx="8" fill="#F4F5F0" stroke="#0D1F2D" stroke-width="1.5"/>
+  <text x="610" y="256" font-size="12" font-weight="700" fill="#0D1F2D" text-anchor="middle">!gapDecidedAgainst(g)</text>
+  <text x="610" y="273" font-size="11" fill="#5B6B73" text-anchor="middle">drop declined</text>
+
+  <line x1="610" y1="282" x2="610" y2="306" stroke="#00A878" stroke-width="2" marker-end="url(#arrv)"/>
+
+  <rect x="452" y="308" width="316" height="56" rx="8" fill="#0D1F2D"/>
+  <text x="610" y="330" font-size="12" font-weight="700" fill="#00D4A0" text-anchor="middle">client_copy.phase === "complete"</text>
+  <text x="610" y="349" font-size="11" fill="#9AA3AD" text-anchor="middle">EXCLUDE interim gaps — client-safety gate</text>
+
+  <line x1="610" y1="364" x2="610" y2="388" stroke="#00A878" stroke-width="2" marker-end="url(#arrv)"/>
+
+  <rect x="452" y="390" width="316" height="60" rx="8" fill="#F4F5F0" stroke="#0D1F2D" stroke-width="1.5"/>
+  <text x="610" y="412" font-size="12" font-weight="700" fill="#0D1F2D" text-anchor="middle">topPriorityGap()</text>
+  <text x="610" y="431" font-size="11" fill="#5B6B73" text-anchor="middle">first high → medium → low</text>
+
+  <text x="452" y="484" font-size="11" fill="#5B6B73">N (exec-summary count) = gaps that PASS this filter.</text>
+  <text x="452" y="502" font-size="11" fill="#5B6B73">No AI call. No DB read/write. No pricing.</text>
+  <text x="452" y="524" font-size="11" fill="#00A878" font-weight="700">renderClientReport() builds the view →</text>
+
+  <!-- ================= ZONE 4: RENDERED VIEW ================= -->
+  <text x="850" y="118" font-size="15" font-weight="700" fill="#0D1F2D">4 · #client-report overlay  (z-70)</text>
+  <rect x="850" y="132" width="390" height="520" rx="12" fill="#FFFFFF" stroke="#00A878" stroke-width="2"/>
+
+  <rect x="872" y="156" width="346" height="70" rx="8" fill="#0D1F2D"/>
+  <text x="888" y="182" font-size="12" font-weight="700" fill="#FFFFFF">Baseleap<tspan fill="#00D4A0">.</tspan></text>
+  <text x="888" y="208" font-size="18" font-weight="800" fill="#00D4A0">Gap Report</text>
+  <text x="1200" y="182" font-size="10" fill="#9AA3AD" text-anchor="end">COVER</text>
+
+  <rect x="872" y="236" width="346" height="52" rx="8" fill="#F4F5F0" stroke="#E2E6E3" stroke-width="1"/>
+  <text x="888" y="258" font-size="12" font-weight="700" fill="#0D1F2D">Executive summary</text>
+  <text x="888" y="277" font-size="11" fill="#5B6B73">"N gaps identified" + static stakes framing</text>
+
+  <rect x="872" y="298" width="346" height="150" rx="8" fill="#F4F5F0" stroke="#E2E6E3" stroke-width="1"/>
+  <text x="888" y="320" font-size="12" font-weight="700" fill="#0D1F2D">The gaps — grouped by severity</text>
+  <rect x="888" y="332" width="314" height="30" rx="6" fill="#FFFFFF" stroke="#E24B4A" stroke-width="1"/>
+  <circle cx="902" cy="347" r="4" fill="#E24B4A"/><text x="914" y="351" font-size="11" fill="#E24B4A" font-weight="700">HIGH PRIORITY</text>
+  <rect x="888" y="366" width="314" height="30" rx="6" fill="#FFFFFF" stroke="#EF9F27" stroke-width="1"/>
+  <circle cx="902" cy="381" r="4" fill="#EF9F27"/><text x="914" y="385" font-size="11" fill="#C77C0E" font-weight="700">MEDIUM PRIORITY</text>
+  <rect x="888" y="400" width="314" height="30" rx="6" fill="#FFFFFF" stroke="#639922" stroke-width="1"/>
+  <circle cx="902" cy="415" r="4" fill="#639922"/><text x="914" y="419" font-size="11" fill="#4E7D1B" font-weight="700">LOW PRIORITY</text>
+  <text x="1202" y="320" font-size="10" fill="#5B6B73" text-anchor="end">4 sections / gap</text>
+
+  <rect x="872" y="458" width="346" height="58" rx="8" fill="#0D1F2D"/>
+  <rect x="872" y="458" width="6" height="58" fill="#00D4A0"/>
+  <text x="892" y="480" font-size="11" font-weight="700" fill="#00D4A0">RECOMMENDED STARTING POINT</text>
+  <text x="892" y="500" font-size="11" fill="#FFFFFF">= topPriorityGap().title</text>
+
+  <rect x="872" y="526" width="346" height="46" rx="8" fill="#F4F5F0" stroke="#E2E6E3" stroke-width="1"/>
+  <text x="1045" y="548" font-size="12" font-weight="700" fill="#0D1F2D" text-anchor="middle">Ready to move forward? (CTA)</text>
+  <text x="1045" y="565" font-size="10" fill="#5B6B73" text-anchor="middle">static — same page as callout</text>
+
+  <rect x="872" y="584" width="346" height="52" rx="8" fill="#FFFFFF" stroke="#0D1F2D" stroke-width="1.5"/>
+  <text x="888" y="606" font-size="12" font-weight="700" fill="#0D1F2D">@media print → window.print()</text>
+  <text x="888" y="624" font-size="11" fill="#5B6B73">color-adjust:exact · page-break cover + .cr-break · 5 pages</text>
+
+  <!-- ================= FLOW ARROWS ================= -->
+  <!-- data source -> filter -->
+  <path d="M340 226 C 385 226, 400 300, 448 316" fill="none" stroke="#1A1A2E" stroke-width="2" marker-end="url(#arr)"/>
+  <!-- preview button -> filter -->
+  <path d="M340 515 C 390 515, 405 470, 448 430" fill="none" stroke="#00A878" stroke-width="2" marker-end="url(#arrv)"/>
+  <!-- filter -> view -->
+  <path d="M790 300 C 820 300, 825 300, 848 300" fill="none" stroke="#00A878" stroke-width="2" marker-end="url(#arrv)"/>
+</svg>
