@@ -150,15 +150,63 @@
   #client-report{position:fixed;inset:0;z-index:70;background:var(--midnight);overflow:auto;display:none}
   .cr-toolbar{position:sticky;top:0;display:flex;justify-content:flex-end;gap:10px;padding:12px 20px;background:rgba(13,31,45,.92);backdrop-filter:blur(4px);border-bottom:1px solid rgba(0,212,160,.25);z-index:2}
   .cr-doc{max-width:860px;margin:0 auto;background:var(--midnight)}
-  /* ---- Cover (Reference 1) ---- */
-  .cr-cover{position:relative;overflow:hidden;background:var(--midnight);color:#fff;padding:52px 60px 60px;min-height:60vh;display:flex;flex-direction:column;justify-content:center}
-  .cr-cover::after{content:"";position:absolute;right:-160px;top:110px;width:620px;height:620px;border-radius:50%;background:radial-gradient(circle,rgba(0,212,160,.16),rgba(0,212,160,0) 70%);pointer-events:none}
-  /* align-self:flex-start stops the column flex's default align-items:stretch
-     from stretching the image to full container width; height + max-width keep it
-     a modest top-left corner mark. */
-  .cr-logo{height:34px;width:auto;max-width:190px;align-self:flex-start;display:block;position:relative;z-index:1}
-  .cr-hero{margin-top:46px;display:flex;justify-content:center;position:relative;z-index:1}
-  .cr-dash{width:100%;max-width:600px;background:linear-gradient(160deg,#16304a,#0e2133);border:1px solid rgba(255,255,255,.09);border-radius:16px;box-shadow:0 26px 60px rgba(0,0,0,.42);overflow:hidden}
+  /* ---- Cover (Reference 1, round 4: real laptop photo) ----
+     Two stacked bands, matching the reference exactly: a full-bleed photo band
+     (laptop on desk; the photo's own baked-in dashboard was masked out and our
+     REAL per-report dashboard is composited into that exact screen region) on
+     top, then a solid-Midnight title band below with title/divider/prepared-for.
+     The photo's own baked-in "BASELEAP" logo (top-left, in-shot) is the ONLY
+     logo on the cover now — the separate <img> .cr-logo is no longer used here. */
+  .cr-cover{position:relative;background:var(--midnight);color:#fff;display:flex;flex-direction:column}
+  /* aspect-ratio locks the band to the source photo's 1600:1000 ratio so the
+     absolutely-positioned dashboard below always lands on the real screen area,
+     at any render width (screen preview vs. print page width differ). */
+  .cr-photo-band{position:relative;width:100%;aspect-ratio:1600/1000;overflow:hidden;background:var(--midnight) url('assets/cover-laptop.png') center/cover no-repeat}
+  /* Measured card natural size (600px design width -> renders 606x332px, ratio
+     1.825:1) is WIDER than the true screen area's ratio (~1.64:1). Sizing to fit
+     the target WIDTH alone leaves a height shortfall (visible grey gap, per live
+     review) — so this is scaled to match HEIGHT instead (the constraining
+     dimension), letting the small resulting width overflow bleed safely into the
+     black bezel (already proven clean, no visible seam). CENTERING: percentage
+     `height` on an absolutely-positioned child of an aspect-ratio box is
+     unreliable across engines when combined with overflow:hidden (verified via
+     live measurement — it clipped/shifted). So .cr-hero is a bare positioning
+     anchor (left/top only, no width/height — top-% against an aspect-ratio parent
+     IS reliable, confirmed twice); the actual centering+scale is one transform on
+     .cr-dash itself (translate(-50%,-50%) scale(...)), which depends only on the
+     transformed element's own size — no parent-height resolution involved. */
+  /* At scale(.63), card measures ~47% wide x ~41.6% tall (verified) — already very
+     close to the target mask (45.1% x 44%). Small nudge from the mask's top-left
+     corner to its CENTER minus half the card's own size = evenly spaced margin on
+     all sides, without changing scale (avoids the aspect-ratio overflow problems
+     from trying to force an exact height match). */
+  /* User-verified placement via the interactive placement tool (drag/resize on
+     the real photo): left 28.3%, top 32.5%, width 44.4%, height 39.3% of the
+     photo band. Simple top-left positioning + scale — no translate/centering
+     needed since these are direct top-left coordinates, not a center point. */
+  /* User-verified placement (interactive tool): left 28.3%, top 32.5%, width
+     44.4%, height 39.3%. transform:scale() proved unreliable across repeated
+     measurement (results didn't reproduce consistently) — switched to a direct
+     width% + aspect-ratio approach instead: width resolves reliably against the
+     photo band's width, and aspect-ratio derives height FROM that resolved
+     width directly, avoiding percentage-height-on-aspect-ratio-parent (a known
+     unreliable combination, confirmed earlier). Target ratio 710.4:393 (from
+     the user's own width/height) closely matches the card's natural ratio, so
+     stretching to fill introduces no visible distortion. */
+  /* Centered within the fill box (27.5%,30.5%,46.0%,44.0%), not just placed at
+     arbitrary coordinates — even margin on every side (0.8% horizontal, 2.35%
+     vertical) so the graphic isn't touching the bezel on any edge. */
+  .cr-hero{position:absolute;left:28.3%;top:32.85%;width:44.4%;height:39.3%;overflow:hidden;z-index:1}
+  .cr-title-band{padding:80px 60px 52px;text-align:center}
+  /* .cr-hero (above) reliably resolves left/top/width/aspect-ratio against the
+     photo band. .cr-dash keeps its 600px design width + transform:scale() —
+     REQUIRED, not optional: the internal tiles/text/padding are fixed-px and
+     only shrink correctly via the scale transform, not via percentage sizing
+     (confirmed — removing scale left text/padding at full size, overflowing).
+     overflow:hidden on .cr-hero clips the scaled content to its own reliable
+     box, so .cr-dash's own pre-transform 600px layout footprint never leaks
+     past .cr-hero's actual (width%+aspect-ratio-derived) box. */
+  .cr-dash{width:600px;transform:scale(.628);transform-origin:top left;background:linear-gradient(160deg,#16304a,#0e2133);border:1px solid rgba(255,255,255,.09);border-radius:16px;box-shadow:0 16px 34px rgba(0,0,0,.5);overflow:hidden}
   .cr-dash-bar{display:flex;align-items:center;gap:7px;padding:12px 16px;border-bottom:1px solid rgba(255,255,255,.07)}
   .cr-dash-bar i{width:10px;height:10px;border-radius:50%;display:block}
   .cr-dash-bar span{margin-left:8px;font-size:11px;color:#9AA3AD;letter-spacing:.04em}
@@ -175,7 +223,7 @@
   .cr-bars i{flex:1;border-radius:3px 3px 0 0;display:block;min-height:6px}
   .cr-cover-title{font-size:70px;font-weight:800;color:var(--volt);letter-spacing:-.01em;line-height:1;padding-top:44px;position:relative;z-index:1}
   .cr-cover-div{height:1px;background:rgba(0,212,160,.5);margin:22px 0 18px;position:relative;z-index:1}
-  .cr-cover-meta{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;position:relative;z-index:1}
+  .cr-cover-meta{display:flex;justify-content:center;align-items:flex-end;gap:40px;position:relative;z-index:1}
   .cr-cover-for{font-size:17px;color:#fff}
   .cr-cover-for b{font-weight:700}
   .cr-cover-by{font-size:12px;color:var(--volt);letter-spacing:.05em;white-space:nowrap}
@@ -2792,13 +2840,14 @@ function renderClientReport(){
     </div>
     <div class="cr-doc">
       <div class="cr-cover">
-        <img class="cr-logo" src="assets/baseleap-logo.png" alt="Baseleap">
-        ${crHero(counts)}
-        <div class="cr-cover-title">Gap Report</div>
-        <div class="cr-cover-div"></div>
-        <div class="cr-cover-meta">
-          <div class="cr-cover-for">Prepared for <b>${client}</b></div>
-          <div class="cr-cover-by">Prepared by BASELEAP</div>
+        <div class="cr-photo-band">${crHero(counts)}</div>
+        <div class="cr-title-band">
+          <div class="cr-cover-title">Gap Report</div>
+          <div class="cr-cover-div"></div>
+          <div class="cr-cover-meta">
+            <div class="cr-cover-for">Prepared for <b>${client}</b></div>
+            <div class="cr-cover-by">Prepared by BASELEAP</div>
+          </div>
         </div>
       </div>
       <div class="cr-body">

@@ -122,6 +122,40 @@ with the saved build.**
   `gaps.selection`, System Composer (Order 15.99). (Gap Report copy: DONE — Order 15.997,
   migration 013. Proposal copy: still pending.)
 
+## Gap Report — client-facing Preview / print view (branded; on `fix/condition-empty-branch-autorepair`, not yet merged)
+A separate presentational view (`.cr-*` classes, `renderClientReport()`/`openClientReport()`/
+`closeClientReport()`) over the operator Gap Report tab — a **Preview** button opens a
+full-screen branded report; **Print / Save as PDF** inside it calls `window.print()`. Reuses
+`clientReportGaps()` (= `clientValidatedGaps()` minus declined, filtered to
+`client_copy.phase === 'complete'` only) — no new AI calls, no new DB reads/writes, no pricing.
+- **Cover (final, round 4):** a real photographed laptop-on-desk asset
+  (`assets/cover-laptop.png`, full-bleed background on `.cr-photo-band`) with the BASELEAP
+  wordmark baked directly into the photo (no separate logo layer). The laptop's own screen
+  area is masked in the source asset; the abstract CSS dashboard hero (`crHero()` — REAL
+  gap-derived counts only: total/high/med+low tiles, severity-split bars, a purely decorative
+  unlabeled donut, no fabricated figures) is composited on top via `.cr-hero`/`.cr-dash`
+  (`left/top/width/height` percentages, manually placed and pixel-verified against the photo's
+  actual screen boundary — NOT CSS `transform:scale()`, which proved unreliable across repeated
+  measurement; direct width/height % + `overflow:hidden` is the trustworthy pattern here).
+  `Prepared for {business_name}` pulls from `S.activeClient.business_name` live — confirmed both
+  the gap counts and the client name are genuinely dynamic per report, not fixed to any one
+  test client.
+- **Full dark theme:** Midnight background throughout (cover AND body pages, not just the
+  cover). Gap titles/section headers/dividers/ancillary text → Volt; sub-labels → `#F4F5F0`;
+  body copy → white; severity accents brightened for dark-background legibility; the
+  Recommended-starting-point callout is a slightly elevated surface so it doesn't blend into
+  the page.
+- **Print fidelity:** `@page{margin:0}` makes the dark fill genuinely edge-to-edge (verified by
+  rasterizing the print-PDF and sampling every page's four corners — no white margin frame).
+  The closing callout + footer band are wrapped in `.cr-close{page-break-inside:avoid}` so they
+  move together as one adaptive unit only if they don't fit on the last content page — no
+  unconditional forced break (rejected earlier: it re-creates a near-empty trailing page).
+- **Gate:** a validated gap only appears once `client_copy.phase === 'complete'`; the operator
+  tab shows an "N gaps not yet client-ready" note and disables Preview until at least one gap
+  qualifies.
+- Verified via real code extraction (not retyped) + actual headless-Chrome print-to-PDF
+  rendering, page-by-page, at every round — not visual description alone.
+
 ## Feasibility gate (the core business rule, enforced by data)
 Gaps are written by the Audit Assistant with `validation_status = 'pending'`. The Automation Agent
 sets `feasible`, `mechanism`, `estimated_hours`, and flips `validation_status` to `validated`.
