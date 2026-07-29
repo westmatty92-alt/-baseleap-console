@@ -3211,6 +3211,36 @@ function validateManifest(m, at){
     if(f.object !== undefined && f.object !== "contact" && f.object !== "opportunity")
       throw new Error(`${at}.requires_fields[${i}].object must be "contact" or "opportunity"`);
   });
+  validateManifestSetupItems(m, at);
+}
+
+// The three non-tag/field setup-item kinds (Order 15.7). All OPTIONAL: absent
+// (undefined or null) means "this engine needs none" and reads as [] — every
+// manifest authored before these existed stays valid. Shapes are exactly the
+// verified GHL write matrix in .claude/skills/ghl-setup and nothing more: a
+// key we can't create through a probed endpoint has no business being declared.
+function validateManifestSetupItems(m, at){
+  const arr = (k) => {
+    if(m[k] == null) return null;
+    if(!Array.isArray(m[k])) throw new Error(`${at}.${k} must be an array`);
+    return m[k];
+  };
+  (arr("requires_calendars") || []).forEach((c, i) => {
+    if(!c || typeof c.name !== "string" || !c.name.trim())
+      throw new Error(`${at}.requires_calendars[${i}] needs a name`);
+  });
+  (arr("requires_custom_values") || []).forEach((v, i) => {
+    if(!v || typeof v.name !== "string" || !v.name.trim() || typeof v.value !== "string" || !v.value.trim())
+      throw new Error(`${at}.requires_custom_values[${i}] needs name and value`);
+  });
+  (arr("requires_pipelines") || []).forEach((p, i) => {
+    if(!p || typeof p.name !== "string" || !p.name.trim())
+      throw new Error(`${at}.requires_pipelines[${i}] needs a name`);
+    // stages ship inline in the create payload — a pipeline with no stages is
+    // not creatable, so an empty array is a hard error, not an empty default.
+    if(!Array.isArray(p.stages) || !p.stages.length || p.stages.some(s => typeof s !== "string" || !s.trim()))
+      throw new Error(`${at}.requires_pipelines[${i}].stages must be a non-empty array of non-empty stage names`);
+  });
 }
 
 function validateFormulation(f){
@@ -5232,22 +5262,46 @@ function setupGateMissing(){
 }
 
 // Union of every saved step manifest — same dedupe rules as the planner:
-// tags by exact string, fields by object:name (fieldKey). "[…]" names are
-// per-client parameterized schemes (documented convention) — never created
-// literally; surfaced separately for hand-naming.
+// tags by exact string, fields by object:name (fieldKey), and calendars /
+// custom values / pipelines by name. "[…]" names are per-client parameterized
+// schemes (documented convention) — never created literally; surfaced
+// separately for hand-naming.
 function setupManifestUnion(steps){
   const tags = new Set(), fields = new Map();
+  const cals = new Map(), cvs = new Map(), pipes = new Map();
   steps.filter(s => s.manifest && !s.manifest.tbd).forEach(s => {
     const m = s.manifest;
     [...(m.creates_tags || []), ...(m.requires_tags || [])].forEach(t => tags.add(t));
     (m.requires_fields || []).forEach(f => { const k = fieldKey(f); if(!fields.has(k)) fields.set(k, f); });
+    unionByName(cals, m.requires_calendars);
+    unionByName(cvs, m.requires_custom_values);
+    unionByName(pipes, m.requires_pipelines);
   });
   const all = [...tags], allF = [...fields.values()];
+  const allC = [...cals.values()], allV = [...cvs.values()], allP = [...pipes.values()];
+  // a bracketed custom-value VALUE is per-client too — creating it literally
+  // would write the placeholder text into the client's account.
+  const param = (x) => x.name.startsWith("[") || (typeof x.value === "string" && x.value.startsWith("["));
   return {
     tags: all.filter(t => !t.startsWith("[")),
     fields: allF.filter(f => !f.name.startsWith("[")),
-    paramItems: all.filter(t => t.startsWith("[")).concat(allF.filter(f => f.name.startsWith("[")).map(fieldLabel)),
+    calendars: allC.filter(c => !param(c)),
+    customValues: allV.filter(v => !param(v)),
+    pipelines: allP.filter(p => !param(p)),
+    paramItems: all.filter(t => t.startsWith("["))
+      .concat(allF.filter(f => f.name.startsWith("[")).map(fieldLabel))
+      .concat(allC.filter(param).map(c => `${c.name} (calendar)`))
+      .concat(allV.filter(param).map(v => `${v.name} (custom value)`))
+      .concat(allP.filter(param).map(p => `${p.name} (pipeline)`)),
   };
+}
+
+// First-wins dedupe by CASE-INSENSITIVE name: the create is by name and GHL
+// rejects a same-name create regardless of case, so two spellings of one name
+// must never both reach the create loop. The authored casing is preserved as
+// the stored value.
+function unionByName(map, list){
+  (list || []).forEach(x => { const k = x.name.toLowerCase(); if(!map.has(k)) map.set(k, x); });
 }
 
 async function preflightSetup(){
@@ -5276,8 +5330,24 @@ function computeSetupDiff(){
   const fKeys = new Set(pf.fields.map(f => (f.model || "contact") + ":" + (f.name || "").toLowerCase()));
   const tagsToCreate = u.tags.filter(t => !tagNames.has(t.toLowerCase()));
   const fieldsToCreate = u.fields.filter(f => !fKeys.has(fieldObject(f) + ":" + f.name.toLowerCase()));
-  return { union: u, tagsToCreate, fieldsToCreate,
-    tagsExisting: u.tags.length - tagsToCreate.length, fieldsExisting: u.fields.length - fieldsToCreate.length };
+  const calendarsToCreate = missingByName(u.calendars, pf.calendars);
+  const customValuesToCreate = missingByName(u.customValues, pf.customValues);
+  const pipelinesToCreate = missingByName(u.pipelines, pf.pipelines);
+  return { union: u, tagsToCreate, fieldsToCreate, calendarsToCreate, customValuesToCreate, pipelinesToCreate,
+    tagsExisting: u.tags.length - tagsToCreate.length, fieldsExisting: u.fields.length - fieldsToCreate.length,
+    calendarsExisting: u.calendars.length - calendarsToCreate.length,
+    customValuesExisting: u.customValues.length - customValuesToCreate.length,
+    pipelinesExisting: u.pipelines.length - pipelinesToCreate.length };
+}
+
+// Declared-minus-live by name, case-insensitive — same rule as tags. The match
+// is on NAME ONLY, deliberately: an existing pipeline whose stages differ, or a
+// custom value holding a different value, counts as "already exists" and is
+// left untouched. Setup creates what is missing and never mutates an asset the
+// client already has.
+function missingByName(declared, inventory){
+  const have = new Set((inventory || []).map(x => (x.name || "").toLowerCase()));
+  return declared.filter(x => !have.has(x.name.toLowerCase()));
 }
 
 function renderSetupRunCard(){
@@ -5290,7 +5360,7 @@ function renderSetupRunCard(){
     inner = `<button class="btn-primary" style="width:auto" onclick="preflightSetup()" ${S.setup.busy ? "disabled" : ""}>Preflight &amp; preview</button>
       <div class="msg" style="margin-top:6px">Reads the live sub-account inventory first — nothing is written until you confirm the preview.</div>`;
   } else {
-    const d = S.setup.diff, n = d.tagsToCreate.length + d.fieldsToCreate.length;
+    const d = S.setup.diff, n = setupCreateCount(d);
     inner = renderSetupDiff(d) + `
       <div style="display:flex;gap:8px;margin-top:10px">
         <button class="btn-primary" style="width:auto" onclick="confirmRunSetup()" ${S.setup.running ? "disabled" : ""}>
@@ -5301,13 +5371,32 @@ function renderSetupRunCard(){
   return `<div class="card"><div class="phase-h">Run GHL setup — ${esc((S.buildPlan.plan && S.buildPlan.plan.title) || "build plan")}</div>${inner}</div>`;
 }
 
+// The button's promise must equal what the run loop writes — one source of truth
+// for the count so the two can never drift as kinds are added.
+function setupCreateCount(d){
+  return d.tagsToCreate.length + d.fieldsToCreate.length + d.calendarsToCreate.length
+    + d.customValuesToCreate.length + d.pipelinesToCreate.length;
+}
+
+// Preview labels: a custom value's VALUE and a pipeline's STAGE ORDER are part
+// of the create payload, so both are shown — setup never mutates an existing
+// asset (see missingByName), which makes this preview the only chance to catch
+// a wrong value or a mis-ordered stage list before it is written.
+function cvLabel(v){ return `${v.name} = ${v.value}`; }
+function pipeLabel(p){ return `${p.name} (${p.stages.join(" → ")})`; }
+
 function renderSetupDiff(d){
   const pf = S.setup.preflight;
+  const u = d.union;
+  const line = (label, toCreate, existing, fmt) => `<div class="mf-line"><span class="mf-k">${label}:</span> ${toCreate.length} to create · ${existing} already exist${toCreate.length ? " — " + esc(toCreate.map(fmt).join(" · ")) : ""}</div>`;
   return [
     `<div class="mf-line"><span class="mf-k">Tags:</span> ${d.tagsToCreate.length} to create · ${d.tagsExisting} already exist${d.tagsToCreate.length ? " — " + esc(d.tagsToCreate.join(" · ")) : ""}</div>`,
     `<div class="mf-line"><span class="mf-k">Fields:</span> ${d.fieldsToCreate.length} to create · ${d.fieldsExisting} already exist${d.fieldsToCreate.length ? " — " + esc(d.fieldsToCreate.map(fieldLabel).join(" · ")) : ""}</div>`,
+    u.calendars.length ? line("Calendars", d.calendarsToCreate, d.calendarsExisting, c => c.name) : "",
+    u.customValues.length ? line("Custom values", d.customValuesToCreate, d.customValuesExisting, cvLabel) : "",
+    u.pipelines.length ? line("Pipelines", d.pipelinesToCreate, d.pipelinesExisting, pipeLabel) : "",
     d.union.paramItems.length ? `<div class="mf-line">⚠ <span class="mf-k">Parameterized schemes (name per client, by hand):</span> ${esc(d.union.paramItems.join(" · "))}</div>` : "",
-    `<div class="mf-line"><span class="mf-k">Inventory (read-only):</span> ${pf.customValues.length} custom values · ${pf.calendars.length} calendars · ${pf.pipelines.length} pipelines — manifests don't declare these yet; create by hand where the plan needs them</div>`,
+    `<div class="mf-line"><span class="mf-k">Live sub-account inventory:</span> ${pf.tags.length} tags · ${pf.fields.length} fields · ${pf.customValues.length} custom values · ${pf.calendars.length} calendars · ${pf.pipelines.length} pipelines</div>`,
   ].join("");
 }
 
@@ -5333,6 +5422,9 @@ async function confirmRunSetup(){
 
   const tagByName = new Map(pf.tags.map(t => [(t.name || "").toLowerCase(), t]));
   const fieldByKey = new Map(pf.fields.map(f => [(f.model || "contact") + ":" + (f.name || "").toLowerCase(), f]));
+  const calendarByName = new Map(pf.calendars.map(c => [(c.name || "").toLowerCase(), c]));
+  const cvByName = new Map(pf.customValues.map(v => [(v.name || "").toLowerCase(), v]));
+  const pipelineByName = new Map(pf.pipelines.map(p => [(p.name || "").toLowerCase(), p]));
   const log = [];
   const push = async (entry) => {
     log.push({ ...entry, ts: new Date().toISOString() });
@@ -5341,16 +5433,27 @@ async function confirmRunSetup(){
     if(S.activeClientId === cid && S.module === "setup") renderSetupBody();
   };
 
+  // Order follows the foundational sequence in .claude/skills/ghl-setup: data
+  // model (tags/fields/values) before scheduling (7) before pipelines (8).
   const items = [
     ...d.union.tags.map(t => ({ kind: "tag", name: t })),
     ...d.union.fields.map(f => ({ kind: "field", name: f.name, object: fieldObject(f), f })),
+    ...d.union.customValues.map(v => ({ kind: "custom_value", name: v.name, value: v.value })),
+    ...d.union.calendars.map(c => ({ kind: "calendar", name: c.name })),
+    ...d.union.pipelines.map(p => ({ kind: "pipeline", name: p.name, stages: p.stages })),
   ];
   let failed = false;
   for(const it of items){
     if(S.activeClientId !== cid){ S.setup.running = false; return; }   // client switched — abort; row stays 'running' → shown as interrupted
     try{
       if(it.kind === "tag") await setupTagItem(it, tagByName, push, ctx);
-      else await setupFieldItem(it, fieldByKey, push, ctx);
+      else if(it.kind === "field") await setupFieldItem(it, fieldByKey, push, ctx);
+      else if(it.kind === "custom_value") await setupCustomValueItem(it, cvByName, push, ctx);
+      else if(it.kind === "calendar") await setupCalendarItem(it, calendarByName, push, ctx);
+      else if(it.kind === "pipeline") await setupPipelineItem(it, pipelineByName, push, ctx);
+      // no bare else: an unrecognized kind can never reach a mismatched handler
+      // and write the wrong asset — it fails the run loudly instead.
+      else throw new Error(`unknown setup item kind: ${it.kind}`);
     }catch(e){
       await push({ kind: it.kind, object: it.object, name: it.name, action: "error", error: e.message });
       failed = true;
@@ -5395,14 +5498,53 @@ async function setupFieldItem(it, fieldByKey, push, ctx){
   }
 }
 
+// The three non-tag/field kinds. Unlike tags (400 "already exist") and fields
+// (400 + meta.existingId), the verified write matrix documents NO duplicate-create
+// error shape for these, so there is nothing to key a recovery off and none is
+// invented: the preflight-inventory lookup is what prevents a duplicate create
+// being attempted at all, and any genuine API error propagates untouched to
+// confirmRunSetup's fail-stop.
+async function setupCalendarItem(it, calendarByName, push, ctx){
+  const hit = calendarByName.get(it.name.toLowerCase());
+  if(hit){ await push({ kind: "calendar", name: it.name, action: "found", ghl_id: hit.id || null }); return; }
+  // {locationId, name} is the whole verified create payload — the proxy forces
+  // locationId in (bodyLocation), and the rest defaults server-side
+  // (calendarType "event", classic widget, 30-min slots).
+  const r = await ghl("create_calendar", { name: it.name }, ctx);
+  await push({ kind: "calendar", name: it.name, action: "created", ghl_id: (r.calendar && r.calendar.id) || null });
+}
+
+async function setupCustomValueItem(it, cvByName, push, ctx){
+  const hit = cvByName.get(it.name.toLowerCase());
+  if(hit){ await push({ kind: "custom_value", name: it.name, action: "found", ghl_id: hit.id || null }); return; }
+  const r = await ghl("create_custom_value", { name: it.name, value: it.value }, ctx);
+  await push({ kind: "custom_value", name: it.name, action: "created", ghl_id: (r.customValue && r.customValue.id) || null });
+}
+
+async function setupPipelineItem(it, pipelineByName, push, ctx){
+  const hit = pipelineByName.get(it.name.toLowerCase());
+  if(hit){ await push({ kind: "pipeline", name: it.name, action: "found", ghl_id: hit.id || null }); return; }
+  // position is REQUIRED per stage (missing → 422) and is derived from array
+  // index here, never authored in the manifest — declaration order IS the stage
+  // order, which is what the preview showed for confirmation.
+  const stages = it.stages.map((s, i) => ({ name: s, position: i }));
+  const r = await ghl("create_pipeline", { name: it.name, stages }, ctx);
+  await push({ kind: "pipeline", name: it.name, action: "created", ghl_id: (r.pipeline && r.pipeline.id) || null });
+}
+
 // name → GHL id registry (fields set values by fieldId, not name). Deep-merge,
 // never overwrite: partial/failed runs still keep every id that landed.
 async function mergeGhlMap(cid, baseMap, log){
-  const map = { ...baseMap, tags: { ...(baseMap.tags || {}) }, fields: { ...(baseMap.fields || {}) } };
+  const map = { ...baseMap, tags: { ...(baseMap.tags || {}) }, fields: { ...(baseMap.fields || {}) },
+    calendars: { ...(baseMap.calendars || {}) }, custom_values: { ...(baseMap.custom_values || {}) },
+    pipelines: { ...(baseMap.pipelines || {}) } };
   log.forEach(e => {
     if(e.action === "error" || !e.ghl_id) return;
     if(e.kind === "tag") map.tags[e.name] = e.ghl_id;
     if(e.kind === "field") map.fields[e.object + ":" + e.name] = e.ghl_id;
+    if(e.kind === "calendar") map.calendars[e.name] = e.ghl_id;
+    if(e.kind === "custom_value") map.custom_values[e.name] = e.ghl_id;
+    if(e.kind === "pipeline") map.pipelines[e.name] = e.ghl_id;
   });
   const { data } = await sb.from("clients").update({ ghl_map: map }).eq("id", cid).select().single();
   if(data && S.activeClientId === cid) S.activeClient = data;
