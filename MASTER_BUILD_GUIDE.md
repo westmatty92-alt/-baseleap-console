@@ -156,6 +156,51 @@ full-screen branded report; **Print / Save as PDF** inside it calls `window.prin
 - Verified via real code extraction (not retyped) + actual headless-Chrome print-to-PDF
   rendering, page-by-page, at every round — not visual description alone.
 
+## Setup Agent chat panel — layout shell & derived nav override (July 30 2026; map: docs/planning/setup_chat_nav_derived_state.svg/.png)
+THIS CYCLE IS LAYOUT + STATE WIRING ONLY. The chat renders as an EMPTY SHELL (header,
+message region, inert composer) — no AI call, no message model, no persistence, no DB
+work. Chat behaviour is a separate follow-on. The Setup Agent content column is
+untouched: settings, Run GHL setup, diff preview, log and checklist keep their exact
+markup and behaviour.
+- **Two independent sidebar classes, one visual result.** `#app.nav-collapsed` = the
+  operator's PERSISTED preference (☰ / `toggleNav()` / `localStorage bl_nav_collapsed`).
+  `#app.nav-forced` = a TRANSIENT override applied while the chat is open. `setNavForced(on)`
+  toggles ONLY the class — it never reads or writes the pref key, which is what makes
+  releasing the override restore whatever the operator had (collapsed OR expanded) with no
+  special-casing. The two selectors are GROUPED in CSS so they can never drift.
+  `localStorage.setItem` appears exactly ONCE in the whole file (inside `toggleNav`) — the
+  chat path provably cannot touch the preference.
+- **The override is DERIVED, never set imperatively.** One line, the first statement of
+  `render()`: `setNavForced(!!S.activeClient && S.module === "setup" && !!S.setup.chatOpen)`.
+  All four release paths — chat close, module switch, client switch, no-client — already
+  funnel through `render()`, so they clear it by construction rather than by remembering.
+  THE `!!S.activeClient` TERM IS LOAD-BEARING and being above the early return is NOT
+  sufficient on its own: with no client, `S.module` is still `"setup"` and `chatOpen` is
+  still true, so without it the override sticks while the early return replaces `#content`
+  with the empty-client message — destroying the chat's own ✕, with ☰ unable to recover the
+  sidebar (`nav-forced` hides it independently of `nav-collapsed`). Soft-lock survivable
+  only by reload. Caught by verification test 5b; do NOT drop the term.
+- **`chatOpen` lives in `freshSetup()`**, so `resetClientState()` closes the chat on client
+  switch — a chat opened against client A can never survive into client B. `resetClientState()`
+  itself is unmodified (it already calls `freshSetup()`).
+- **Three-column split INSIDE `.content`** (`.setup-split` flex row: `.setup-col` + `.setup-chat`),
+  emitted by `renderSetup()` only when `chatOpen`. `.content`'s own CSS is deliberately
+  UNTOUCHED — it is the shared scroll container for all four modules. The topbar is unaffected
+  and still spans full width.
+- **The chat column is a SIBLING of `#setup-body`, never a child.** `renderSetupBody()`
+  re-renders `#setup-body` alone after every setup action and after the initial load; nesting
+  the chat inside it would wipe composer text and scroll position each time.
+- **`--topbar-h:67px`** (`:root`) is a REAL MEASURED value (14+14 padding + 1 border + 38
+  tallest child, the client-switch select), and is APPLIED to `.topbar` as an explicit height
+  — not merely consumed by `calc()` — so the variable and the element cannot drift. The chat
+  column's `height:calc(100vh - 48px - var(--topbar-h))` depends on it being true, not
+  assumed. Consequence: the topbar is now a PINNED height; a taller control added to it must
+  bump `--topbar-h` in the same change or it will clip.
+- Verified by a harness that extracts the real CSS, the real `#app` markup and the real
+  functions under test out of `index.html` (only the data layer stubbed): 9/9 checks,
+  including localStorage read before/after both round-trips and a DOM-identity check that the
+  chat panel survives `renderSetupBody()` with composer text and scrollTop intact.
+
 ## Feasibility gate (the core business rule, enforced by data)
 Gaps are written by the Audit Assistant with `validation_status = 'pending'`. The Automation Agent
 sets `feasible`, `mechanism`, `estimated_hours`, and flips `validation_status` to `validated`.

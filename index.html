@@ -17,6 +17,13 @@
     /* node-type accents (Build Plan detail workflow) — Volt/Run brand tokens + 3 accents mapped to meaning */
     --node-guard:#E75A7C; --node-wait:#4C86D6; --node-cond:#7A5FD0;
     --radius:10px; --font:"Garet","Segoe UI",system-ui,-apple-system,sans-serif;
+    /* Real MEASURED topbar height (14+14 padding + 1 border + 38 tallest child, the
+       client-switch select). Applied to .topbar as an explicit height below, not just
+       consumed by calc() -- so the value and the element cannot drift apart. PINS the
+       topbar at a fixed height by design (see the tradeoff note on .topbar below):
+       if a taller control is ever added to the topbar, THIS VALUE MUST BE UPDATED TOO
+       or the new control will clip silently instead of the bar growing to fit it. */
+    --topbar-h:67px;
   }
   *{box-sizing:border-box;margin:0;padding:0}
   body{font-family:var(--font);background:var(--bg);color:var(--ink);font-size:14px;line-height:1.5}
@@ -46,14 +53,24 @@
   .signout{color:#7C8B92;font-size:12px;background:none;border:none;text-align:left;padding:10px 12px}
   .signout:hover{color:#fff}
   /* Collapsible sidebar — app-global UI pref (localStorage), NOT per-client state.
-     Kept out of resetClientState() on purpose so a client switch never resets it. */
-  #app.nav-collapsed{grid-template-columns:1fr}
-  #app.nav-collapsed .sidebar{display:none}
+     Kept out of resetClientState() on purpose so a client switch never resets it.
+     TWO INDEPENDENT SOURCES, one visual result, grouped so they can never drift:
+       .nav-collapsed = the operator's PERSISTED preference (☰ / bl_nav_collapsed)
+       .nav-forced    = a TRANSIENT override (Setup Agent chat open), never persisted
+     Because they are separate classes, releasing the override restores whatever the
+     persisted preference was — the override can never overwrite the pref. */
+  #app.nav-collapsed,#app.nav-forced{grid-template-columns:1fr}
+  #app.nav-collapsed .sidebar,#app.nav-forced .sidebar{display:none}
   .nav-toggle{background:var(--surface);border:1px solid var(--line);color:var(--ink);padding:8px 11px;border-radius:var(--radius);font-size:14px;line-height:1}
   .nav-toggle:hover{border-color:var(--volt)}
 
   .main{display:flex;flex-direction:column;overflow:hidden}
-  .topbar{display:flex;align-items:center;gap:12px;padding:14px 20px;background:var(--surface);border-bottom:1px solid var(--line)}
+  /* height:var(--topbar-h) is a DELIBERATE pin, not an oversight: it makes the Setup
+     Agent chat column's calc(100vh - ... - var(--topbar-h)) drift-proof against the
+     topbar rather than needing a JS resize-measurement listener. Tradeoff accepted:
+     a taller topbar child added later would clip silently instead of the bar growing --
+     bump --topbar-h in :root (above) at the same time as any such change. */
+  .topbar{display:flex;align-items:center;gap:12px;padding:14px 20px;background:var(--surface);border-bottom:1px solid var(--line);height:var(--topbar-h)}
   .client-switch{display:flex;align-items:center;gap:8px}
   .client-switch label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
   .client-switch select{padding:8px 10px;border:1px solid var(--line);border-radius:var(--radius);font-size:13px;min-width:200px;background:var(--surface)}
@@ -67,6 +84,31 @@
   .placeholder{background:var(--surface);border:1px dashed var(--line);border-radius:12px;padding:48px;text-align:center;color:var(--muted)}
   .placeholder strong{color:var(--ink);display:block;margin-bottom:6px;font-size:15px}
   .empty-client{text-align:center;color:var(--muted);padding:64px 24px}
+
+  /* ---- Setup Agent chat: three-column split INSIDE .content ----
+     .content itself is deliberately untouched -- it is the shared scroll container
+     for all four modules, so changing its padding/scroll model here would silently
+     alter Audit, Builds and Research too. Everything below is scoped to markup that
+     only renderSetup() emits.
+     The chat column is sticky + viewport-height rather than stretching: .content is
+     the scroller, so a plain full-height flex child would grow to the setup column's
+     full scroll height and push the composer off-screen. Sticky keeps the panel in
+     view while the setup column scrolls past it. 48px = .content's 24px padding
+     top+bottom. */
+  .setup-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+  .setup-split{display:flex;align-items:flex-start;gap:20px}
+  .setup-split .setup-col{flex:1;min-width:0}   /* min-width:0 or long content refuses to shrink */
+  .setup-chat{flex:none;width:380px;position:sticky;top:0;align-self:flex-start;
+    height:calc(100vh - 48px - var(--topbar-h));display:flex;flex-direction:column;
+    background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .setup-chat-head{display:flex;align-items:center;justify-content:space-between;gap:8px;
+    padding:12px 14px;border-bottom:1px solid var(--line);font-size:13px;font-weight:600}
+  .setup-chat-x{background:none;border:none;color:var(--muted);font-size:13px;line-height:1;padding:4px 6px;border-radius:6px}
+  .setup-chat-x:hover{color:var(--ink);background:rgba(0,0,0,.05)}
+  .setup-chat-log{flex:1;overflow-y:auto;padding:14px}
+  .setup-chat-empty{font-size:12px;color:var(--muted);line-height:1.6}
+  .setup-chat-compose{border-top:1px solid var(--line);padding:12px}
+  .setup-chat-compose .notes{margin-top:0;min-height:60px}
 
   /* Modal — hardcoded hex backgrounds (never CSS vars, per build rules) */
   .modal-overlay{position:fixed;inset:0;background:rgba(13,31,45,.55);display:none;align-items:center;justify-content:center;z-index:50}
@@ -653,7 +695,7 @@ function freshAutomation(){ return { tab:"gaps", loaded:false, msg:"", gaps:[], 
 // sel = the active compose session's folder-scoped gap-selection map ({gapId: 'accepted'|'declined'};
 // undecided = absent). Committed to build_plan_gaps on Save; never the dormant client gaps.selection.
 function freshBuildPlan(){ return { loaded:false, msg:"", plans:[], activePlanId:null, planCounts:{}, plan:null, steps:[], draft:null, draftGaps:null, generating:false, saving:false, expanded:{}, panel:null, zoom:1, pan:{x:0,y:0}, tab:"plan", composing:false, sel:{}, scope:null, scopePlanId:null, scopeErr:"", del:null, showArchived:false }; }
-function freshSetup(){ return { loaded:false, msg:"", run:null, preflight:null, diff:null, running:false, busy:false }; }
+function freshSetup(){ return { loaded:false, msg:"", run:null, preflight:null, diff:null, running:false, busy:false, chatOpen:false }; }
 
 const S = {
   user: null,
@@ -747,6 +789,15 @@ function toggleNav(){
   const collapsed = document.getElementById("app").classList.toggle("nav-collapsed");
   localStorage.setItem(NAV_COLLAPSE_KEY, collapsed ? "1" : "0");
 }
+/* Transient sidebar override — the Setup Agent chat needs the third column, so it
+   forces the sidebar hidden WITHOUT touching bl_nav_collapsed. Reading or writing
+   that key here is what would destroy the operator's own preference: releasing the
+   override then has nothing to restore and would have to guess. Because this is a
+   separate class, the pref underneath is simply revealed again on release.
+   Callers do not invoke this directly — render() derives it (see below). */
+function setNavForced(on){
+  document.getElementById("app").classList.toggle("nav-forced", !!on);
+}
 
 /* ============================================================
    CLIENTS  (the business-switcher dropdown)
@@ -818,6 +869,20 @@ const MODULES = {
 };
 
 function render(){
+  // The forced-sidebar override is DERIVED from state here, not set imperatively by
+  // whoever opens/closes the chat. Every path that could strand it — chat close,
+  // module switch, client switch (resetClientState -> freshSetup -> chatOpen:false),
+  // and the no-client case below — already funnels through render(), so all of them
+  // release it by construction instead of by remembering to. MUST stay above the
+  // early return: a stranded override with no client selected would hide the sidebar
+  // with no way to get it back.
+  // THE !S.activeClient TERM IS LOAD-BEARING, and sitting above the early return is
+  // not sufficient on its own: with no client, S.module is still "setup" and chatOpen
+  // is still true, so without this term the override stays applied while the early
+  // return replaces #content with the empty-client message. That destroys the chat's
+  // own ✕, and ☰ cannot recover the sidebar because nav-forced hides it independently
+  // of nav-collapsed — a soft-lock survivable only by reload. Caught by test 5b.
+  setNavForced(!!S.activeClient && S.module === "setup" && !!S.setup.chatOpen);
   const content = document.getElementById("content");
   const m = MODULES[S.module];
   if(!S.activeClient){
@@ -5204,13 +5269,49 @@ const GHL_DATATYPE = { text: "TEXT", number: "NUMERICAL", currency: "MONETORY", 
 
 function setSetupMsg(t){ S.setup.msg = t; const el = document.getElementById("setup-msg"); if(el) el.textContent = t; }
 
+/* The chat column is a SIBLING of #setup-body, never a child. renderSetupBody()
+   re-renders #setup-body alone after every setup action and after the initial data
+   load; nesting the chat inside it would wipe the panel's DOM — losing composer text
+   and scroll position — on each of those. Keeping them siblings means the setup
+   column and the chat column re-render completely independently. */
 function renderSetup(){
+  const chat = S.setup.chatOpen;
   document.getElementById("content").innerHTML = `
-    <div class="panel-title">${MODULES.setup.title}</div>
-    <div class="panel-sub">${esc(S.activeClient.business_name)} — ${MODULES.setup.sub}</div>
-    <div id="setup-body"></div>`;
+    <div class="setup-head">
+      <div>
+        <div class="panel-title">${MODULES.setup.title}</div>
+        <div class="panel-sub">${esc(S.activeClient.business_name)} — ${MODULES.setup.sub}</div>
+      </div>
+      ${chat ? "" : `<button class="btn-ghost" onclick="openSetupChat()">Ask Setup Agent</button>`}
+    </div>
+    <div class="${chat ? "setup-split" : ""}">
+      <div class="setup-col"><div id="setup-body"></div></div>
+      ${chat ? renderSetupChatPanel() : ""}
+    </div>`;
   renderSetupBody();
 }
+
+/* Layout shell only — no AI, no message model, no persistence yet (deliberately a
+   separate cycle). The message list is an empty region; the composer is inert. */
+function renderSetupChatPanel(){
+  return `<div class="setup-chat">
+    <div class="setup-chat-head">
+      <span>Setup Agent</span>
+      <button class="setup-chat-x" onclick="closeSetupChat()" title="Close chat" aria-label="Close chat">✕</button>
+    </div>
+    <div class="setup-chat-log" id="setup-chat-log">
+      <div class="setup-chat-empty">Ask about this client's GHL setup — what the run will create, what already exists, or why a step is blocked.</div>
+    </div>
+    <div class="setup-chat-compose">
+      <textarea id="setup-chat-input" class="notes" placeholder="Message the Setup Agent…"></textarea>
+    </div>
+  </div>`;
+}
+
+/* Both just move state and re-render — render() derives the sidebar override from
+   S.setup.chatOpen, so neither touches #app classes or localStorage directly. */
+function openSetupChat(){ S.setup.chatOpen = true; render(); }
+function closeSetupChat(){ S.setup.chatOpen = false; render(); }
 
 function renderSetupBody(){
   const el = document.getElementById("setup-body"); if(!el) return;
