@@ -317,14 +317,33 @@
   .cr-footer-s{font-size:14px;margin-top:6px;color:#053f30}
   .cr-footer-c{font-size:13px;text-align:right;line-height:1.7;color:#063a2d;font-weight:600}
   @media print{
-    /* margin:0 so the Midnight fills the sheet EDGE TO EDGE — without this the
-       browser's default page margin leaves a white frame around the dark report. */
-    @page{margin:0}
+    /* PER-PAGE breathing room. This is the only mechanism that reserves space on
+       EVERY sheet: .cr-body's padding-top applies ONCE at the start of the content
+       flow, so it framed the first body page and nothing after it — measured, pages
+       3+ began 3-4px from the physical sheet edge and the closing page at 0px.
+       52px matches .cr-body's own padding-top, so the first body page is unchanged
+       and every later page now matches it. Sides stay 0: horizontal rhythm comes
+       from .cr-body/.cr-callout/.cr-footer's own 60px, and a page-level side margin
+       would shift the whole layout inward. */
+    /* @page's margin band is OUTSIDE the normal box model — no element's background
+       (html, body, anything) can paint into it. This is the actual white-frame fix;
+       the element-background approach tried first does not work here. Literal hex,
+       not var(--midnight): @page has no real element context to resolve a custom
+       property through, and this repo already hardcodes hex for modal backgrounds
+       rather than relying on var() in a similarly unusual context. */
+    @page{margin:52px 0;background:#0D1F2D}
+    /* The cover is exempt — its photo band must touch all four edges. :first also
+       keeps .cr-cover's min-height:96vh resolving against the FULL sheet. */
+    @page:first{margin:0}
     body{background:var(--midnight)}
     #app,#auth,.modal-overlay,.ni-overlay{display:none !important}
     #client-report{position:static;overflow:visible;display:block !important;background:var(--midnight)}
     .cr-toolbar{display:none !important}
     .cr-doc{max-width:none;margin:0}
+    /* Screen keeps its 52px gap under the cover; in print the @page margin already
+       supplies it, so leaving this would double to 104px on the first body page only
+       — the exact inconsistency this whole change removes. */
+    .cr-body{padding-top:0}
     .cr-cover{min-height:96vh;page-break-after:always}
     .cr-gap,.cr-callout,.cr-footer{page-break-inside:avoid}
     .cr-sev-h{page-break-after:avoid}
