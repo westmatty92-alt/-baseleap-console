@@ -1,0 +1,222 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="1060" viewBox="0 0 1440 1060" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#1A1A2E"/>
+    </marker>
+    <marker id="arrv" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#00A878"/>
+    </marker>
+    <marker id="arrr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#C0392B"/>
+    </marker>
+  </defs>
+  <rect width="1440" height="1060" fill="#F4F5F0"/>
+
+  <text x="40" y="46" font-size="24" font-weight="800" fill="#0D1F2D">Builds — nav rename, per-folder tabs, folder-scoped scope, delete/archive</text>
+  <text x="40" y="70" font-size="13" fill="#1A1A2E">Feasibility stays client-level/shared · Gap Report · Finalize · Build Plan · Proposal are folder-scoped and frozen with the saved build.  Solid = exists today · dashed green = this build · red = blocked path.</text>
+
+  <!-- ================= ZONE 1: NAV BEFORE -> AFTER ================= -->
+  <text x="40" y="112" font-size="15" font-weight="700" fill="#0D1F2D">1 · Left nav</text>
+
+  <!-- before -->
+  <rect x="40" y="126" width="210" height="250" rx="12" fill="#FFFFFF" stroke="#0D1F2D" stroke-width="2"/>
+  <text x="60" y="150" font-size="12" font-weight="700" fill="#1A1A2E">BEFORE</text>
+  <g font-size="12" fill="#1A1A2E">
+    <text x="60" y="176">Client research</text>
+    <text x="60" y="198">Audit assistant</text>
+    <text x="60" y="220" fill="#C0392B">Automation agent</text>
+    <text x="60" y="242" fill="#C0392B">Gap report</text>
+    <text x="60" y="264" fill="#C0392B">Proposal</text>
+    <text x="60" y="286">Setup agent</text>
+  </g>
+  <text x="60" y="322" font-size="10.5" fill="#C0392B">red = renamed or removed as</text>
+  <text x="60" y="337" font-size="10.5" fill="#C0392B">a nav item</text>
+
+  <!-- arrow -->
+  <line x1="256" y1="250" x2="300" y2="250" stroke="#00A878" stroke-width="2" marker-end="url(#arrv)"/>
+
+  <!-- after -->
+  <rect x="306" y="126" width="210" height="250" rx="12" fill="#FFFFFF" stroke="#00A878" stroke-width="2.5" stroke-dasharray="7 5"/>
+  <text x="326" y="150" font-size="12" font-weight="700" fill="#0D1F2D">AFTER</text>
+  <g font-size="12" fill="#1A1A2E">
+    <text x="326" y="176">Client research</text>
+    <text x="326" y="198">Audit assistant</text>
+    <text x="326" y="220" font-weight="700" fill="#00A878">Builds</text>
+    <text x="326" y="242">Setup agent</text>
+  </g>
+  <text x="326" y="286" font-size="10.5" fill="#1A1A2E">"Automation agent" → "Builds"</text>
+  <text x="326" y="301" font-size="10.5" fill="#1A1A2E">Gap report + Proposal leave the</text>
+  <text x="326" y="316" font-size="10.5" fill="#1A1A2E">nav — they become folder tabs →</text>
+
+  <!-- ================= ZONE 2: BUILDS MODULE ================= -->
+  <text x="560" y="112" font-size="15" font-weight="700" fill="#0D1F2D">2 · Builds module — grid → open folder = tabbed shell</text>
+
+  <!-- grid -->
+  <rect x="560" y="126" width="230" height="250" rx="12" fill="#FFFFFF" stroke="#0D1F2D" stroke-width="2"/>
+  <text x="578" y="150" font-size="12" font-weight="700" fill="#0D1F2D">Folder GRID (unchanged)</text>
+  <rect x="578" y="164" width="86" height="70" rx="8" fill="#F4F5F0" stroke="#0D1F2D" stroke-width="1.2"/>
+  <text x="590" y="192" font-size="11" fill="#1A1A2E">Build A</text>
+  <text x="590" y="210" font-size="10" fill="#1A1A2E">3 eng · 14h</text>
+  <rect x="676" y="164" width="86" height="70" rx="8" fill="#F4F5F0" stroke="#0D1F2D" stroke-width="1.2"/>
+  <text x="688" y="192" font-size="11" fill="#1A1A2E">Build B</text>
+  <text x="688" y="210" font-size="10" fill="#1A1A2E">2 eng · 9h</text>
+  <rect x="578" y="244" width="86" height="70" rx="8" fill="#FFFFFF" stroke="#00A878" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <text x="590" y="283" font-size="11" fill="#00A878">+ New</text>
+  <text x="590" y="299" font-size="11" fill="#00A878">build</text>
+  <text x="578" y="344" font-size="10.5" fill="#1A1A2E">one card per build_plans row;</text>
+  <text x="578" y="359" font-size="10.5" fill="#1A1A2E">click a card → open folder →</text>
+
+  <!-- arrow to tab shell -->
+  <line x1="796" y1="250" x2="840" y2="250" stroke="#00A878" stroke-width="2" marker-end="url(#arrv)"/>
+
+  <!-- open folder tab shell -->
+  <rect x="846" y="126" width="554" height="250" rx="12" fill="#FFFFFF" stroke="#00A878" stroke-width="2.5" stroke-dasharray="7 5"/>
+  <text x="864" y="150" font-size="12" font-weight="700" fill="#0D1F2D">OPEN FOLDER — 5-tab shell (confirmed order)</text>
+  <!-- tabs -->
+  <g font-size="10.5" font-weight="700">
+    <rect x="864" y="162" width="98" height="52" rx="7" fill="#F4F5F0" stroke="#0D1F2D" stroke-width="1.4"/>
+    <text x="878" y="182" fill="#0D1F2D">Feasibility</text>
+    <text x="878" y="199" font-size="9" font-weight="400" fill="#00A878">client · shared</text>
+    <rect x="968" y="162" width="98" height="52" rx="7" fill="#FFFFFF" stroke="#00A878" stroke-width="1.5" stroke-dasharray="5 4"/>
+    <text x="982" y="182" fill="#0D1F2D">Gap Report</text>
+    <text x="982" y="199" font-size="9" font-weight="400" fill="#1A1A2E">folder · frozen</text>
+    <rect x="1072" y="162" width="98" height="52" rx="7" fill="#FFFFFF" stroke="#00A878" stroke-width="1.5" stroke-dasharray="5 4"/>
+    <text x="1086" y="182" fill="#0D1F2D">Finalize</text>
+    <text x="1086" y="199" font-size="9" font-weight="400" fill="#1A1A2E">folder · bimodal</text>
+    <rect x="1176" y="162" width="98" height="52" rx="7" fill="#F4F5F0" stroke="#0D1F2D" stroke-width="1.4"/>
+    <text x="1190" y="182" fill="#0D1F2D">Build Plan</text>
+    <text x="1190" y="199" font-size="9" font-weight="400" fill="#1A1A2E">folder · committed</text>
+    <rect x="1280" y="162" width="102" height="52" rx="7" fill="#FFFFFF" stroke="#00A878" stroke-width="1.5" stroke-dasharray="5 4"/>
+    <text x="1294" y="182" fill="#0D1F2D">Proposal</text>
+    <text x="1294" y="199" font-size="9" font-weight="400" fill="#1A1A2E">folder · frozen</text>
+  </g>
+  <text x="864" y="238" font-size="10.5" fill="#1A1A2E">Feasibility = existing (relocated) · Build Plan = existing (renderSavedPlan) · dashed = built fresh this cycle.</text>
+
+  <!-- two modes -->
+  <rect x="864" y="252" width="255" height="110" rx="9" fill="#F4F5F0" stroke="#0D1F2D" stroke-width="1.4"/>
+  <text x="878" y="272" font-size="11" font-weight="700" fill="#0D1F2D">MODE A · unsaved (draft)</text>
+  <g font-size="10" fill="#1A1A2E">
+    <text x="878" y="291">Finalize ACTIVE — pick this build's gaps</text>
+    <text x="878" y="307">Gap Report / Proposal = live previews</text>
+    <text x="878" y="323">Build Plan = generate + draft review</text>
+    <text x="878" y="343" font-weight="700" fill="#00A878">SAVE → writes rows (nothing before)</text>
+  </g>
+  <rect x="1127" y="252" width="255" height="110" rx="9" fill="#F4F5F0" stroke="#00A878" stroke-width="1.6" stroke-dasharray="5 4"/>
+  <text x="1141" y="272" font-size="11" font-weight="700" fill="#0D1F2D">MODE B · saved (open folder)</text>
+  <g font-size="10" fill="#1A1A2E">
+    <text x="1141" y="291">Finalize = 🔒 Scope locked record</text>
+    <text x="1141" y="307">Gap Report / Proposal = frozen docs</text>
+    <text x="1141" y="323">Build Plan = committed steps</text>
+    <text x="1141" y="343" font-weight="700" fill="#0D1F2D">re-scope = start a NEW build</text>
+  </g>
+
+  <!-- ================= ZONE 3: DATA MODEL ================= -->
+  <text x="40" y="418" font-size="15" font-weight="700" fill="#0D1F2D">3 · Data model — scope binding &amp; FK behavior on delete</text>
+
+  <!-- gaps (client) -->
+  <rect x="40" y="432" width="250" height="150" rx="12" fill="#FFFFFF" stroke="#0D1F2D" stroke-width="2"/>
+  <text x="60" y="456" font-size="14" font-weight="700" fill="#0D1F2D">gaps</text>
+  <text x="60" y="474" font-size="11" fill="#1A1A2E">CLIENT-LEVEL (eq client_id)</text>
+  <g font-size="11" fill="#1A1A2E">
+    <rect x="60" y="486" width="210" height="24" rx="6" fill="#F4F5F0" stroke="#0D1F2D" stroke-width="1.1"/><text x="72" y="502">client_id · audit_session_id</text>
+    <rect x="60" y="516" width="210" height="24" rx="6" fill="#F4F5F0" stroke="#0D1F2D" stroke-width="1.1"/><text x="72" y="532">feasible · mechanism · hours</text>
+    <rect x="60" y="546" width="210" height="24" rx="6" fill="#F4F5F0" stroke="#0D1F2D" stroke-width="1.1"/><text x="72" y="562">selection (dormant after 012)</text>
+  </g>
+
+  <!-- build_plan_gaps (new) -->
+  <rect x="360" y="432" width="250" height="150" rx="12" fill="#FFFFFF" stroke="#00A878" stroke-width="2.5" stroke-dasharray="7 5"/>
+  <text x="380" y="456" font-size="14" font-weight="700" fill="#0D1F2D">build_plan_gaps</text>
+  <text x="380" y="474" font-size="11" fill="#00A878">NEW · migration 012 · FOLDER scope</text>
+  <g font-size="11" fill="#1A1A2E">
+    <rect x="380" y="486" width="210" height="24" rx="6" fill="#FFFFFF" stroke="#00A878" stroke-width="1.3" stroke-dasharray="5 4"/><text x="392" y="502">build_plan_id  (CASCADE)</text>
+    <rect x="380" y="516" width="210" height="24" rx="6" fill="#FFFFFF" stroke="#00A878" stroke-width="1.3" stroke-dasharray="5 4"/><text x="392" y="532">gap_id  (NO cascade — snapshot)</text>
+    <rect x="380" y="546" width="210" height="24" rx="6" fill="#FFFFFF" stroke="#00A878" stroke-width="1.3" stroke-dasharray="5 4"/><text x="392" y="562">selection · UNIQUE(plan,gap)</text>
+  </g>
+
+  <!-- build_plans -->
+  <rect x="680" y="432" width="240" height="150" rx="12" fill="#FFFFFF" stroke="#0D1F2D" stroke-width="2"/>
+  <text x="700" y="456" font-size="14" font-weight="700" fill="#0D1F2D">build_plans</text>
+  <text x="700" y="474" font-size="11" fill="#1A1A2E">one row per folder</text>
+  <g font-size="11" fill="#1A1A2E">
+    <rect x="700" y="486" width="200" height="24" rx="6" fill="#F4F5F0" stroke="#0D1F2D" stroke-width="1.1"/><text x="712" y="502">title · summary</text>
+    <rect x="700" y="516" width="200" height="24" rx="6" fill="#FFFFFF" stroke="#00A878" stroke-width="1.3" stroke-dasharray="5 4"/><text x="712" y="532">status += 'archived'</text>
+  </g>
+  <text x="700" y="562" font-size="10.5" fill="#1A1A2E">append-only: a new build = a new row</text>
+
+  <!-- children: build_steps + setup_runs -->
+  <rect x="990" y="432" width="410" height="70" rx="12" fill="#FFFFFF" stroke="#0D1F2D" stroke-width="2"/>
+  <text x="1010" y="456" font-size="13" font-weight="700" fill="#0D1F2D">build_steps</text>
+  <text x="1010" y="474" font-size="11" fill="#1A1A2E">build_plan_id → ON DELETE CASCADE  ·  gap_id (frozen scope)</text>
+  <text x="1010" y="491" font-size="10.5" fill="#00A878">deletes cleanly with the plan</text>
+
+  <rect x="990" y="512" width="410" height="70" rx="12" fill="#FFFFFF" stroke="#C0392B" stroke-width="2"/>
+  <text x="1010" y="536" font-size="13" font-weight="700" fill="#0D1F2D">setup_runs</text>
+  <text x="1010" y="554" font-size="11" fill="#1A1A2E">build_plan_id → NO ACTION (RESTRICT-like)</text>
+  <text x="1010" y="571" font-size="10.5" fill="#C0392B">any run present ⇒ hard-delete BLOCKED — archive instead</text>
+
+  <!-- edges -->
+  <line x1="290" y1="507" x2="356" y2="507" stroke="#00A878" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#arrv)"/>
+  <text x="298" y="500" font-size="9.5" fill="#00A878">frozen at save</text>
+  <line x1="610" y1="507" x2="676" y2="507" stroke="#1A1A2E" stroke-width="1.6" marker-end="url(#arr)"/>
+  <line x1="920" y1="480" x2="986" y2="467" stroke="#1A1A2E" stroke-width="1.6" marker-end="url(#arr)"/>
+  <line x1="920" y1="533" x2="986" y2="545" stroke="#C0392B" stroke-width="1.6" marker-end="url(#arrr)"/>
+
+  <!-- ================= ZONE 4: DELETE DECISION ================= -->
+  <text x="40" y="632" font-size="15" font-weight="700" fill="#0D1F2D">4 · Delete inside an open folder — block + archive fallback (writes .select()-verified)</text>
+
+  <rect x="40" y="648" width="230" height="70" rx="10" fill="#FFFFFF" stroke="#0D1F2D" stroke-width="2"/>
+  <text x="60" y="678" font-size="12" font-weight="700" fill="#0D1F2D">Delete this build</text>
+  <text x="60" y="698" font-size="10.5" fill="#1A1A2E">count setup_runs for this plan</text>
+
+  <!-- branch: 0 runs -->
+  <line x1="272" y1="672" x2="330" y2="672" stroke="#1A1A2E" stroke-width="1.6" marker-end="url(#arr)"/>
+  <text x="278" y="664" font-size="10" fill="#1A1A2E">0 runs</text>
+  <rect x="336" y="642" width="330" height="82" rx="10" fill="#FFFFFF" stroke="#00A878" stroke-width="1.6" stroke-dasharray="5 4"/>
+  <text x="356" y="666" font-size="12" font-weight="700" fill="#00A878">HARD DELETE (verified)</text>
+  <text x="356" y="686" font-size="10.5" fill="#1A1A2E">build_plans.delete().select() → confirm row</text>
+  <text x="356" y="703" font-size="10.5" fill="#1A1A2E">build_steps + build_plan_gaps cascade → grid</text>
+
+  <!-- branch: >=1 run -->
+  <line x1="272" y1="694" x2="330" y2="760" stroke="#C0392B" stroke-width="1.6" marker-end="url(#arrr)"/>
+  <text x="270" y="740" font-size="10" fill="#C0392B">≥1 run</text>
+  <rect x="336" y="736" width="330" height="82" rx="10" fill="#FFFFFF" stroke="#C0392B" stroke-width="1.8"/>
+  <text x="356" y="760" font-size="12" font-weight="700" fill="#C0392B">BLOCK + ARCHIVE</text>
+  <text x="356" y="780" font-size="10.5" fill="#1A1A2E">explain: provisioning history can't be deleted</text>
+  <text x="356" y="797" font-size="10.5" fill="#1A1A2E">status:'archived' (setup_runs never touched)</text>
+
+  <!-- ================= ZONE 5: SCOPE-LOCKED MOCK ================= -->
+  <text x="720" y="632" font-size="15" font-weight="700" fill="#0D1F2D">5 · Bimodal Finalize — "Scope locked" (post-save)</text>
+  <rect x="720" y="648" width="680" height="170" rx="12" fill="#FFFFFF" stroke="#00A878" stroke-width="2.5" stroke-dasharray="7 5"/>
+  <!-- banner -->
+  <rect x="740" y="666" width="640" height="66" rx="9" fill="#E6FBF4" stroke="#00D4A0" stroke-width="1.6"/>
+  <text x="758" y="690" font-size="13" font-weight="700" fill="#0D1F2D">🔒  Scope locked</text>
+  <text x="758" y="710" font-size="10.5" fill="#1A1A2E">This build's scope was frozen when it was generated — a saved build is an immutable record.</text>
+  <rect x="1180" y="686" width="184" height="30" rx="8" fill="#00D4A0"/>
+  <text x="1272" y="706" font-size="11" font-weight="700" fill="#0D1F2D" text-anchor="middle">+ Start a new build to re-scope</text>
+  <!-- included list -->
+  <text x="758" y="754" font-size="11" font-weight="700" fill="#0D1F2D">Included in this build · 3 gaps · 14h</text>
+  <g font-size="10.5" fill="#1A1A2E">
+    <text x="758" y="774">✓  Missed-call text-back            simple · 3h</text>
+    <text x="758" y="792">✓  Review request engine            simple · 4h</text>
+    <text x="758" y="810">✓  Payment failure recovery         complex · 7h</text>
+  </g>
+  <text x="1120" y="774" font-size="9.5" fill="#00A878">read-only · no accept/decline bar</text>
+  <text x="1120" y="790" font-size="9.5" fill="#00A878">re-scope CTA always enabled</text>
+  <text x="1120" y="806" font-size="9.5" fill="#00A878">since-deleted gap → graceful row</text>
+
+  <!-- ================= FOOTNOTE / SEQUENCING ================= -->
+  <text x="40" y="866" font-size="15" font-weight="700" fill="#0D1F2D">Build order (each its own review)</text>
+  <g font-size="11" fill="#1A1A2E">
+    <text x="40" y="890">1 · Migration 012 (schema first, verify live)   2 · Nav rename + subtab removal + tab-shell scaffold   3 · Finalize → folder-scoped + build_plan_gaps wiring</text>
+    <text x="40" y="910">4 · Scope-locked post-save state   5 · Delete + archive   6 · Gap Report / Proposal tab placement + scope binding (full doc generation = follow-on per module)</text>
+    <text x="40" y="936" fill="#C0392B">Out of scope: full Gap Report/Proposal copy design · retiring gaps.selection · System Composer (Order 15.99).</text>
+  </g>
+
+  <!-- legend -->
+  <rect x="40" y="964" width="1360" height="64" rx="10" fill="#FFFFFF" stroke="#0D1F2D" stroke-width="1.4"/>
+  <text x="58" y="986" font-size="12" font-weight="700" fill="#0D1F2D">Legend</text>
+  <rect x="58" y="998" width="26" height="16" rx="4" fill="#FFFFFF" stroke="#0D1F2D" stroke-width="2"/><text x="92" y="1011" font-size="11" fill="#1A1A2E">exists today (solid)</text>
+  <rect x="240" y="998" width="26" height="16" rx="4" fill="#FFFFFF" stroke="#00A878" stroke-width="2" stroke-dasharray="5 4"/><text x="274" y="1011" font-size="11" fill="#1A1A2E">this build (dashed green)</text>
+  <rect x="460" y="998" width="26" height="16" rx="4" fill="#FFFFFF" stroke="#C0392B" stroke-width="2"/><text x="494" y="1011" font-size="11" fill="#1A1A2E">blocked / restricted path (red)</text>
+  <text x="720" y="1011" font-size="11" fill="#1A1A2E">Principle: Feasibility = shared client-level gap qualification · everything downstream of "which gaps are in this build" = folder-scoped &amp; frozen.</text>
+</svg>

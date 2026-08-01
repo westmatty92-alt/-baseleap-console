@@ -17,6 +17,13 @@
     /* node-type accents (Build Plan detail workflow) — Volt/Run brand tokens + 3 accents mapped to meaning */
     --node-guard:#E75A7C; --node-wait:#4C86D6; --node-cond:#7A5FD0;
     --radius:10px; --font:"Garet","Segoe UI",system-ui,-apple-system,sans-serif;
+    /* Real MEASURED topbar height (14+14 padding + 1 border + 38 tallest child, the
+       client-switch select). Applied to .topbar as an explicit height below, not just
+       consumed by calc() -- so the value and the element cannot drift apart. PINS the
+       topbar at a fixed height by design (see the tradeoff note on .topbar below):
+       if a taller control is ever added to the topbar, THIS VALUE MUST BE UPDATED TOO
+       or the new control will clip silently instead of the bar growing to fit it. */
+    --topbar-h:67px;
   }
   *{box-sizing:border-box;margin:0;padding:0}
   body{font-family:var(--font);background:var(--bg);color:var(--ink);font-size:14px;line-height:1.5}
@@ -46,14 +53,24 @@
   .signout{color:#7C8B92;font-size:12px;background:none;border:none;text-align:left;padding:10px 12px}
   .signout:hover{color:#fff}
   /* Collapsible sidebar — app-global UI pref (localStorage), NOT per-client state.
-     Kept out of resetClientState() on purpose so a client switch never resets it. */
-  #app.nav-collapsed{grid-template-columns:1fr}
-  #app.nav-collapsed .sidebar{display:none}
+     Kept out of resetClientState() on purpose so a client switch never resets it.
+     TWO INDEPENDENT SOURCES, one visual result, grouped so they can never drift:
+       .nav-collapsed = the operator's PERSISTED preference (☰ / bl_nav_collapsed)
+       .nav-forced    = a TRANSIENT override (Setup Agent chat open), never persisted
+     Because they are separate classes, releasing the override restores whatever the
+     persisted preference was — the override can never overwrite the pref. */
+  #app.nav-collapsed,#app.nav-forced{grid-template-columns:1fr}
+  #app.nav-collapsed .sidebar,#app.nav-forced .sidebar{display:none}
   .nav-toggle{background:var(--surface);border:1px solid var(--line);color:var(--ink);padding:8px 11px;border-radius:var(--radius);font-size:14px;line-height:1}
   .nav-toggle:hover{border-color:var(--volt)}
 
   .main{display:flex;flex-direction:column;overflow:hidden}
-  .topbar{display:flex;align-items:center;gap:12px;padding:14px 20px;background:var(--surface);border-bottom:1px solid var(--line)}
+  /* height:var(--topbar-h) is a DELIBERATE pin, not an oversight: it makes the Setup
+     Agent chat column's calc(100vh - ... - var(--topbar-h)) drift-proof against the
+     topbar rather than needing a JS resize-measurement listener. Tradeoff accepted:
+     a taller topbar child added later would clip silently instead of the bar growing --
+     bump --topbar-h in :root (above) at the same time as any such change. */
+  .topbar{display:flex;align-items:center;gap:12px;padding:14px 20px;background:var(--surface);border-bottom:1px solid var(--line);height:var(--topbar-h)}
   .client-switch{display:flex;align-items:center;gap:8px}
   .client-switch label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
   .client-switch select{padding:8px 10px;border:1px solid var(--line);border-radius:var(--radius);font-size:13px;min-width:200px;background:var(--surface)}
@@ -67,6 +84,31 @@
   .placeholder{background:var(--surface);border:1px dashed var(--line);border-radius:12px;padding:48px;text-align:center;color:var(--muted)}
   .placeholder strong{color:var(--ink);display:block;margin-bottom:6px;font-size:15px}
   .empty-client{text-align:center;color:var(--muted);padding:64px 24px}
+
+  /* ---- Setup Agent chat: three-column split INSIDE .content ----
+     .content itself is deliberately untouched -- it is the shared scroll container
+     for all four modules, so changing its padding/scroll model here would silently
+     alter Audit, Builds and Research too. Everything below is scoped to markup that
+     only renderSetup() emits.
+     The chat column is sticky + viewport-height rather than stretching: .content is
+     the scroller, so a plain full-height flex child would grow to the setup column's
+     full scroll height and push the composer off-screen. Sticky keeps the panel in
+     view while the setup column scrolls past it. 48px = .content's 24px padding
+     top+bottom. */
+  .setup-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+  .setup-split{display:flex;align-items:flex-start;gap:20px}
+  .setup-split .setup-col{flex:1;min-width:0}   /* min-width:0 or long content refuses to shrink */
+  .setup-chat{flex:none;width:380px;position:sticky;top:0;align-self:flex-start;
+    height:calc(100vh - 48px - var(--topbar-h));display:flex;flex-direction:column;
+    background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .setup-chat-head{display:flex;align-items:center;justify-content:space-between;gap:8px;
+    padding:12px 14px;border-bottom:1px solid var(--line);font-size:13px;font-weight:600}
+  .setup-chat-x{background:none;border:none;color:var(--muted);font-size:13px;line-height:1;padding:4px 6px;border-radius:6px}
+  .setup-chat-x:hover{color:var(--ink);background:rgba(0,0,0,.05)}
+  .setup-chat-log{flex:1;overflow-y:auto;padding:14px}
+  .setup-chat-empty{font-size:12px;color:var(--muted);line-height:1.6}
+  .setup-chat-compose{border-top:1px solid var(--line);padding:12px}
+  .setup-chat-compose .notes{margin-top:0;min-height:60px}
 
   /* Modal — hardcoded hex backgrounds (never CSS vars, per build rules) */
   .modal-overlay{position:fixed;inset:0;background:rgba(13,31,45,.55);display:none;align-items:center;justify-content:center;z-index:50}
@@ -106,6 +148,192 @@
   .sev-high{border-left:3px solid #E24B4A}
   .sev-medium{border-left:3px solid #EF9F27}
   .sev-low{border-left:3px solid #639922}
+  .doc-wrap{max-width:760px}
+  .doc-head{border-bottom:1px solid var(--line);padding-bottom:14px;margin-bottom:18px}
+  .doc-title{font-size:20px;font-weight:700;color:var(--ink)}
+  .doc-sub{font-size:13px;color:var(--muted);margin-top:4px}
+  .doc-cue{display:inline-block;margin-top:10px;font-size:11px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;padding:3px 10px;border-radius:20px;border:1px solid var(--line);color:var(--muted)}
+  .doc-cue.frozen{color:var(--run);border-color:var(--run)}
+  .doc-cue.preview{color:#B5730A;border-color:#E8C08A}
+  .doc-gap{border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:12px;background:var(--surface)}
+  .doc-gap.sev-high{border-left:3px solid #E24B4A}
+  .doc-gap.sev-medium{border-left:3px solid #EF9F27}
+  .doc-gap.sev-low{border-left:3px solid #639922}
+  .doc-gap-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+  .doc-gap-title{font-size:15px;font-weight:600;color:var(--ink)}
+  .doc-gap-sev{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+  /* Synthesized client copy — four labeled sections + per-gap states (migration 013) */
+  .doc-gap-sec{margin-top:12px}
+  .doc-gap-sec-h{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:700;margin-bottom:3px}
+  .doc-gap-sec-b{font-size:13px;color:var(--ink);line-height:1.55}
+  .doc-gap-sec.pending .doc-gap-sec-b{color:var(--muted);font-style:italic}
+  .doc-tag{display:inline-block;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--run);border:1px solid var(--run);border-radius:10px;padding:1px 7px;margin-left:6px;vertical-align:middle}
+  .doc-gap-actions{margin-top:12px;padding-top:10px;border-top:1px dashed var(--line);display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .doc-gap-flag{font-size:11px;font-weight:600;color:#B5730A}
+  .doc-gap-when{font-size:11px;color:var(--muted)}
+  .doc-link{font-size:12px;font-weight:600;color:var(--volt);background:none;border:none;padding:0;cursor:pointer;font-family:inherit}
+  .doc-link:hover{text-decoration:underline}
+  .doc-raw{margin-top:8px;font-size:12.5px;color:var(--muted);line-height:1.5;border-left:2px solid var(--line);padding-left:10px}
+  .doc-raw b{color:var(--ink);font-weight:600}
+  .doc-raw-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#B5730A;margin-top:10px}
+  .doc-line{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:11px 4px;border-bottom:1px solid var(--line)}
+  .doc-line-title{font-size:14px;color:var(--ink)}
+  .doc-line-meta{font-size:12px;color:var(--muted);white-space:nowrap}
+  .doc-total{margin-top:16px;font-size:15px;font-weight:700;color:var(--ink);text-align:right}
+  .doc-note{font-size:12px;color:var(--muted);line-height:1.5;margin-top:14px}
+  /* ============================================================
+     CLIENT-FACING GAP REPORT — branded preview / print view (.cr-*)
+     Round-3: FULL dark theme (Midnight throughout — cover AND body) + real
+     logo asset (assets/baseleap-logo.png, bg keyed transparent). Reference-1
+     cover + Reference-2 two-column body + Volt footer band (the one bright
+     accent). No prepared-date. @media print → clean Save-as-PDF (page breaks
+     + color-adjust for the dark fills + the logo image).
+  ============================================================ */
+  #client-report{position:fixed;inset:0;z-index:70;background:var(--midnight);overflow:auto;display:none}
+  .cr-toolbar{position:sticky;top:0;display:flex;justify-content:flex-end;gap:10px;padding:12px 20px;background:rgba(13,31,45,.92);backdrop-filter:blur(4px);border-bottom:1px solid rgba(0,212,160,.25);z-index:2}
+  .cr-doc{max-width:860px;margin:0 auto;background:var(--midnight)}
+  /* ---- Cover (Reference 1, round 4: real laptop photo) ----
+     Two stacked bands, matching the reference exactly: a full-bleed photo band
+     (laptop on desk; the photo's own baked-in dashboard was masked out and our
+     REAL per-report dashboard is composited into that exact screen region) on
+     top, then a solid-Midnight title band below with title/divider/prepared-for.
+     The photo's own baked-in "BASELEAP" logo (top-left, in-shot) is the ONLY
+     logo on the cover now — the separate <img> .cr-logo is no longer used here. */
+  .cr-cover{position:relative;background:var(--midnight);color:#fff;display:flex;flex-direction:column}
+  /* aspect-ratio locks the band to the source photo's 1600:1000 ratio so the
+     absolutely-positioned dashboard below always lands on the real screen area,
+     at any render width (screen preview vs. print page width differ). */
+  .cr-photo-band{position:relative;width:100%;aspect-ratio:1600/1000;overflow:hidden;background:var(--midnight) url('assets/cover-laptop.png') center/cover no-repeat}
+  /* Measured card natural size (600px design width -> renders 606x332px, ratio
+     1.825:1) is WIDER than the true screen area's ratio (~1.64:1). Sizing to fit
+     the target WIDTH alone leaves a height shortfall (visible grey gap, per live
+     review) — so this is scaled to match HEIGHT instead (the constraining
+     dimension), letting the small resulting width overflow bleed safely into the
+     black bezel (already proven clean, no visible seam). CENTERING: percentage
+     `height` on an absolutely-positioned child of an aspect-ratio box is
+     unreliable across engines when combined with overflow:hidden (verified via
+     live measurement — it clipped/shifted). So .cr-hero is a bare positioning
+     anchor (left/top only, no width/height — top-% against an aspect-ratio parent
+     IS reliable, confirmed twice); the actual centering+scale is one transform on
+     .cr-dash itself (translate(-50%,-50%) scale(...)), which depends only on the
+     transformed element's own size — no parent-height resolution involved. */
+  /* .cr-hero = the laptop's screen mask, measured off the real photo: 28.4%-73.5%
+     horizontally, 30.5%-74.5% vertically (= 45.1% x 44% of .cr-photo-band). The
+     dashboard graphic fills it edge-to-edge — any smaller leaves dark-blue backing
+     visible inside the black bezel.
+     WHY THE RATIOS MATTER: width% resolves against the band's WIDTH and height%
+     against its HEIGHT, so this box's pixel aspect is (45.1/44) x the band's own
+     1600/1000 = exactly 1.64, fixed at every viewport. .cr-dash is shaped to match
+     as closely as its fixed-px internals allow: MEASURED pre-transform height is
+     364.5px at 600 wide = ratio 1.6461, against the mask's 1.6400. Width therefore
+     fills EXACTLY (scale is heroWidth/600 by construction) and height falls ~0.23%
+     short — a sub-pixel residual along the bottom edge (~0.8px at the 860 screen
+     width, less when narrower), invisible in practice next to the card's own 16px
+     border-radius. Deliberately NOT chased with a padding nudge. What matters is
+     that one uniform scale never clips one axis to cover a gap on the other; an
+     earlier attempt scaled a 1.7544-ratio card to overfill this 1.64 box and leaned
+     on overflow:hidden; that chopped ~38px off the right edge (a whole stat tile),
+     which is why
+     it kept "not reproducing" across measurements — the target was moving.
+     WHY THE SCALE IS DYNAMIC: the required scale is heroWidth/600, and heroWidth
+     follows .cr-doc's max-width:860px cap on screen but the PAGE width in print
+     (max-width:none, print block below), so no hardcoded value can be correct in
+     both. crDashFit() sets --dash-scale from the live measured box; the .6465
+     fallback is the screen-at-860 value for the case where it never runs.
+     overflow:hidden is RETAINED as a defensive backstop only — not needed when the
+     ratios match, but if crDashFit() ever fails to run and the fallback is wrong for
+     the context, this degrades to a contained clipped edge instead of the dashboard
+     spilling out over the bezel and laptop body.
+     Internals stay fixed-px and shrink only via the scale transform — percentage
+     sizing leaves text/padding at full size (confirmed). */
+  .cr-hero{position:absolute;left:28.4%;top:30.5%;width:45.1%;height:44%;overflow:hidden;z-index:1}
+  .cr-title-band{padding:80px 60px 52px;text-align:center}
+  /* .cr-hero (above) reliably resolves left/top/width/aspect-ratio against the
+     photo band. .cr-dash keeps its 600px design width + transform:scale() —
+     REQUIRED, not optional: the internal tiles/text/padding are fixed-px and
+     only shrink correctly via the scale transform, not via percentage sizing
+     (confirmed — removing scale left text/padding at full size, overflowing).
+     overflow:hidden on .cr-hero clips the scaled content to its own reliable
+     box, so .cr-dash's own pre-transform 600px layout footprint never leaks
+     past .cr-hero's actual (width%+aspect-ratio-derived) box. */
+  /* Scale deliberately chosen to OVERFILL both dimensions of the new, larger
+     .cr-hero box (not hit an exact match — that kept proving unreliable across
+     measurement). overflow:hidden on .cr-hero clips the small excess cleanly,
+     guaranteeing zero dark-blue gap on any side regardless of small render
+     variance. */
+  .cr-dash{width:600px;transform:scale(var(--dash-scale,.6465));transform-origin:top left;background:linear-gradient(160deg,#16304a,#0e2133);border:1px solid rgba(255,255,255,.09);border-radius:16px;box-shadow:0 16px 34px rgba(0,0,0,.5);overflow:hidden}
+  .cr-dash-bar{display:flex;align-items:center;gap:7px;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.07)}
+  .cr-dash-bar i{width:10px;height:10px;border-radius:50%;display:block}
+  .cr-dash-bar span{margin-left:8px;font-size:11px;color:#9AA3AD;letter-spacing:.04em}
+  .cr-dash-body{padding:26px 22px 30px}
+  .cr-tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:13px;margin-bottom:28px}
+  .cr-tile{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.06);border-radius:10px;padding:12px 14px}
+  .cr-tile .n{font-size:24px;font-weight:800;color:#fff;line-height:1}
+  .cr-tile .n b{color:var(--volt);font-weight:800}
+  .cr-tile .l{font-size:10px;color:#9AA3AD;margin-top:6px;letter-spacing:.04em}
+  .cr-charts{display:grid;grid-template-columns:1.6fr 1fr;gap:16px;align-items:center}
+  .cr-panel{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:10px;padding:14px}
+  .cr-panel .ph{font-size:10px;color:#9AA3AD;letter-spacing:.05em;text-transform:uppercase;margin-bottom:8px}
+  .cr-bars{display:flex;align-items:flex-end;gap:12px;height:72px;margin-top:10px}
+  .cr-bars i{flex:1;border-radius:3px 3px 0 0;display:block;min-height:6px}
+  .cr-cover-title{font-size:70px;font-weight:800;color:var(--volt);letter-spacing:-.01em;line-height:1;padding-top:44px;position:relative;z-index:1}
+  .cr-cover-div{height:1px;background:rgba(0,212,160,.5);margin:22px 0 18px;position:relative;z-index:1}
+  .cr-cover-meta{display:flex;justify-content:center;align-items:flex-end;gap:40px;position:relative;z-index:1}
+  .cr-cover-for{font-size:17px;color:#fff}
+  .cr-cover-for b{font-weight:700}
+  .cr-cover-by{font-size:12px;color:var(--volt);letter-spacing:.05em;white-space:nowrap}
+  /* ---- Body (Reference 2) — dark theme: Midnight page, light text ---- */
+  .cr-body{padding:52px 60px 0}
+  .cr-h2{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--volt);margin-bottom:16px}
+  .cr-summary{font-size:18px;line-height:1.6;color:#F4F5F0}
+  .cr-summary b{color:var(--volt)}
+  .cr-rule{height:1px;background:rgba(0,212,160,.5);margin:40px 0}
+  .cr-sev-h{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;display:flex;align-items:center;gap:9px;margin:0 0 18px}
+  .cr-sev-dot{width:11px;height:11px;border-radius:50%}
+  /* Severity accents BRIGHTENED for legibility on Midnight (the light-bg
+     variants #C77C0E/#4E7D1B were too dark on a dark page). */
+  .cr-sev-high{color:#F26D6B}.cr-sev-medium{color:#F2A83C}.cr-sev-low{color:#8FCB50}
+  .cr-sev-high .cr-sev-dot{background:#F26D6B}
+  .cr-sev-medium .cr-sev-dot{background:#F2A83C}
+  .cr-sev-low .cr-sev-dot{background:#8FCB50}
+  .cr-gap{margin-bottom:32px;padding-bottom:32px;border-bottom:1px solid rgba(0,212,160,.35)}
+  .cr-gap-title{font-size:21px;font-weight:700;color:var(--volt);margin-bottom:20px;line-height:1.25}
+  .cr-grid2{display:grid;grid-template-columns:1fr 1fr;gap:24px 40px}
+  .cr-field-l{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:#F4F5F0;margin-bottom:6px}
+  .cr-field-b{font-size:14px;line-height:1.62;color:#fff}
+  /* Callout is an ELEVATED surface (lighter than the Midnight page) so it
+     reads as a raised card, not a same-color block that blends in. */
+  /* .cr-close wraps the callout + footer so they page-break as ONE unit (see
+     @media print) — the callout carries its own 60px side margin now that it
+     lives in .cr-close rather than inheriting .cr-body's padding. */
+  .cr-close{background:var(--midnight)}
+  .cr-callout{background:#142c3f;color:#fff;border-radius:14px;padding:30px 34px;border-left:6px solid var(--volt);margin:8px 60px 0}
+  .cr-callout-l{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.09em;color:var(--volt);margin-bottom:12px}
+  .cr-callout-t{font-size:23px;font-weight:700;margin-bottom:10px;color:#fff}
+  .cr-callout-b{font-size:15px;line-height:1.6;color:#C7CDD3}
+  /* ---- Footer band (Reference 2 teal band) — the one bright accent ---- */
+  .cr-footer{background:var(--volt);color:var(--midnight);margin-top:52px;padding:40px 60px;display:flex;justify-content:space-between;align-items:center;gap:24px}
+  .cr-footer-t{font-size:25px;font-weight:800}
+  .cr-footer-s{font-size:14px;margin-top:6px;color:#053f30}
+  .cr-footer-c{font-size:13px;text-align:right;line-height:1.7;color:#063a2d;font-weight:600}
+  @media print{
+    /* margin:0 so the Midnight fills the sheet EDGE TO EDGE — without this the
+       browser's default page margin leaves a white frame around the dark report. */
+    @page{margin:0}
+    body{background:var(--midnight)}
+    #app,#auth,.modal-overlay,.ni-overlay{display:none !important}
+    #client-report{position:static;overflow:visible;display:block !important;background:var(--midnight)}
+    .cr-toolbar{display:none !important}
+    .cr-doc{max-width:none;margin:0}
+    .cr-cover{min-height:96vh;page-break-after:always}
+    .cr-gap,.cr-callout,.cr-footer{page-break-inside:avoid}
+    .cr-sev-h{page-break-after:avoid}
+    /* Closing callout + footer break as ONE unit: if they don't fit together at
+       the bottom of the last content page they move together to the next page —
+       ADAPTIVE (no forced break, no orphaned footer). */
+    .cr-close{page-break-inside:avoid}
+    *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  }
   .plan-warn{border:2px solid #E24B4A;background:rgba(226,75,74,.06);border-radius:10px;padding:12px 14px;margin-bottom:14px}
   .plan-warn-title{color:#E24B4A;font-weight:700;font-size:14px;margin-bottom:6px}
   .plan-warn-item{color:#E24B4A;font-size:13px;margin-bottom:2px}
@@ -122,6 +350,22 @@
   .bp-folder-status.st-done{color:var(--run);border-color:var(--run)}
   .bp-folder-status.st-building,.bp-folder-status.st-testing{color:#B5730A;border-color:#E8C08A}
   .bp-folder-date{font-size:11px;color:var(--muted)}
+  .bp-folder-status.st-archived{color:var(--muted);border-color:var(--line);opacity:.8}
+  .bp-folder.archived{opacity:.6}
+  .bp-folder.archived:hover{opacity:.85}
+  .bp-arch-toggle{margin-top:12px;background:none;border:1px solid var(--line);color:var(--muted);font-size:12px;padding:6px 12px;border-radius:8px;cursor:pointer;transition:border-color .15s,color .15s}
+  .bp-arch-toggle:hover{border-color:var(--run);color:var(--run)}
+  .bp-head-top{display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .bp-del-btn{background:none;border:1px solid var(--line);color:var(--muted);font-size:12px;font-weight:500;padding:6px 12px;border-radius:8px;cursor:pointer;transition:border-color .15s,color .15s}
+  .bp-del-btn:hover{border-color:var(--err);color:var(--err)}
+  .bp-del-panel{margin-top:12px;padding:14px 16px;border:1px solid var(--line);border-radius:10px;background:var(--bg)}
+  .bp-del-panel.danger{border-color:rgba(239,68,68,.35);background:rgba(239,68,68,.05)}
+  .bp-del-panel span{font-size:13px;color:var(--ink);line-height:1.5}
+  .bp-del-actions{display:flex;gap:8px;margin-top:12px}
+  .bp-del-yes{background:var(--err);color:#fff;border:none;padding:8px 14px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer}
+  .bp-del-yes:disabled,.bp-del-archive:disabled,.bp-del-no:disabled{opacity:.5;pointer-events:none}
+  .bp-del-archive{background:var(--volt);color:var(--midnight);border:none;padding:8px 14px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer}
+  .bp-del-no{background:none;border:1px solid var(--line);color:var(--muted);padding:8px 14px;border-radius:8px;font-size:13px;cursor:pointer}
   .bp-folder-new{align-items:center;justify-content:center;color:var(--run);font-weight:600;font-size:14px;border-style:dashed;flex-direction:row;gap:6px;min-height:96px}
   .bp-folder-new:hover{border-color:var(--run);background:rgba(0,168,120,.04)}
   .bp-folder-new:disabled{opacity:.6;cursor:default}
@@ -348,6 +592,20 @@
   .fin-badges{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
   .fin-badge{font-size:11px;font-weight:500;padding:2px 9px;border-radius:10px;background:rgba(255,255,255,.05);border:1px solid var(--d-line);color:var(--d-muted);white-space:nowrap}
   .fin-problem{margin-top:10px;font-size:13px;color:var(--d-muted);line-height:1.5;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}
+  .scope-lock{background:linear-gradient(180deg,rgba(0,212,160,.10),rgba(0,212,160,.03));border:1px solid rgba(0,212,160,.35);border-radius:12px;padding:18px 20px;box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}
+  .scope-lock-h{font-size:16px;font-weight:700;color:var(--volt);margin-bottom:8px}
+  .scope-lock-msg{font-size:13px;color:var(--d-text);line-height:1.5;max-width:60ch}
+  .scope-lock-cta{margin-top:14px;background:var(--volt);color:var(--midnight);border:none;padding:10px 16px;border-radius:10px;font-size:13.5px;font-weight:600;cursor:pointer;transition:background .2s ease,color .2s ease}
+  .scope-lock-cta:hover{background:var(--run);color:#fff}
+  .scope-included{margin-top:22px}
+  .scope-included-h{font-size:12px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;color:var(--d-muted);margin-bottom:10px}
+  .scope-row{display:flex;align-items:center;gap:12px;background:var(--depth);border:1px solid var(--d-line);border-left:3px solid var(--ok);border-radius:10px;padding:12px 16px;margin-top:8px}
+  .scope-row.missing{border-left-color:var(--d-line);opacity:.6}
+  .scope-check{color:var(--ok);font-weight:700;font-size:14px}
+  .scope-row.missing .scope-check{color:var(--d-muted)}
+  .scope-title{flex:1;font-size:14px;font-weight:500;color:var(--d-text-strong)}
+  .scope-row.missing .scope-title{font-style:italic;color:var(--d-muted);font-weight:400}
+  .scope-meta{font-size:12px;color:var(--d-muted);white-space:nowrap}
   .audit-empty{color:var(--muted);font-size:13px;padding:24px 0}
   .stack-row{display:flex;align-items:center;gap:10px;margin-bottom:10px}
   .stack-row label{width:150px;flex-shrink:0;font-size:12px;color:var(--muted)}
@@ -375,9 +633,7 @@
     <div class="brand">Baseleap<span>.</span></div>
     <button class="nav-item" data-mod="research" onclick="switchModule('research')">Client research</button>
     <button class="nav-item active" data-mod="audit" onclick="switchModule('audit')">Audit assistant</button>
-    <button class="nav-item" data-mod="automation" onclick="switchModule('automation')">Automation agent</button>
-    <button class="nav-item" data-mod="report" onclick="switchModule('report')">Gap report</button>
-    <button class="nav-item" data-mod="proposal" onclick="switchModule('proposal')">Proposal</button>
+    <button class="nav-item" data-mod="automation" onclick="switchModule('automation')">Builds</button>
     <button class="nav-item" data-mod="setup" onclick="switchModule('setup')">Setup agent</button>
     <div class="nav-spacer"></div>
     <button class="signout" onclick="signOut()">Sign out</button>
@@ -420,6 +676,9 @@
   </div>
 </div>
 
+<!-- Client-facing Gap Report — branded preview / print view (populated by renderClientReport) -->
+<div id="client-report"></div>
+
 <script>
 /* ============================================================
    CONFIG
@@ -432,9 +691,11 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
    GLOBAL STATE  (S.* is reset on every client switch)
 ============================================================ */
 function freshAudit(){ return { tab:"guide", guideNotes:{}, captureText:"", summary:null, sessionId:null, loaded:false, analyzing:false, msg:"", stackForm:null, stackOtherFlags:{}, extracting:false }; }
-function freshAutomation(){ return { tab:"gaps", loaded:false, msg:"", gaps:[], drafts:{}, assessing:{}, errors:{}, assessingAll:false, validatingAll:false, progress:"", finBusy:{}, finBulkBusy:false, finMsg:"" }; }
-function freshBuildPlan(){ return { loaded:false, msg:"", plans:[], activePlanId:null, planCounts:{}, plan:null, steps:[], draft:null, draftGaps:null, generating:false, saving:false, expanded:{}, panel:null, zoom:1, pan:{x:0,y:0} }; }
-function freshSetup(){ return { loaded:false, msg:"", run:null, preflight:null, diff:null, running:false, busy:false }; }
+function freshAutomation(){ return { tab:"gaps", loaded:false, msg:"", gaps:[], drafts:{}, assessing:{}, errors:{}, assessingAll:false, validatingAll:false, progress:"", copyBusy:{}, copyAll:false }; }
+// sel = the active compose session's folder-scoped gap-selection map ({gapId: 'accepted'|'declined'};
+// undecided = absent). Committed to build_plan_gaps on Save; never the dormant client gaps.selection.
+function freshBuildPlan(){ return { loaded:false, msg:"", plans:[], activePlanId:null, planCounts:{}, plan:null, steps:[], draft:null, draftGaps:null, generating:false, saving:false, expanded:{}, panel:null, zoom:1, pan:{x:0,y:0}, tab:"plan", composing:false, sel:{}, scope:null, scopePlanId:null, scopeErr:"", del:null, showArchived:false }; }
+function freshSetup(){ return { loaded:false, msg:"", run:null, preflight:null, diff:null, running:false, busy:false, chatOpen:false }; }
 
 const S = {
   user: null,
@@ -528,6 +789,15 @@ function toggleNav(){
   const collapsed = document.getElementById("app").classList.toggle("nav-collapsed");
   localStorage.setItem(NAV_COLLAPSE_KEY, collapsed ? "1" : "0");
 }
+/* Transient sidebar override — the Setup Agent chat needs the third column, so it
+   forces the sidebar hidden WITHOUT touching bl_nav_collapsed. Reading or writing
+   that key here is what would destroy the operator's own preference: releasing the
+   override then has nothing to restore and would have to guess. Because this is a
+   separate class, the pref underneath is simply revealed again on release.
+   Callers do not invoke this directly — render() derives it (see below). */
+function setNavForced(on){
+  document.getElementById("app").classList.toggle("nav-forced", !!on);
+}
 
 /* ============================================================
    CLIENTS  (the business-switcher dropdown)
@@ -594,13 +864,25 @@ function switchModule(mod){
 const MODULES = {
   research:  { title: "Client research",  sub: "Pre-call brief, auto-built from the lead form." },
   audit:     { title: "Audit assistant",  sub: "Capture the call, surface gaps, draft the diagnosis." },
-  automation:{ title: "Automation agent", sub: "Feasibility gate — confirm each gap is buildable." },
-  report:    { title: "Gap report",       sub: "The client-facing report, built from validated gaps." },
-  proposal:  { title: "Proposal",         sub: "Scoped proposal from the gap report and a package." },
+  automation:{ title: "Builds", sub: "Each client's build folders — feasibility, finalize, plan, report & proposal live inside a build." },
   setup:     { title: "Setup agent",      sub: "GHL sub-account provisioning — creates the plan's tags & fields via API." },
 };
 
 function render(){
+  // The forced-sidebar override is DERIVED from state here, not set imperatively by
+  // whoever opens/closes the chat. Every path that could strand it — chat close,
+  // module switch, client switch (resetClientState -> freshSetup -> chatOpen:false),
+  // and the no-client case below — already funnels through render(), so all of them
+  // release it by construction instead of by remembering to. MUST stay above the
+  // early return: a stranded override with no client selected would hide the sidebar
+  // with no way to get it back.
+  // THE !S.activeClient TERM IS LOAD-BEARING, and sitting above the early return is
+  // not sufficient on its own: with no client, S.module is still "setup" and chatOpen
+  // is still true, so without this term the override stays applied while the early
+  // return replaces #content with the empty-client message. That destroys the chat's
+  // own ✕, and ☰ cannot recover the sidebar because nav-forced hides it independently
+  // of nav-collapsed — a soft-lock survivable only by reload. Caught by test 5b.
+  setNavForced(!!S.activeClient && S.module === "setup" && !!S.setup.chatOpen);
   const content = document.getElementById("content");
   const m = MODULES[S.module];
   if(!S.activeClient){
@@ -1951,6 +2233,10 @@ async function validateGap(gapId){
   syncDraftFromGap(gapId, data);              // keep the card showing what's actually saved
   setAutomationMsg("Validated ✓ — will appear in the Gap Report.");
   renderAutomation();
+  // Event-driven Gap Report copy: a freshly validated gap is Gap-Report-eligible, so (re)generate
+  // its client copy when absent or when the source changed. NOT awaited — validate stays
+  // responsive and an AI error surfaces via setAutomationMsg without ever failing the validate.
+  if(g.client_copy == null || g.client_copy_fingerprint !== fingerprintGapSource(g)){ generateGapCopy(gapId); }
 }
 
 async function unvalidateGap(gapId){
@@ -2055,29 +2341,692 @@ function renderAutomationCard(g){
     </div>`;
 }
 
+// Builds module. Top level = the folder GRID (no folder open, no draft, not composing a
+// new build). Opening a folder OR starting a new build enters the 5-tab shell
+// (Feasibility → Gap Report → Finalize → Build Plan → Proposal), driven by S.buildPlan.tab.
+// (Internal module key stays "automation"; the 36 renderAutomation call sites are unchanged.)
 function renderAutomation(){
   const content = document.getElementById("content");
-  const tabs = [["gaps","Feasibility"],["finalize","Finalize"],["plan","Build plan"]];
+  const inWorkspace = !!(S.buildPlan.activePlanId || S.buildPlan.draft || S.buildPlan.composing);
+  const panelOpen = inWorkspace && S.buildPlan.tab === "plan" && S.buildPlan.panel;
   content.innerHTML = `
-    ${(S.automation.tab === "plan" && S.buildPlan.panel) ? `<button class="bp-back" onclick="closeEnginePanel()">← Back to plan</button>` : ""}
-    <div class="panel-title">Automation agent</div>
-    <div class="panel-sub">${esc(S.activeClient.business_name)} — feasibility gate, then the build plan.</div>
-    <div class="subtabs">
-      ${tabs.map(([id,lbl]) => `<button class="subtab ${S.automation.tab===id?"active":""}" onclick="automationTab('${id}')">${lbl}</button>`).join("")}
-    </div>
+    ${panelOpen ? `<button class="bp-back" onclick="closeEnginePanel()">← Back to plan</button>` : ""}
+    <div class="panel-title">Builds</div>
+    <div class="panel-sub">${esc(S.activeClient.business_name)} — build folders; each build carries its own feasibility, finalize, plan, report &amp; proposal.</div>
+    ${(inWorkspace && !panelOpen) ? renderBuildsTabBar() : ""}
     <div id="automation-body"></div>`;
-  if(S.automation.tab === "plan") renderBuildPlanBody();
-  else if(S.automation.tab === "finalize") renderFinalizeBody();
-  else renderFeasibilityBody();
+  if(!inWorkspace){ renderBuildsGrid(); return; }
+  renderBuildsTabBody();
 }
 
-function automationTab(t){ S.automation.tab = t; renderAutomation(); }
+// The in-folder tab bar (+ a back control to the grid). Hidden when the engine-detail
+// panel is open (that view is full-page and carries its own "← Back to plan").
+function renderBuildsTabBar(){
+  const tabs = [["feasibility","Feasibility"],["report","Gap Report"],["finalize","Finalize"],["plan","Build Plan"],["proposal","Proposal"]];
+  return `
+    <button class="bp-back" onclick="closeBuildFolder()">← All builds</button>
+    <div class="subtabs">
+      ${tabs.map(([id,lbl]) => `<button class="subtab ${S.buildPlan.tab===id?"active":""}" onclick="buildsTab('${id}')">${lbl}</button>`).join("")}
+    </div>`;
+}
+function buildsTab(t){ S.buildPlan.del = null; S.buildPlan.tab = t; renderAutomation(); }
+
+// Route the active in-folder tab to its body (each writes into #automation-body).
+function renderBuildsTabBody(){
+  const t = S.buildPlan.tab;
+  if(t === "feasibility"){ renderFeasibilityBody(); return; }
+  if(t === "finalize"){ renderFinalizeBody(); return; }
+  if(t === "report"){ renderGapReportBody(); return; }
+  if(t === "proposal"){ renderProposalBody(); return; }
+  renderBuildPlanBody();   // "plan"
+}
+
+// Module-top folder grid (extracted from the old renderBuildPlanBody grid branch).
+function renderBuildsGrid(){
+  const body = document.getElementById("automation-body");
+  if(!S.buildPlan.loaded){ body.innerHTML = `<div class="audit-empty">Loading builds…</div>`; loadBuildPlanData(S.activeClientId); return; }
+  body.innerHTML = renderBuildFolderGrid() + `<div class="msg" id="buildplan-msg" style="margin-top:10px">${esc(S.buildPlan.msg)}</div>`;
+}
+
+// Proposal — folder-scoped document (§8). Bimodal like Finalize: while composing it
+// PREVIEWS off the draft's accepted selection; a saved folder renders the FROZEN
+// build_plan_gaps scope. This step wires placement + scope binding + real content
+// from existing gap fields (band/estimated_hours pricing). AI copy generation, market-rate
+// cost reference, and branded export are deferred (separate future items).
+// (Gap Report is CLIENT-LEVEL — see renderGapReportBody; it does NOT use currentBuildGaps.)
+
+// The gaps this build's Proposal renders from — bimodal:
+//   composing (unsaved) → PREVIEW off the draft's accepted selection (S.automation.gaps + sel);
+//   saved folder        → the FROZEN build_plan_gaps scope (S.buildPlan.scope ⋈ gaps).
+// ready=false → underlying data not loaded (caller triggers the loader); a saved-scope row
+// whose gap was since removed comes back as {missing:true}.
+function currentBuildGaps(){
+  if(S.buildPlan.activePlanId && !S.buildPlan.composing){
+    if(S.buildPlan.scope === null || S.buildPlan.scopePlanId !== S.buildPlan.activePlanId)
+      return { frozen:true, ready:false, err:"", gaps:[] };
+    return { frozen:true, ready:true, err:S.buildPlan.scopeErr,
+      gaps: (S.buildPlan.scope || []).map(r => r.gaps || { missing:true }) };
+  }
+  if(!S.automation.loaded) return { frozen:false, ready:false, err:"", gaps:[] };
+  const sel = S.buildPlan.sel || {};
+  return { frozen:false, ready:true, err:"",
+    gaps: S.automation.gaps.filter(g => g.validation_status === "validated" && sel[g.id] === "accepted") };
+}
+
+// Ensures the right data is loaded (kicks a loader + returns null → caller returns), else
+// returns the present (non-drift) gaps + drift count + mode flag.
+function buildDocData(){
+  const b = currentBuildGaps();
+  if(!b.ready){
+    document.getElementById("automation-body").innerHTML = `<div class="audit-empty">Loading…</div>`;
+    if(S.buildPlan.activePlanId && !S.buildPlan.composing) loadBuildScope(S.buildPlan.activePlanId);
+    else loadAutomationData(S.activeClientId);
+    return null;
+  }
+  const present = b.gaps.filter(g => !g.missing);
+  return { frozen:b.frozen, err:b.err, present, missing:b.gaps.length - present.length };
+}
+function docCue(frozen){
+  return frozen
+    ? `<span class="doc-cue frozen">Frozen · from this build's saved scope</span>`
+    : `<span class="doc-cue preview">Preview · current draft selection, not saved yet</span>`;
+}
+function docMissingNote(missing, noun){
+  return missing ? `<div class="doc-note">${missing} gap${missing===1?"":"s"} in this build's record ${missing===1?"is":"are"} no longer in the catalog — omitted from the ${noun}.</div>` : "";
+}
+function docEmpty(frozen){
+  return `<div class="audit-empty">No gaps in this build's scope yet — accept gaps on the Finalize tab${frozen?"":", then save the build"}.</div>`;
+}
+
+// The client's validated gaps — the shared source for BOTH Feasibility's Validated list and
+// the client-level Gap Report (DRY; same reuse reasoning as finTotalsLine in step 6). Callers
+// guard on S.automation.loaded and kick loadAutomationData (as Feasibility does). NOTE: the
+// decline filter is NOT baked in here — Feasibility shows all validated; only Gap Report excludes.
+function clientValidatedGaps(){
+  return S.automation.gaps.filter(g => g.validation_status === "validated");
+}
+// Client-level "decided not to pursue." The dormant client-scoped gaps.selection column
+// (migration 005: proposed|accepted|declined) is the ONLY client-wide decision signal — a
+// per-build decline (build_plan_gaps / S.buildPlan.sel) is folder-scoped and DELIBERATELY
+// not consulted by the client-level Gap Report. A named set/predicate (not an inline
+// === "declined") so a future decided-against state is added in ONE place. NOTE: dormant
+// since 012 — no current UI writes 'declined' here, so today this excludes only legacy rows.
+const GAP_DECIDED_AGAINST = new Set(["declined"]);
+function gapDecidedAgainst(g){ return GAP_DECIDED_AGAINST.has(g.selection); }
+
+/* ============================================================
+   GAP REPORT — CLIENT-FACING SYNTHESIZED COPY (migration 013)
+   Two-phase: Phase 1 (Conclusion + Cost) from the raw transcript at validate;
+   Phase 2 (Solution + Savings) once grounding exists (catalog spec immediately;
+   a formulate gap's build step at build-save). Phase 2 ALWAYS receives Phase 1's
+   text for continuity. The anti-paraphrase doctrine is the core safeguard — the
+   real test is reading generated output, not that it merely parses.
+============================================================ */
+
+// Shared doctrine — reused by both phase prompts (mirrors DESIGN_DOCTRINE_PROMPT composition).
+const GAPCOPY_DOCTRINE = `THE CORE SAFEGUARD — SYNTHESIZE, DO NOT PARAPHRASE:
+- Formalizing the transcript is a FAILURE, not the task. "If they text me I see it, but if I'm with a client it sits" reworded to "When a client texts, the owner sees it, but if occupied it waits" is REJECTED — the same anecdote in a suit.
+- State the STRUCTURAL failure the anecdote is evidence of: what breaks, under what condition, and the business consequence. Correct: "Inbound text enquiries are triaged manually, so whenever the owner is occupied they go unanswered and prospective customers are lost." Name the mechanism, not the story.
+- Drop the anecdote, the quoted speech, and the I/me/my/we/our voice entirely. Third person: "the business", "the owner", "customers".
+
+NEVER FABRICATE:
+- Introduce NO number — percentage, dollar, hours, counts ("40% of leads", "$2,000/month", "3 hours a day") — that is not in the source. No figure in source → describe qualitatively.
+- Internal build-hours are our cost to deliver, NOT client time saved — never present them as savings.
+
+CLIENT-SAFE:
+- No internal tool/vendor/architecture terms (Stripe, GoHighLevel/GHL, tags, fields, webhooks, n8n, pipelines) unless the source shows the client already uses that named tool. Speak in the prospect's business language.
+
+LENGTH — a hard cap that forces synthesis:
+- Each section is 1-2 sentences, ~45 words max. You cannot fit the transcript; you must distill it.`;
+
+// PHASE 1 — Conclusion + Cost (raw transcript is the only input).
+const GAPCOPY_CONCLUSION_SYSTEM = `You convert RAW internal audit notes about ONE business problem into the opening two sections of a client-facing Gap Report a prospect will read: the Conclusion of the problem, and the Conclusion of the cost of inaction. The raw notes are first-person interview transcript. SYNTHESIZE them — do not reword them.
+
+${GAPCOPY_DOCTRINE}
+
+THE TWO SECTIONS:
+1. problem — the conclusion of what the problem IS: the structural gap, synthesized from the raw problem notes.
+2. cost — the conclusion of the cost of inaction: what it keeps costing the business, synthesized from the raw cost notes (qualitative unless the source gives a figure).
+
+OUTPUT — respond ONLY with valid JSON, no markdown, exactly:
+{"problem":"…","cost":"…"}
+Both values non-empty strings. No other keys.`;
+
+// PHASE 2 — Solution + Savings (given Phase 1's text + a grounded solution source).
+const GAPCOPY_SOLUTION_SYSTEM = `You write the closing two sections of a client-facing Gap Report a prospect will read: the Solution, and What It Saves. You are given the Conclusion and Cost already written for THIS gap, plus a SOLUTION SOURCE describing the automation that addresses it. SYNTHESIZE — do not reword source material.
+
+${GAPCOPY_DOCTRINE}
+
+CONTINUITY (these two sections JOIN an existing report — they are not written in isolation):
+- Read the provided Conclusion and Cost. Your Solution and Savings must read as the SAME document about the SAME business: same vocabulary for the problem, same register, no contradiction.
+- ADVANCE the narrative — do NOT restate the problem or the cost. Solution resolves what the Conclusion named; Savings describes what the Cost you were given stops losing.
+
+THE TWO SECTIONS:
+3. solution — a brief plain-language description of the automation that fixes it, grounded ONLY in the SOLUTION SOURCE. A proven catalog design → describe an established solution; this client's build spec → describe what will be built. Never invent capabilities absent from the source.
+4. savings — the time/money the business gets back, tied to the Cost you were given, qualitative unless the source gives a figure.
+
+OUTPUT — respond ONLY with valid JSON, no markdown, exactly:
+{"solution":"…","savings":"…"}
+Both values non-empty strings. No other keys.`;
+
+function gapConclusionUserMsg(g){
+  return [
+    `BUSINESS: ${S.activeClient.business_name} — ${S.activeClient.industry || "industry n/a"}`,
+    `GAP TITLE: ${g.title || "(untitled)"}`,
+    ``,
+    `RAW PROBLEM (internal transcript — SYNTHESIZE, do NOT reword):`,
+    g.problem || "(none)",
+    ``,
+    `RAW COST OF INACTION (internal transcript — SYNTHESIZE):`,
+    g.cost || "(none)",
+  ].join("\n");
+}
+
+// Phase 2 gets Phase 1's output as continuity context. band + hours are DELIBERATELY withheld
+// from both calls — pricing is the Proposal's job; withholding the price anchor + build hours
+// structurally removes the temptation to fabricate a figure in "savings".
+function gapSolutionUserMsg(g, src, conclusion){
+  return [
+    `BUSINESS: ${S.activeClient.business_name} — ${S.activeClient.industry || "industry n/a"}`,
+    `GAP TITLE: ${g.title || "(untitled)"}`,
+    ``,
+    `ALREADY-WRITTEN CONCLUSION (for continuity — do NOT repeat it):`,
+    `Problem: ${conclusion.problem}`,
+    `Cost: ${conclusion.cost}`,
+    ``,
+    `SOLUTION SOURCE (Tier ${src.tier} — ground the solution ONLY in this):`,
+    src.text,
+    ``,
+    `FEASIBILITY (internal context; do not quote): approach=${g.approach || "?"}`,
+  ].join("\n");
+}
+
+// Validator factory — same checks, different key sets. First-person + no-fabrication + length
+// are structural guards; they CANNOT catch "grammatically fine but still paraphrase" — only
+// reading real output does (the blocking live test).
+function makeCopyValidator(keys){
+  return function(c){
+    if(!c || typeof c !== "object" || Array.isArray(c)) throw new Error("not an object");
+    for(const k of keys){
+      if(typeof c[k] !== "string" || !c[k].trim()) throw new Error(`${k} missing/empty`);
+      if(c[k].length > 400) throw new Error(`${k} too long (${c[k].length} chars) — synthesize, don't transcribe`);
+    }
+    const extra = Object.keys(c).filter(k => !keys.includes(k));
+    if(extra.length) throw new Error("unexpected keys: " + extra.join(","));
+    const firstPerson = /\b(i|me|my|mine|we|us|our|ours)\b/i;
+    for(const k of keys){ if(firstPerson.test(c[k])) throw new Error(`${k} uses first person — must be third-person synthesis`); }
+  };
+}
+const validateConclusionCopy = makeCopyValidator(["problem","cost"]);
+const validateSolutionCopy   = makeCopyValidator(["solution","savings"]);
+
+// Engine catalog is client-INDEPENDENT (global engines) → cached module-wide, NOT in
+// resetClientState. One fetch serves every gap's solution-source resolution + bulk generation.
+async function ensureCatalog(){
+  if(!S.catalog){ const list = await listEngines(); S.catalog = new Map((list || []).map(e => [e.engine_key, e])); }
+  return S.catalog;
+}
+
+// Cheap non-crypto hash (djb2) of the SOURCE inputs — change-detection only, not security.
+// Any edit to the raw problem/cost, the matched engine, or the feasibility mechanism/approach
+// flips it → client_copy_fingerprint mismatch → the copy is stale → regenerate.
+function fingerprintGapSource(g){
+  const s = [g.problem, g.cost, g.matched_engine, g.mechanism, g.approach].map(x => x || "").join("");
+  let h = 5381; for(let i = 0; i < s.length; i++){ h = ((h << 5) + h + s.charCodeAt(i)) | 0; }
+  return String(h >>> 0);
+}
+
+// The artifact-carrying automation step for a formulate gap (Phase-2 grounding). A gap can
+// appear in several builds (build_plan_gaps is unique per plan+gap, not per gap), so this may
+// span plans — prefer a step with a deployment story, else the first automation step. Returns
+// null when no build exists yet (→ Phase 2 stays deferred, the interim state).
+async function buildStepForGap(gapId){
+  const { data } = await sb.from("build_steps").select("*").eq("gap_id", gapId).eq("agent", "automation");
+  if(!data || !data.length) return null;
+  return data.find(s => s.deployment) || data[0];
+}
+
+// The Solution section's grounding, by route. Tier 1 (deep matched engine) uses the CATALOG
+// spec — deliberately NOT any client's deployed build (Gap Report is client-level, and the
+// catalog spec is the canonical design). Tier 2: a named-but-thin engine stub + the gap's
+// mechanism. Tier 3a: a formulate gap that now HAS a build — grounded in that build step's
+// title/detail/changes_note (build_steps has NO spec column; the FORMULATE spec is split into
+// manifest/workflow/deployment). Tier 3b: formulate, no build yet → DEFERRED (interim state).
+function gapSolutionSource(g, engine, buildStep){
+  if(engine && isDeepEngine(engine)){
+    const spec = engine.spec || {};
+    const caps = (spec.automations || []).map(a => a && a.name).filter(Boolean).join("; ");
+    return { tier:1, route:"cataloged",
+      text:`MATCHED ENGINE — proven catalog design (use its SPEC, never a deployed build):\n`
+         + `name: ${engine.name}\npurpose: ${spec.purpose || engine.summary || ""}\n`
+         + `capabilities: ${caps}\nsummary: ${engine.summary || ""}` };
+  }
+  if(engine){
+    return { tier:2, route:"cataloged",
+      text:`MATCHED ENGINE — catalog stub (no full spec yet):\nname: ${engine.name}\n`
+         + `summary: ${engine.summary || ""}\nper-gap mechanism: ${g.mechanism || ""}\napproach: ${g.approach || ""}` };
+  }
+  if(buildStep){
+    const dep = buildStep.deployment || {};
+    return { tier:3, route:"formulated",
+      text:`CUSTOM BUILD for this client (this gap's build step):\n`
+         + `what gets built: ${buildStep.title || ""}\ndetail: ${buildStep.detail || ""}\n`
+         + `changes: ${dep.changes_note || ""}` };
+  }
+  return { tier:0, route:"formulated", deferred:true, text:"" };   // Tier 3b — defer Phase 2
+}
+
+// Full generation for one gap: Phase 1 always; Phase 2 when grounded (else leave interim).
+// Phase 2 ALWAYS receives Phase 1's `base` for continuity. A Phase-2 failure keeps Phase 1
+// (the gap stays at phase:"conclusion"), never discarding the good Conclusion/Cost.
+async function generateGapCopy(gapId){
+  const g = S.automation.gaps.find(x => x.id === gapId);
+  if(!g || g.validation_status !== "validated") return;
+  if(S.automation.copyBusy[gapId]) return;                 // per-gap in-flight guard (mirrors assessing{})
+  S.automation.copyBusy[gapId] = true; renderAutomation(); // set before async; render shows "Generating…"
+  try{
+    let base;
+    try{
+      base = await aiJsonWithRetry({ system:GAPCOPY_CONCLUSION_SYSTEM, userMsg:gapConclusionUserMsg(g),
+        max_tokens:800, validate:validateConclusionCopy, what:`gapcopy/conclusion (${g.title || g.id})` });
+    }catch(e){ setAutomationMsg("Conclusion copy failed: " + e.message); return; }   // finally still clears
+
+    const engine = g.matched_engine ? (await ensureCatalog()).get(g.matched_engine) : null;
+    const buildStep = engine ? null : await buildStepForGap(g.id);   // only a formulate gap needs the build lookup
+    const src = gapSolutionSource(g, engine, buildStep);
+    let sol = { solution:null, savings:null }, phase = "conclusion";
+    if(!src.deferred){
+      try{
+        sol = await aiJsonWithRetry({ system:GAPCOPY_SOLUTION_SYSTEM, userMsg:gapSolutionUserMsg(g, src, base),
+          max_tokens:800, validate:validateSolutionCopy, what:`gapcopy/solution (${g.title || g.id})` });
+        phase = "complete";
+      }catch(e){ setAutomationMsg("Solution copy failed: " + e.message); }   // keep Phase 1; stay interim
+    }
+    const now = new Date().toISOString();
+    const copy = { ...base, ...sol, route:src.route, phase, generated_at:now,
+      solution_at: phase === "complete" ? now : null };
+    const { data, error } = await sb.from("gaps")
+      .update({ client_copy:copy, client_copy_fingerprint:fingerprintGapSource(g) })
+      .eq("id", gapId).select().single();
+    if(error){ setAutomationMsg("Copy save failed: " + error.message); return; }   // finally still clears
+    Object.assign(g, data);
+  } finally {
+    delete S.automation.copyBusy[gapId]; renderAutomation();   // clear after async, always
+  }
+}
+
+// The "once a build exists" event — called from the build-save flow for each formulate gap in
+// the saved scope. Runs ONLY Phase 2, feeding the stored Phase-1 copy for continuity. No render:
+// it upgrades in the background while the operator is on the Build Plan tab.
+async function advanceGapCopyPhase2(g, buildStep){
+  const c = g.client_copy;
+  if(!c || c.phase === "complete") return;
+  const src = gapSolutionSource(g, null, buildStep);
+  if(src.deferred) return;
+  if(S.automation.copyBusy[g.id]) return;          // shared per-gap lock with generateGapCopy
+  S.automation.copyBusy[g.id] = true;              // set (no render: background upgrade during build-save)
+  try{
+    let sol;
+    try{
+      sol = await aiJsonWithRetry({ system:GAPCOPY_SOLUTION_SYSTEM, userMsg:gapSolutionUserMsg(g, src, c),
+        max_tokens:800, validate:validateSolutionCopy, what:`gapcopy/solution (${g.title || g.id})` });
+    }catch(e){ setAutomationMsg("Solution copy failed: " + e.message); return; }   // finally still clears
+    const copy = { ...c, ...sol, route:src.route, phase:"complete", solution_at:new Date().toISOString() };
+    const { data, error } = await sb.from("gaps").update({ client_copy:copy }).eq("id", g.id).select().single();
+    if(error){ setAutomationMsg("Copy save failed: " + error.message); return; }   // finally still clears
+    Object.assign(g, data);
+  } finally {
+    delete S.automation.copyBusy[g.id];            // clear, always
+  }
+}
+
+// Once a build is saved, advance any FORMULATE gap's Gap Report copy from Phase 1 (Conclusion +
+// Cost) to Phase 2 (Solution + Savings), now grounded in the just-created build step — the "once
+// a build exists" event. Fire-and-forget: never blocks or faults the save. Cataloged gaps are
+// skipped (their Phase 2 already ran at validate from the catalog spec). advanceGapCopyPhase2
+// self-guards on copyBusy and no-ops when there's no Phase-1 base or it's already complete. Uses
+// the just-inserted `steps` in hand — no query — preferring the step that carries a deployment.
+function kickBuildGapCopy(draftGaps, steps){
+  for(const dg of (draftGaps || [])){
+    if(dg.matched_engine) continue;                                 // formulate gaps only
+    const g = S.automation.gaps.find(x => x.id === dg.id) || dg;    // upgrade the canonical UI object
+    const forGap = (steps || []).filter(s => s.gap_id === dg.id && s.agent === "automation");
+    const step = forGap.find(s => s.deployment) || forGap[0];
+    if(step) advanceGapCopyPhase2(g, step);
+  }
+}
+
+// Bulk backfill from the Gap Report header: generate for validated gaps with no copy or stale
+// copy. Sequential — a client has a handful of gaps, so no special throttling is needed.
+async function generateAllGapCopy(){
+  if(S.automation.copyAll) return;                                     // bulk re-entrancy guard (mirrors assessingAll)
+  const todo = clientValidatedGaps().filter(g => !gapDecidedAgainst(g))
+    .filter(g => !S.automation.copyBusy[g.id])                         // skip gaps already generating
+    .filter(g => g.client_copy == null || g.client_copy_fingerprint !== fingerprintGapSource(g));
+  if(!todo.length){ setAutomationMsg("All Gap Report copy is up to date."); return; }
+  S.automation.copyAll = true; renderAutomation();
+  try{
+    setAutomationMsg(`Generating copy for ${todo.length} gap${todo.length===1?"":"s"}…`);
+    for(const g of todo){ await generateGapCopy(g.id); }               // sequential; each self-guards too
+    setAutomationMsg("Gap Report copy generated.");
+  } finally {
+    S.automation.copyAll = false; renderAutomation();                  // clear, always
+  }
+}
+
+// One labeled client-copy section. Empty text → the designed interim ("pending") state:
+// muted/italic placeholder (a formulate gap's Solution/Savings before its build exists, or a
+// failed Phase 2). The tag renders only on a populated section.
+function gapCopySection(label, text, opts){
+  opts = opts || {};
+  const pending = !text;
+  const tag = (opts.tag && !pending) ? `<span class="doc-tag">${esc(opts.tag)}</span>` : "";
+  const body = pending ? esc(opts.pendingText || "Pending.") : esc(text);
+  return `<div class="doc-gap-sec${pending?" pending":""}"><div class="doc-gap-sec-h">${esc(label)}${tag}</div><div class="doc-gap-sec-b">${body}</div></div>`;
+}
+
+function renderGapReportGap(g){
+  const sev = esc(g.severity || "medium");
+  const head = `<div class="doc-gap-head"><span class="doc-gap-title">${esc(g.title||"Untitled gap")}</span><span class="doc-gap-sev">${sev}</span></div>`;
+  const busy = !!S.automation.copyBusy[g.id];
+  const c = g.client_copy;
+  // STATE 1 — ungenerated (also where a Phase-1 failure lands: no row written): raw notes + Generate.
+  if(!c){
+    const raw = `${g.problem?`<div class="doc-raw"><b>Problem:</b> ${esc(g.problem)}</div>`:""}${g.cost?`<div class="doc-raw"><b>Cost:</b> ${esc(g.cost)}</div>`:""}`;
+    const action = busy ? `<span class="doc-gap-when">Generating…</span>`
+      : `<button class="doc-link" onclick="generateGapCopy('${g.id}')">Generate professional copy</button>`;
+    return `<div class="doc-gap sev-${sev}">${head}
+      <div class="doc-gap-sec pending"><div class="doc-gap-sec-b">Professional copy not generated yet.</div></div>
+      <div class="doc-raw-label">Internal notes — not shown to the client</div>${raw}
+      <div class="doc-gap-actions">${action}</div></div>`;
+  }
+  // STATES 2-4 — copy present. phase "conclusion" is EITHER a formulate gap awaiting its build
+  // (deferred, expected) OR a cataloged gap whose Phase 2 failed (incomplete) — distinguished here.
+  const stale = g.client_copy_fingerprint !== fingerprintGapSource(g);
+  const deferred   = c.phase === "conclusion" && c.route === "formulated";
+  const incomplete = c.phase === "conclusion" && c.route !== "formulated";
+  const solPending = deferred ? "Solution finalizes once this gap's build is planned."
+                              : "Solution copy didn't finish generating — use Regenerate.";
+  const savPending = deferred ? "Savings finalize with the solution."
+                              : "Savings copy didn't finish generating — use Regenerate.";
+  const solTag = (c.route === "formulated" && c.solution) ? "Custom build — designed for this client" : "";
+  const sections =
+    gapCopySection("Problem", c.problem) +
+    gapCopySection("Cost of inaction", c.cost) +
+    gapCopySection("Solution", c.solution, { tag: solTag, pendingText: solPending }) +
+    gapCopySection("What it saves", c.savings, { pendingText: savPending });
+  const flags = [];
+  if(stale) flags.push(`<span class="doc-gap-flag">Source changed since generated</span>`);
+  if(incomplete) flags.push(`<span class="doc-gap-flag">Solution copy incomplete — regenerate</span>`);
+  const action = busy ? `<span class="doc-gap-when">Generating…</span>`
+    : `<button class="doc-link" onclick="generateGapCopy('${g.id}')">Regenerate</button>`;
+  return `<div class="doc-gap sev-${sev}">${head}${sections}<div class="doc-gap-actions">${flags.join("")}${action}</div></div>`;
+}
+
+// Gap Report is CLIENT-LEVEL (revision to what step 6 shipped): the FULL set of validated gaps
+// for the client — same source as Feasibility's Validated list — minus any the client has
+// decided not to pursue. NOT this build's accepted/frozen scope. Each gap renders its
+// client-facing synthesized copy (migration 013); raw problem/cost show ONLY in the ungenerated state.
+function renderGapReportBody(){
+  if(!S.automation.loaded){
+    document.getElementById("automation-body").innerHTML = `<div class="audit-empty">Loading gaps…</div>`;
+    loadAutomationData(S.activeClientId); return;
+  }
+  const gaps = clientValidatedGaps().filter(g => !gapDecidedAgainst(g));
+  const anyTodo = gaps.some(g => g.client_copy == null || g.client_copy_fingerprint !== fingerprintGapSource(g));
+  const genAll = (gaps.length && anyTodo)
+    ? `<div style="margin-top:12px"><button class="btn-primary" style="width:auto" onclick="generateAllGapCopy()" ${S.automation.copyAll?"disabled":""}>${S.automation.copyAll?"Generating…":"Generate all missing"}</button></div>`
+    : "";
+  const ready = gaps.filter(g => g.client_copy && g.client_copy.phase === "complete");
+  const notReady = gaps.length - ready.length;
+  const preview = gaps.length
+    ? `<div style="margin-top:12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+         <button class="btn-primary" style="width:auto" onclick="openClientReport()" ${ready.length?"":"disabled"}>Preview</button>
+         ${notReady ? `<span class="doc-gap-flag">${notReady} validated gap${notReady===1?"":"s"} not yet client-ready — generate copy first</span>` : ""}
+       </div>`
+    : "";
+  const rows = gaps.length ? gaps.map(renderGapReportGap).join("")
+    : `<div class="audit-empty">No validated gaps for this client yet — validate gaps on the Feasibility tab.</div>`;
+  document.getElementById("automation-body").innerHTML = `
+    <div class="doc-wrap">
+      <div class="doc-head">
+        <div class="doc-title">Gap Report</div>
+        <div class="doc-sub">${esc(S.activeClient.business_name)} · ${gaps.length} validated gap${gaps.length===1?"":"s"}</div>
+        <span class="doc-cue">Client-wide · all validated gaps, not scoped to this build</span>
+        ${genAll}
+        ${preview}
+      </div>
+      ${rows}
+    </div>`;
+}
+
+/* ============================================================
+   CLIENT-FACING GAP REPORT — branded preview / print view (round 2)
+   A SEPARATE presentational view over the operator Gap Report tab.
+   Reads the SAME data (clientValidatedGaps ∖ decided-against), shows ONLY
+   gaps whose client_copy is COMPLETE (all four client-safe sections).
+   No AI, no DB — pure render of client_copy. Design references two brand
+   docs: Reference-1 cover + Reference-2 two-column body / teal footer band.
+============================================================ */
+// Agency contact for the footer band. ONE named constant on purpose: when
+// multi-tenant operator accounts land (Order 20, deferred), this repoints to
+// the logged-in operator's own email in one line — no template hunt. The url
+// is assembled from string parts so no bare-URL token exists in source (an
+// editor/preview auto-linkifier would otherwise mangle the literal); the
+// runtime value is exactly the plain string www.baseleap.co (a client sees it
+// verbatim — never markdown/link syntax).
+const CR_CONTACT = { email: "mgmt.baseleap@gmail.com", url: "www.baseleap" + ".co" };
+
+const CR_SEV_ORDER = ["high","medium","low"];
+const CR_SEV_LABEL = { high:"High priority", medium:"Medium priority", low:"Low priority" };
+const CR_SEV_COLOR = { high:"#E24B4A", medium:"#EF9F27", low:"#639922" };
+
+// Eligible for the client deliverable: validated, not decided-against, copy COMPLETE.
+function clientReportGaps(){
+  return clientValidatedGaps()
+    .filter(g => !gapDecidedAgainst(g))
+    .filter(g => g.client_copy && g.client_copy.phase === "complete");
+}
+// Highest-priority gap = first in severity order (high→med→low), list order within a band.
+function topPriorityGap(gaps){
+  for(const sev of CR_SEV_ORDER){ const hit = gaps.find(g => (g.severity||"medium") === sev); if(hit) return hit; }
+  return gaps[0] || null;
+}
+// REAL severity counts (unknown severity folds into medium) — the only numbers on the cover.
+function crSevCounts(gaps){
+  const c = { high:0, medium:0, low:0 };
+  gaps.forEach(g => { const s = g.severity||"medium"; if(c[s] == null) c.medium++; else c[s]++; });
+  return { ...c, total: gaps.length };
+}
+
+// Abstract dashboard hero (Reference 1). Stat tiles carry ONLY real counts; the bar
+// chart's three bars encode the REAL high/med/low split (heights ∝ counts); the donut
+// ring is purely decorative and UNLABELED — it asserts no figure (no fabrication).
+function crBars(counts){
+  const max = Math.max(counts.high, counts.medium, counts.low, 1);
+  const bar = (n, color) => {
+    const h = Math.round(Math.max(n / max, 0.08) * 100);
+    return `<i style="height:${h}%;background:linear-gradient(180deg,${color},${color}44)"></i>`;
+  };
+  return bar(counts.high, CR_SEV_COLOR.high) + bar(counts.medium, CR_SEV_COLOR.medium) + bar(counts.low, CR_SEV_COLOR.low);
+}
+function crHero(counts){
+  const ml = counts.medium + counts.low;
+  return `<div class="cr-hero"><div class="cr-dash">
+    <div class="cr-dash-bar"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i><span>Gap Analysis</span></div>
+    <div class="cr-dash-body">
+      <div class="cr-tiles">
+        <div class="cr-tile"><div class="n">${counts.total}</div><div class="l">GAPS IDENTIFIED</div></div>
+        <div class="cr-tile"><div class="n">${counts.high}<b> high</b></div><div class="l">PRIORITY</div></div>
+        <div class="cr-tile"><div class="n">${ml}</div><div class="l">MEDIUM &amp; LOW</div></div>
+      </div>
+      <div class="cr-charts">
+        <div class="cr-panel"><div class="ph">Gaps by severity</div><div class="cr-bars">${crBars(counts)}</div></div>
+        <div class="cr-panel" style="text-align:center"><div class="ph">&nbsp;</div>
+          <svg viewBox="0 0 100 100" width="104" height="104" aria-hidden="true">
+            <circle cx="50" cy="50" r="38" fill="none" stroke="rgba(255,255,255,.10)" stroke-width="12"/>
+            <circle cx="50" cy="50" r="38" fill="none" stroke="#00D4A0" stroke-width="12" stroke-dasharray="150 240" stroke-linecap="round" transform="rotate(-90 50 50)"/>
+            <circle cx="50" cy="50" r="4" fill="#00D4A0"/>
+          </svg></div>
+      </div>
+    </div></div></div>`;
+}
+// One section of a gap = a labeled cell in the two-column grid (Reference 2).
+function crField(label, text){
+  return `<div><div class="cr-field-l">${esc(label)}</div><div class="cr-field-b">${esc(text)}</div></div>`;
+}
+function crGapCard(g){
+  const c = g.client_copy;
+  return `<div class="cr-gap">
+    <div class="cr-gap-title">${esc(g.title || "Untitled gap")}</div>
+    <div class="cr-grid2">
+      ${crField("Problem", c.problem)}
+      ${crField("Cost of inaction", c.cost)}
+      ${crField("Solution", c.solution)}
+      ${crField("What it saves", c.savings)}
+    </div>
+  </div>`;
+}
+// Static combined-stakes framing — NO AI, NO figures.
+function crSummaryFraming(n){
+  return n === 1
+    ? "The gap below is an opportunity where the business is currently losing time, revenue, or momentum that a targeted automation can recover."
+    : `Together, these ${n} gaps mark where the business is currently losing time, revenue, or momentum. Each is addressable with a targeted automation; the sections below explain what each one is costing and what fixing it returns.`;
+}
+function renderClientReport(){
+  const el = document.getElementById("client-report");
+  const gaps = clientReportGaps();
+  const client = esc(S.activeClient.business_name);
+  const counts = crSevCounts(gaps);
+  const groups = CR_SEV_ORDER.map(sev => {
+    const inSev = gaps.filter(g => (g.severity||"medium") === sev);
+    if(!inSev.length) return "";
+    return `<div class="cr-sev-group">
+      <div class="cr-sev-h cr-sev-${sev}"><span class="cr-sev-dot"></span>${esc(CR_SEV_LABEL[sev])}</div>
+      ${inSev.map(crGapCard).join("")}</div>`;
+  }).join("");
+  const n = counts.total, top = topPriorityGap(gaps);
+  const rec = top ? `<div class="cr-callout">
+      <div class="cr-callout-l">Recommended starting point</div>
+      <div class="cr-callout-t">${esc(top.title || "Untitled gap")}</div>
+      <div class="cr-callout-b">We suggest starting here — it's the highest-priority gap, and addressing it first delivers the fastest return.</div>
+    </div>` : "";
+  el.innerHTML = `
+    <div class="cr-toolbar">
+      <button class="btn-ghost" onclick="closeClientReport()">Close</button>
+      <button class="btn-primary" style="width:auto" onclick="window.print()">Print / Save as PDF</button>
+    </div>
+    <div class="cr-doc">
+      <div class="cr-cover">
+        <div class="cr-photo-band">${crHero(counts)}</div>
+        <div class="cr-title-band">
+          <div class="cr-cover-title">Gap Report</div>
+          <div class="cr-cover-div"></div>
+          <div class="cr-cover-meta">
+            <div class="cr-cover-for">Prepared for <b>${client}</b></div>
+            <div class="cr-cover-by">Prepared by BASELEAP</div>
+          </div>
+        </div>
+      </div>
+      <div class="cr-body">
+        <div class="cr-section">
+          <div class="cr-h2">Executive summary</div>
+          <div class="cr-summary"><b>${n} gap${n===1?"":"s"} identified.</b> ${crSummaryFraming(n)}</div>
+        </div>
+        <div class="cr-rule"></div>
+        ${groups}
+      </div>
+      <div class="cr-close">
+        ${rec}
+        <div class="cr-footer">
+          <div>
+            <div class="cr-footer-t">Ready to move forward?</div>
+            <div class="cr-footer-s">Contact us to scope your first build.</div>
+          </div>
+          <div class="cr-footer-c">${esc(CR_CONTACT.email)}<br>${esc(CR_CONTACT.url)}</div>
+        </div>
+      </div>
+    </div>`;
+}
+function openClientReport(){
+  if(!clientReportGaps().length){ setAutomationMsg("No client-ready gaps yet — generate copy first."); return; }
+  renderClientReport();
+  document.getElementById("client-report").style.display = "block";
+  crDashFit();                       // after display:block, so the box has real width
+  window.addEventListener("resize", crDashFitQueued);
+  document.addEventListener("keydown", crEscHandler);
+}
+function closeClientReport(){
+  document.getElementById("client-report").style.display = "none";
+  window.removeEventListener("resize", crDashFitQueued);
+  crDashFitCancel();
+  document.removeEventListener("keydown", crEscHandler);
+}
+function crEscHandler(e){ if(e.key === "Escape") closeClientReport(); }
+
+// The dashboard is a fixed-600px-design card scaled to fill the laptop screen mask
+// (.cr-hero). Required scale is heroWidth/600, and heroWidth differs between screen
+// (.cr-doc capped at 860px) and print (max-width:none -> page width), so it is
+// MEASURED, never hardcoded -- that mismatch is what made every fixed scale wrong in
+// one context or the other. Card and mask are both ratio 1.64, so this one factor
+// fills both axes exactly.
+function crDashFit(){
+  const hero = document.querySelector("#client-report .cr-hero");
+  const dash = document.querySelector("#client-report .cr-dash");
+  if(!hero || !dash) return;
+  const w = hero.getBoundingClientRect().width;
+  if(!w) return;   // not laid out yet -- leave the CSS fallback in place
+  dash.style.setProperty("--dash-scale", (w / 600).toFixed(5));
+}
+// Resize-only throttle. A drag fires `resize` many times per frame and each call
+// does a layout-forcing read (getBoundingClientRect) followed by a style write --
+// the read/write/read/write interleave that produces synchronous reflow per event.
+// Coalescing to one measurement per animation frame makes a drag cost one reflow
+// per frame no matter how many events arrive.
+// DELIBERATELY NOT USED FOR beforeprint / matchMedia: those must apply the scale
+// SYNCHRONOUSLY, because the browser snapshots print layout as soon as the handler
+// returns -- a deferred rAF callback would land after the snapshot and print the
+// stale scale, which is the exact failure this function exists to prevent.
+let crDashRaf = 0;
+function crDashFitQueued(){
+  if(crDashRaf) return;                       // a measurement is already queued for this frame
+  crDashRaf = requestAnimationFrame(() => { crDashRaf = 0; crDashFit(); });
+}
+function crDashFitCancel(){
+  if(crDashRaf){ cancelAnimationFrame(crDashRaf); crDashRaf = 0; }
+}
+// Print re-fits: .cr-doc drops its 860px cap for the page width, so the mask
+// resizes and the scale must be recomputed against the print layout. Synchronous
+// (see above) -- never routed through crDashFitQueued.
+window.addEventListener("beforeprint", crDashFit);
+if(window.matchMedia) window.matchMedia("print").addEventListener("change", crDashFit);
+
+function renderProposalBody(){
+  const d = buildDocData(); if(!d) return;
+  const rows = d.present.length ? d.present.map(g => {
+    const meta = [g.band, g.estimated_hours != null ? g.estimated_hours + "h" : null].filter(Boolean).join(" · ");
+    return `<div class="doc-line"><span class="doc-line-title">${esc(g.title||"Untitled gap")}</span>${meta ? `<span class="doc-line-meta">${esc(meta)}</span>` : ""}</div>`;
+  }).join("") : docEmpty(d.frozen);
+  document.getElementById("automation-body").innerHTML = `
+    <div class="doc-wrap">
+      <div class="doc-head">
+        <div class="doc-title">Proposal</div>
+        <div class="doc-sub">${esc(S.activeClient.business_name)} · scope &amp; indicative pricing</div>
+        ${docCue(d.frozen)}
+      </div>
+      ${d.err ? `<div class="doc-note">Couldn't load scope: ${esc(d.err)}</div>`
+        : rows
+          + (d.present.length ? `<div class="doc-total">${esc(finTotalsLine(d.present))}</div>` : "")
+          + docMissingNote(d.missing, "proposal")
+          + `<div class="doc-note">Indicative band-based pricing from validated feasibility. Market-rate cost reference and branded export are separate, later items.</div>`}
+    </div>`;
+}
 
 function renderFeasibilityBody(){
   const body = document.getElementById("automation-body");
   if(!S.automation.loaded){ body.innerHTML = `<div class="audit-empty">Loading gaps…</div>`; loadAutomationData(S.activeClientId); return; }
   const pending = S.automation.gaps.filter(g => g.validation_status === "pending");
-  const validated = S.automation.gaps.filter(g => g.validation_status === "validated");
+  const validated = clientValidatedGaps();
   const stackText = summarizeStack(S.activeClient.current_stack);
   body.innerHTML = `
     <div class="card">
@@ -2380,6 +3329,36 @@ function validateManifest(m, at){
       throw new Error(`${at}.requires_fields[${i}] needs name and type`);
     if(f.object !== undefined && f.object !== "contact" && f.object !== "opportunity")
       throw new Error(`${at}.requires_fields[${i}].object must be "contact" or "opportunity"`);
+  });
+  validateManifestSetupItems(m, at);
+}
+
+// The three non-tag/field setup-item kinds (Order 15.7). All OPTIONAL: absent
+// (undefined or null) means "this engine needs none" and reads as [] — every
+// manifest authored before these existed stays valid. Shapes are exactly the
+// verified GHL write matrix in .claude/skills/ghl-setup and nothing more: a
+// key we can't create through a probed endpoint has no business being declared.
+function validateManifestSetupItems(m, at){
+  const arr = (k) => {
+    if(m[k] == null) return null;
+    if(!Array.isArray(m[k])) throw new Error(`${at}.${k} must be an array`);
+    return m[k];
+  };
+  (arr("requires_calendars") || []).forEach((c, i) => {
+    if(!c || typeof c.name !== "string" || !c.name.trim())
+      throw new Error(`${at}.requires_calendars[${i}] needs a name`);
+  });
+  (arr("requires_custom_values") || []).forEach((v, i) => {
+    if(!v || typeof v.name !== "string" || !v.name.trim() || typeof v.value !== "string" || !v.value.trim())
+      throw new Error(`${at}.requires_custom_values[${i}] needs name and value`);
+  });
+  (arr("requires_pipelines") || []).forEach((p, i) => {
+    if(!p || typeof p.name !== "string" || !p.name.trim())
+      throw new Error(`${at}.requires_pipelines[${i}] needs a name`);
+    // stages ship inline in the create payload — a pipeline with no stages is
+    // not creatable, so an empty array is a hard error, not an empty default.
+    if(!Array.isArray(p.stages) || !p.stages.length || p.stages.some(s => typeof s !== "string" || !s.trim()))
+      throw new Error(`${at}.requires_pipelines[${i}].stages must be a non-empty array of non-empty stage names`);
   });
 }
 
@@ -2875,13 +3854,16 @@ function parseAndOrderPlan(raw, gaps, sweep){
 /* ---- generate / save / load ---- */
 function setBuildPlanMsg(t){ S.buildPlan.msg = t; const el = document.getElementById("buildplan-msg"); if(el) el.textContent = t; }
 
-// The planner reads only accepted gaps — selection is set on the Finalize subtab.
+// The planner reads only THIS build's accepted gaps. Selection is folder-scoped local
+// draft state (S.buildPlan.sel), NOT the client-level gaps.selection column (dormant per
+// migration 012) — so two builds for one client can carry different scopes. Ensures the
+// client's gaps are loaded, then filters validated-and-accepted-in-this-draft.
 async function loadAcceptedGaps(clientId){
-  const { data, error } = await sb.from("gaps").select("*")
-    .eq("client_id", clientId).eq("validation_status", "validated").eq("selection", "accepted")
-    .order("sort_order");
-  if(error) throw new Error("could not load accepted gaps: " + error.message);
-  return data || [];
+  if(!S.automation.loaded) await loadAutomationData(clientId);
+  const sel = S.buildPlan.sel || {};
+  return S.automation.gaps
+    .filter(g => g.validation_status === "validated" && sel[g.id] === "accepted")
+    .slice().sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
 }
 
 // Retry-once wiring: ONLY a contract violation (parseAndOrderPlan throw) earns the
@@ -2934,10 +3916,17 @@ async function generateBuildPlan(){
 // merged into a prior one). Leaves the folder grid locally (no DB delete — old rows +
 // their setup_runs audit stay intact; that FK is RESTRICT so audit is never destroyed).
 // Nothing is written until the operator saves the draft, so cancelling changes nothing.
-function startNewBuild(){
+// seed (optional) pre-selects gaps for a re-scope clone (§7); tab (optional) is the landing
+// tab. Cold "+ New build" passes neither → empty scope, opens on Feasibility.
+function startNewBuild(seed, tab){
   if(S.buildPlan.generating) return;
+  // Enter an UNSAVED new-build workspace (Flow 2): the 5-tab shell opens on the landing tab;
+  // nothing is written to the DB until the operator generates AND saves the draft.
   S.buildPlan.activePlanId = null; S.buildPlan.plan = null; S.buildPlan.steps = [];   // local only — no DB delete
-  generateBuildPlan();
+  S.buildPlan.draft = null; S.buildPlan.draftGaps = null; S.buildPlan.panel = null;
+  S.buildPlan.sel = (seed && typeof seed === "object") ? { ...seed } : {};   // pre-seeded re-scope, else cold start
+  S.buildPlan.composing = true; S.buildPlan.tab = tab || "feasibility";
+  renderAutomation();
 }
 
 // Draft steps → build_steps rows. Local refs become real UUIDs minted client-side,
@@ -2980,14 +3969,28 @@ async function saveBuildPlan(){
       await rollbackBuildPlan(plan.id, stepErr ? stepErr.message : `expected ${rows.length} rows back, got ${steps ? steps.length : 0}`);
       S.buildPlan.saving = false; renderAutomation(); return;
     }
+    // Freeze this build's scope: one accepted build_plan_gaps row per gap the draft was
+    // built from (draftGaps — the exact list the steps' gap_refs index into, so scope and
+    // steps can never disagree). Rollback cascades build_plan_gaps too (FK ON DELETE CASCADE).
+    const scopeRows = S.buildPlan.draftGaps.map(g => ({
+      build_plan_id: plan.id, gap_id: g.id, operator_id: S.user.id, selection: "accepted" }));
+    if(!scopeRows.length){ await rollbackBuildPlan(plan.id, "draft has no accepted gaps to freeze"); S.buildPlan.saving = false; renderAutomation(); return; }
+    const { data: scope, error: scopeErr } = await sb.from("build_plan_gaps").insert(scopeRows).select();
+    if(scopeErr || !scope || scope.length !== scopeRows.length){
+      await rollbackBuildPlan(plan.id, scopeErr ? scopeErr.message : `expected ${scopeRows.length} scope rows back, got ${scope ? scope.length : 0}`);
+      S.buildPlan.saving = false; renderAutomation(); return;
+    }
     S.buildPlan.plan = plan;
     S.buildPlan.steps = steps.slice().sort((a, b) => a.position - b.position);
     S.buildPlan.plans = [plan, ...S.buildPlan.plans];   // new folder, newest first
     S.buildPlan.activePlanId = plan.id;                 // open the just-saved build
+    S.buildPlan.composing = false; S.buildPlan.tab = "plan";   // leave the compose workspace; show the saved plan
     S.buildPlan.planCounts = { ...S.buildPlan.planCounts, [plan.id]: {
       engines: new Set(S.buildPlan.steps.filter(s => s.agent === "automation" && s.gap_id).map(s => s.gap_id)).size,
       steps: S.buildPlan.steps.length } };
-    S.buildPlan.draft = null; S.buildPlan.draftGaps = null;   // draft is spent — the saved rows are now the truth
+    // Phase-2 Gap Report copy for this build's formulate gaps (the "once a build exists" event).
+    kickBuildGapCopy(S.buildPlan.draftGaps, steps);
+    S.buildPlan.draft = null; S.buildPlan.draftGaps = null; S.buildPlan.sel = {};   // draft + its scope are spent — the saved rows are now the truth
     setBuildPlanMsg("Plan saved ✓");
   }catch(e){
     console.error("saveBuildPlan error:", e);
@@ -3050,6 +4053,7 @@ async function openBuildFolder(planId){
   const plan = S.buildPlan.plans.find(p => p.id === planId);
   if(!plan) return;
   S.buildPlan.activePlanId = planId; S.buildPlan.plan = plan; S.buildPlan.panel = null; S.buildPlan.steps = [];
+  S.buildPlan.composing = false; S.buildPlan.draft = null; S.buildPlan.draftGaps = null; S.buildPlan.sel = {}; S.buildPlan.del = null; S.buildPlan.tab = "plan";   // open on the Build Plan tab
   try{
     const { data: steps, error } = await sb.from("build_steps").select("*")
       .eq("build_plan_id", planId).order("position");
@@ -3061,24 +4065,77 @@ async function openBuildFolder(planId){
 
 // Back to the folder grid (clears the open plan; the grid re-renders from S.buildPlan.plans).
 function closeBuildFolder(){
+  // Leave the build workspace back to the folder grid. An unsaved draft is discarded here
+  // (nothing was written to the DB); a saved folder just closes.
   S.buildPlan.activePlanId = null; S.buildPlan.plan = null; S.buildPlan.steps = []; S.buildPlan.panel = null;
+  S.buildPlan.draft = null; S.buildPlan.draftGaps = null; S.buildPlan.composing = false; S.buildPlan.sel = {}; S.buildPlan.del = null; S.buildPlan.tab = "plan";
   renderAutomation();
 }
 
-/* ---- Finalize subtab: the gap-finalization decision surface ----
-   Bridge between the gap report and the build plan. Reads validated gaps,
-   writes gaps.selection (proposed | accepted | declined) — the one selection
-   state that drives BOTH the proposal and the build plan. Dark by design:
-   this is the presentation-adjacent surface. */
+/* ---- Delete / archive a build (§9). Two-layer safety: a setup_runs COUNT picks
+   delete-vs-archive for the UX; setup_runs.build_plan_id is an FK with NO cascade
+   (RESTRICT-like), so the DB itself BLOCKS a hard-delete that would orphan provisioning
+   history even if the count is wrong/RLS-hidden. setup_runs is NEVER deleted. ---- */
+
+// Entry: count this build's setup_runs, then branch to confirm (0) or blocked+archive (≥1).
+async function deleteBuild(){
+  const p = S.buildPlan.plan; if(!p || (S.buildPlan.del && S.buildPlan.del.busy)) return;
+  S.buildPlan.del = { phase:"checking" }; renderAutomation();
+  const { count, error } = await sb.from("setup_runs")
+    .select("id", { count:"exact", head:true }).eq("build_plan_id", p.id);
+  if(error){ S.buildPlan.del = { phase:"error", msg:"Couldn't check setup runs: " + error.message }; renderAutomation(); return; }
+  S.buildPlan.del = (count && count > 0) ? { phase:"blocked", runs:count } : { phase:"confirm" };
+  renderAutomation();
+}
+
+// 0-run path: verified hard-delete. build_steps + build_plan_gaps cascade; setup_runs (none)
+// would block it at the FK. .select() confirms exactly one row was removed.
+async function hardDeleteBuild(){
+  const p = S.buildPlan.plan; if(!p || !S.buildPlan.del || S.buildPlan.del.busy) return;
+  S.buildPlan.del = { phase:"confirm", busy:true }; renderAutomation();
+  const { data, error } = await sb.from("build_plans").delete().eq("id", p.id).select();
+  if(error || !data || data.length !== 1){
+    S.buildPlan.del = { phase:"error", msg:`Delete failed: ${error ? error.message : "no row returned"} — nothing was deleted.` };
+    renderAutomation(); return;
+  }
+  S.buildPlan.plans = (S.buildPlan.plans || []).filter(x => x.id !== p.id);
+  S.buildPlan.del = null; S.buildPlan.loaded = false; S.buildPlan.msg = "Build deleted.";
+  closeBuildFolder();   // to the grid; loaded=false forces a fresh reload
+}
+
+// ≥1-run path: archive via status (never delete — the audit trail the FK protects).
+// UPDATE does NOT re-stamp operator_id (RLS already covers it). .select().single() verifies.
+async function archiveBuild(){
+  const p = S.buildPlan.plan; if(!p || !S.buildPlan.del || S.buildPlan.del.busy) return;
+  S.buildPlan.del = { phase:"blocked", runs:(S.buildPlan.del.runs || 0), busy:true }; renderAutomation();
+  const { data, error } = await sb.from("build_plans").update({ status:"archived" }).eq("id", p.id).select().single();
+  if(error || !data){
+    S.buildPlan.del = { phase:"error", msg:`Archive failed: ${error ? error.message : "no row returned"}.` };
+    renderAutomation(); return;
+  }
+  S.buildPlan.plans = (S.buildPlan.plans || []).map(x => x.id === p.id ? data : x);
+  S.buildPlan.del = null; S.buildPlan.loaded = false; S.buildPlan.msg = "Build archived.";
+  closeBuildFolder();
+}
+
+function cancelDelete(){ S.buildPlan.del = null; renderAutomation(); }
+function toggleArchived(){ S.buildPlan.showArchived = !S.buildPlan.showArchived; renderAutomation(); }
+
+/* ---- Finalize tab: the gap-finalization decision surface (folder-scoped) ----
+   Bridge between feasibility and the build plan. Reads this client's validated gaps,
+   writes the ACTIVE BUILD's local scope map (S.buildPlan.sel: {gapId: accepted|declined};
+   undecided = absent) — committed to build_plan_gaps on Save (Flow 2), not to the dormant
+   client-level gaps.selection column. Dark by design: presentation-adjacent surface. */
 const BAND_RANGES = { simple:[500,1000], standard:[1500,3000], complex:[3500,6000] };
 
 function finSplit(){
+  const sel = S.buildPlan.sel || {};
   const validated = S.automation.gaps.filter(g => g.validation_status === "validated");
   return {
     validated,
     pending: S.automation.gaps.filter(g => g.validation_status === "pending").length,
-    accepted: validated.filter(g => g.selection === "accepted"),
-    undecided: validated.filter(g => g.selection !== "accepted" && g.selection !== "declined"),
+    accepted: validated.filter(g => sel[g.id] === "accepted"),
+    undecided: validated.filter(g => sel[g.id] !== "accepted" && sel[g.id] !== "declined"),
   };
 }
 
@@ -3116,61 +4173,38 @@ function renderFinalizeBar(f){
 }
 
 function finalizeToPlan(){
-  S.automation.tab = "plan";
-  // land on the build-folder grid — starting a new build is explicit ("+ New build"),
-  // never auto-generated (a client may already have segregated build folders).
-  S.buildPlan.activePlanId = null; S.buildPlan.plan = null; S.buildPlan.steps = []; S.buildPlan.panel = null;
+  // In a build workspace, the Finalize CTA advances to the Build Plan tab, where Generate
+  // lives (composing) or the saved plan shows (open folder).
+  S.buildPlan.tab = "plan";
   renderAutomation();
 }
 
-function setFinalizeMsg(t){ S.automation.finMsg = t; const el = document.getElementById("finalize-msg"); if(el) el.textContent = t; }
-
-// One tap = one verified write. Clicking the already-selected side reverts to
-// proposed (built-in undo). UPDATE never re-stamps operator_id (RLS covers it);
-// .select().single() forces verification and we re-render from the returned row.
-async function setGapSelection(gapId, target){
-  const g = S.automation.gaps.find(x => x.id === gapId);
-  if(!g || S.automation.finBusy[gapId] || S.automation.finBulkBusy) return;
-  const selection = g.selection === target ? "proposed" : target;
-  S.automation.finBusy[gapId] = true; renderAutomation();
-  const { data, error } = await sb.from("gaps").update({ selection }).eq("id", gapId).select().single();
-  delete S.automation.finBusy[gapId];
-  if(error){ setFinalizeMsg("Selection failed: " + error.message); renderAutomation(); return; }
-  Object.assign(g, data);                 // trust the persisted row, not the local patch
-  setFinalizeMsg("");
+// Selection is folder-scoped LOCAL draft state (S.buildPlan.sel), committed to
+// build_plan_gaps only on Save (Flow 2 — nothing written until save). One tap flips the
+// gap in the draft's scope map; tapping the already-selected side clears it back to
+// undecided (built-in undo). No DB write here — the picker is instant and can't fail.
+function setGapSelection(gapId, target){
+  const sel = S.buildPlan.sel;
+  if(sel[gapId] === target) delete sel[gapId];   // toggle off → undecided (absent from map)
+  else sel[gapId] = target;
   renderAutomation();
 }
 
-// Bulk write: one UPDATE ... IN(ids) with a returned-count check. A short count
-// means RLS or drift ate rows — surface it and reload from DB truth, never guess.
-async function bulkSetSelection(ids, selection, label){
-  if(!ids.length || S.automation.finBulkBusy) return;
-  S.automation.finBulkBusy = true; renderAutomation();
-  const { data, error } = await sb.from("gaps").update({ selection }).in("id", ids).select();
-  S.automation.finBulkBusy = false;
-  if(error || !data || data.length !== ids.length){
-    setFinalizeMsg(`${label} failed: ${error ? error.message : `expected ${ids.length} rows back, got ${data ? data.length : 0}`} — reloading from database.`);
-    S.automation.loaded = false; renderAutomation();
-    return;
-  }
-  data.forEach(row => { const g = S.automation.gaps.find(x => x.id === row.id); if(g) Object.assign(g, row); });
-  setFinalizeMsg(label + " ✓");
-  renderAutomation();
-}
-
-function acceptAllGaps(){ const f = finSplit(); bulkSetSelection(f.validated.filter(g => g.selection !== "accepted").map(g => g.id), "accepted", "Accept all"); }
-function declineRemainingGaps(){ const f = finSplit(); bulkSetSelection(f.undecided.map(g => g.id), "declined", "Decline remaining"); }
-function resetAllSelections(){ const f = finSplit(); bulkSetSelection(f.validated.filter(g => g.selection === "accepted" || g.selection === "declined").map(g => g.id), "proposed", "Reset"); }
+// Bulk ops over the same local map — no DB round-trip, no returned-count check needed.
+function acceptAllGaps(){ finSplit().validated.forEach(g => { S.buildPlan.sel[g.id] = "accepted"; }); renderAutomation(); }
+function declineRemainingGaps(){ finSplit().undecided.forEach(g => { S.buildPlan.sel[g.id] = "declined"; }); renderAutomation(); }
+function resetAllSelections(){ S.buildPlan.sel = {}; renderAutomation(); }
 
 function renderFinCard(g){
-  const state = g.selection === "accepted" ? "accepted" : g.selection === "declined" ? "declined" : "proposed";
+  const sel = S.buildPlan.sel[g.id];
+  const state = sel === "accepted" ? "accepted" : sel === "declined" ? "declined" : "proposed";
   const badges = [
     g.severity || "medium",
     g.matched_engine || (g.is_new_template ? "new template" : null),
     g.band, g.estimated_hours != null ? g.estimated_hours + "h" : null,
   ].filter(Boolean).map(b => `<span class="fin-badge">${esc(String(b))}</span>`).join("");
   return `
-    <div class="fin-card ${state}${S.automation.finBusy[g.id] ? " busy" : ""}">
+    <div class="fin-card ${state}">
       <div class="fin-card-top">
         <div class="fin-title">${esc(g.title)}</div>
         <div class="fin-seg" role="group" aria-label="Selection for ${esc(g.title)}">
@@ -3185,36 +4219,114 @@ function renderFinCard(g){
 
 function renderFinalizeBody(){
   const body = document.getElementById("automation-body");
+  // Mode B — SAVED folder: scope is frozen (build_plan_gaps). The read-only "Scope locked"
+  // record is step 4; a minimal placeholder stands in until then so the active picker never
+  // renders against an empty local map for an already-saved build.
+  if(S.buildPlan.activePlanId && !S.buildPlan.composing){
+    // Load this folder's frozen scope (build_plan_gaps ⋈ gaps) once; the scopePlanId guard
+    // forces a reload when a different folder is opened.
+    if(S.buildPlan.scope === null || S.buildPlan.scopePlanId !== S.buildPlan.activePlanId){
+      body.innerHTML = `<div class="audit-empty">Loading scope…</div>`; loadBuildScope(S.buildPlan.activePlanId); return;
+    }
+    body.innerHTML = renderScopeLocked();
+    return;
+  }
+  // Mode A — UNSAVED compose session: the active accept/decline/reset picker, writing to
+  // the draft's local scope map (S.buildPlan.sel). Nothing persists until Save.
   if(!S.automation.loaded){ body.innerHTML = `<div class="audit-empty">Loading gaps…</div>`; loadAutomationData(S.activeClientId); return; }
   const f = finSplit();
-  const bulkDis = S.automation.finBulkBusy ? "disabled" : "";
   body.innerHTML = `
     <div class="fin-surface"><div class="fin-col">
       ${renderFinalizeBar(f)}
       ${f.validated.length ? `
         <div class="fin-bulk">
-          <button onclick="acceptAllGaps()" ${bulkDis}>Accept all</button>
-          <button onclick="declineRemainingGaps()" ${bulkDis || (f.undecided.length ? "" : "disabled")}>Decline remaining</button>
-          <button onclick="resetAllSelections()" ${bulkDis}>Reset all to proposed</button>
+          <button onclick="acceptAllGaps()">Accept all</button>
+          <button onclick="declineRemainingGaps()" ${f.undecided.length ? "" : "disabled"}>Decline remaining</button>
+          <button onclick="resetAllSelections()">Reset all to proposed</button>
         </div>
         <div id="fin-list">${f.validated.map(renderFinCard).join("")}</div>`
         : `<div class="fin-empty">No validated gaps yet — qualify gaps on the Feasibility tab first.</div>`}
       ${f.pending ? `<div class="fin-note">${f.pending} gap${f.pending === 1 ? " is" : "s are"} still awaiting feasibility — assess ${f.pending === 1 ? "it" : "them"} on the Feasibility tab if ${f.pending === 1 ? "it's" : "they're"} in scope.</div>` : ""}
-      <div class="fin-note" id="finalize-msg">${esc(S.automation.finMsg)}</div>
     </div></div>`;
+}
+
+// Load a saved folder's FROZEN scope — build_plan_gaps joined to gaps for display. Default
+// embed = LEFT join: a gap since removed/hidden from the client pool returns gaps=null and
+// renders "gap no longer in catalog" rather than vanishing (§7).
+async function loadBuildScope(planId){
+  S.buildPlan.scopeErr = "";
+  try{
+    const { data, error } = await sb.from("build_plan_gaps")
+      .select("gap_id, selection, gaps(id, title, band, estimated_hours, problem, cost, severity)")
+      .eq("build_plan_id", planId).eq("selection", "accepted").order("created_at");
+    if(error) throw new Error(error.message);
+    S.buildPlan.scope = data || [];
+  }catch(e){
+    S.buildPlan.scope = []; S.buildPlan.scopeErr = e.message;
+  }
+  S.buildPlan.scopePlanId = planId;
+  renderAutomation();
+}
+
+// The post-save "Scope locked" record (§7): a Volt lock banner naming WHY the buttons are
+// gone (immutable record) + an enabled re-scope CTA + a read-only ✓ list of included gaps.
+function renderScopeLocked(){
+  const rows = S.buildPlan.scope || [];
+  const hours = rows.reduce((t, r) => t + ((r.gaps && r.gaps.estimated_hours) || 0), 0);
+  const list = rows.map(r => {
+    const g = r.gaps;
+    if(!g) return `<div class="scope-row missing"><span class="scope-check">✓</span><span class="scope-title">— gap no longer in catalog</span></div>`;
+    const meta = [g.band, g.estimated_hours != null ? g.estimated_hours + "h" : null].filter(Boolean).join(" · ");
+    return `<div class="scope-row"><span class="scope-check">✓</span><span class="scope-title">${esc(g.title)}</span>${meta ? `<span class="scope-meta">${esc(meta)}</span>` : ""}</div>`;
+  }).join("");
+  return `
+    <div class="fin-surface"><div class="fin-col">
+      <div class="scope-lock">
+        <div class="scope-lock-h">🔒 Scope locked</div>
+        <div class="scope-lock-msg">This build's scope was set when it was generated and is frozen — a saved build is an immutable record. To change which gaps are included, start a new build.</div>
+        <button class="scope-lock-cta" onclick="reScopeBuild()">+ Start a new build to re-scope</button>
+      </div>
+      ${S.buildPlan.scopeErr
+        ? `<div class="fin-note">Couldn't load this build's scope: ${esc(S.buildPlan.scopeErr)}</div>`
+        : `<div class="scope-included">
+            <div class="scope-included-h">Included in this build · ${rows.length} gap${rows.length === 1 ? "" : "s"}${hours ? ` · ${hours}h` : ""}</div>
+            ${rows.length ? list : `<div class="fin-empty">No gaps recorded for this build.</div>`}
+          </div>`}
+    </div></div>`;
+}
+
+// Re-scope = start a NEW build (append-only; the saved one stays frozen) pre-seeded with THIS
+// folder's included gaps, landing on Finalize so the cloned selection is visible to adjust.
+function reScopeBuild(){
+  const seed = {};
+  (S.buildPlan.scope || []).forEach(r => { if(r.gaps) seed[r.gaps.id] = "accepted"; });
+  startNewBuild(seed, "finalize");
 }
 
 /* ---- Build-plan subtab UI ---- */
 function renderBuildPlanBody(){
   const body = document.getElementById("automation-body");
   if(!S.buildPlan.loaded){ body.innerHTML = `<div class="audit-empty">Loading builds…</div>`; loadBuildPlanData(S.activeClientId); return; }
-  // precedence: a draft (new build being reviewed) takes over; else an OPEN folder
-  // shows its saved plan; else the client's folder grid.
+  // Build Plan TAB (grid moved to module top): a draft (new build being reviewed) takes
+  // over; else an OPEN folder shows its saved plan; else (composing a new build, nothing
+  // generated yet) the Generate prompt.
   const inner = S.buildPlan.draft ? renderDraftReview()
     : S.buildPlan.activePlanId ? renderSavedPlan()
-    : renderBuildFolderGrid();
+    : renderComposeGenerate();
   body.innerHTML = inner + `<div class="msg" id="buildplan-msg" style="margin-top:10px">${esc(S.buildPlan.msg)}</div>`;
   autoSizeNotes();
+}
+
+// Build Plan tab while composing a new build (no draft yet): accept gaps on Finalize,
+// then generate. Generate lives here now — "+ New build" no longer auto-generates.
+function renderComposeGenerate(){
+  const gen = S.buildPlan.generating;
+  return `
+    <div class="card">
+      <div class="phase-t">New build</div>
+      <div class="msg" style="margin-bottom:12px">Accept this build's gaps on the Finalize tab, then generate the plan. Nothing is saved until you save the draft.</div>
+      <button class="btn-primary" style="width:auto" onclick="generateBuildPlan()" ${gen?"disabled":""}>${gen ? (S.buildPlan.msg || "Generating…") : "Generate build plan"}</button>
+    </div>`;
 }
 
 // Scroller fix: the notes content (review flag / spec / deployment dumps) lays out
@@ -3230,9 +4342,12 @@ function autoSizeNotes(){
 // The build-folder grid — one card per build_plans row for the active client. Each is a
 // segregated build (its own engines); "+ New build" starts another. Empty → prompt.
 function renderBuildFolderGrid(){
-  const plans = S.buildPlan.plans || [], gen = S.buildPlan.generating;
+  const all = S.buildPlan.plans || [], gen = S.buildPlan.generating;
+  const archived = all.filter(p => (p.status || "") === "archived");
+  const active = all.filter(p => (p.status || "") !== "archived");
+  const showArch = S.buildPlan.showArchived;
   const newCard = `<button class="bp-folder bp-folder-new" onclick="startNewBuild()" ${gen?"disabled":""}><span class="bp-folder-plus">+</span> ${gen?"Generating…":"New build"}</button>`;
-  if(!plans.length){
+  if(!all.length){
     return `
       <div class="card">
         <div class="phase-t">No builds yet</div>
@@ -3240,23 +4355,30 @@ function renderBuildFolderGrid(){
         <div class="bp-folders">${newCard}</div>
       </div>`;
   }
-  const cards = plans.map(p => {
+  // Archived hidden by default (§9/§10); the toggle appends them (dimmed) after the active set.
+  const shown = showArch ? active.concat(archived) : active;
+  const cards = shown.map(p => {
     const c = (S.buildPlan.planCounts && S.buildPlan.planCounts[p.id]) || { engines:0, steps:0 };
     const when = p.created_at ? new Date(p.created_at).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"}) : "";
     const st = p.status || "queued";
+    const isArch = st === "archived";
     return `
-      <button class="bp-folder" onclick="openBuildFolder('${p.id}')">
+      <button class="bp-folder${isArch?" archived":""}" onclick="openBuildFolder('${p.id}')">
         <div class="bp-folder-tab"></div>
         <div class="bp-folder-name">${esc(p.title || "Untitled build")}</div>
         <div class="bp-folder-meta">${c.engines} engine${c.engines===1?"":"s"} · ${c.steps} step${c.steps===1?"":"s"}</div>
         <div class="bp-folder-foot"><span class="bp-folder-status st-${esc(st)}">${esc(st)}</span><span class="bp-folder-date">${esc(when)}</span></div>
       </button>`;
   }).join("");
+  const archToggle = archived.length
+    ? `<button class="bp-arch-toggle" onclick="toggleArchived()">${showArch ? "Hide" : "Show"} archived (${archived.length})</button>`
+    : "";
   return `
     <div class="card">
       <div class="phase-h">Builds${S.activeClient ? " · " + esc(S.activeClient.business_name) : ""}</div>
-      <div class="phase-t">${plans.length} build${plans.length===1?"":"s"} for this client</div>
+      <div class="phase-t">${active.length} active build${active.length===1?"":"s"} for this client${archived.length ? ` · ${archived.length} archived` : ""}</div>
       <div class="bp-folders">${cards}${newCard}</div>
+      ${archToggle}
     </div>`;
 }
 
@@ -3754,11 +4876,15 @@ function renderSavedPlan(){
   const done = steps.filter(s => s.status === "done").length;
   const head = `
     <div class="card">
-      <button class="bp-back" onclick="closeBuildFolder()">← All builds</button>
+      <div class="bp-head-top">
+        <button class="bp-back" onclick="closeBuildFolder()">← All builds</button>
+        ${S.buildPlan.del ? "" : `<button class="bp-del-btn" onclick="deleteBuild()">Delete build</button>`}
+      </div>
       <div class="phase-h">Build plan · ${esc(p.status || "")}</div>
       <div class="phase-t">${esc(p.title || "Untitled plan")}</div>
       <div class="msg">${esc(p.summary || "")}</div>
       <div class="msg" style="margin-top:6px">${done} of ${steps.length} steps done</div>
+      ${renderDeletePanel()}
     </div>`;
   // CRM always shown; App / Agent Builder only when steps of that track exist.
   const sections = TRACK_ORDER
@@ -3766,6 +4892,27 @@ function renderSavedPlan(){
     .map(tr => renderPlanSection(tr, steps.filter(s => stepTrack(s) === tr)))
     .join("");
   return head + renderManifestCard(steps) + sections;
+}
+
+// Delete/archive control panel (§9). Idle → "" (the header shows just the Delete button);
+// otherwise a phase-specific inline panel — no native confirm() dialog (state-driven via
+// S.buildPlan.del: {phase:"checking"|"confirm"|"blocked"|"error", runs?, busy?, msg?}).
+function renderDeletePanel(){
+  const del = S.buildPlan.del;
+  if(!del) return "";
+  if(del.phase === "checking") return `<div class="bp-del-panel"><span>Checking setup runs…</span></div>`;
+  if(del.phase === "error") return `<div class="bp-del-panel danger"><span>${esc(del.msg)}</span>
+    <div class="bp-del-actions"><button class="bp-del-no" onclick="cancelDelete()">Dismiss</button></div></div>`;
+  if(del.phase === "blocked") return `<div class="bp-del-panel"><span>This build has ${del.runs} setup run${del.runs===1?"":"s"} recorded — its provisioning history can't be safely deleted. Archive it instead.</span>
+    <div class="bp-del-actions">
+      <button class="bp-del-archive" onclick="archiveBuild()" ${del.busy?"disabled":""}>${del.busy?"Archiving…":"Archive instead"}</button>
+      <button class="bp-del-no" onclick="cancelDelete()" ${del.busy?"disabled":""}>Cancel</button>
+    </div></div>`;
+  return `<div class="bp-del-panel danger"><span>Delete this build permanently? Its steps and frozen scope go with it. This can't be undone.</span>
+    <div class="bp-del-actions">
+      <button class="bp-del-yes" onclick="hardDeleteBuild()" ${del.busy?"disabled":""}>${del.busy?"Deleting…":"Confirm delete"}</button>
+      <button class="bp-del-no" onclick="cancelDelete()" ${del.busy?"disabled":""}>Cancel</button>
+    </div></div>`;
 }
 
 // A test-gate is an ordinary automation step the planner ends an engine's chain
@@ -4122,13 +5269,49 @@ const GHL_DATATYPE = { text: "TEXT", number: "NUMERICAL", currency: "MONETORY", 
 
 function setSetupMsg(t){ S.setup.msg = t; const el = document.getElementById("setup-msg"); if(el) el.textContent = t; }
 
+/* The chat column is a SIBLING of #setup-body, never a child. renderSetupBody()
+   re-renders #setup-body alone after every setup action and after the initial data
+   load; nesting the chat inside it would wipe the panel's DOM — losing composer text
+   and scroll position — on each of those. Keeping them siblings means the setup
+   column and the chat column re-render completely independently. */
 function renderSetup(){
+  const chat = S.setup.chatOpen;
   document.getElementById("content").innerHTML = `
-    <div class="panel-title">${MODULES.setup.title}</div>
-    <div class="panel-sub">${esc(S.activeClient.business_name)} — ${MODULES.setup.sub}</div>
-    <div id="setup-body"></div>`;
+    <div class="setup-head">
+      <div>
+        <div class="panel-title">${MODULES.setup.title}</div>
+        <div class="panel-sub">${esc(S.activeClient.business_name)} — ${MODULES.setup.sub}</div>
+      </div>
+      ${chat ? "" : `<button class="btn-ghost" onclick="openSetupChat()">Ask Setup Agent</button>`}
+    </div>
+    <div class="${chat ? "setup-split" : ""}">
+      <div class="setup-col"><div id="setup-body"></div></div>
+      ${chat ? renderSetupChatPanel() : ""}
+    </div>`;
   renderSetupBody();
 }
+
+/* Layout shell only — no AI, no message model, no persistence yet (deliberately a
+   separate cycle). The message list is an empty region; the composer is inert. */
+function renderSetupChatPanel(){
+  return `<div class="setup-chat">
+    <div class="setup-chat-head">
+      <span>Setup Agent</span>
+      <button class="setup-chat-x" onclick="closeSetupChat()" title="Close chat" aria-label="Close chat">✕</button>
+    </div>
+    <div class="setup-chat-log" id="setup-chat-log">
+      <div class="setup-chat-empty">Ask about this client's GHL setup — what the run will create, what already exists, or why a step is blocked.</div>
+    </div>
+    <div class="setup-chat-compose">
+      <textarea id="setup-chat-input" class="notes" placeholder="Message the Setup Agent…"></textarea>
+    </div>
+  </div>`;
+}
+
+/* Both just move state and re-render — render() derives the sidebar override from
+   S.setup.chatOpen, so neither touches #app classes or localStorage directly. */
+function openSetupChat(){ S.setup.chatOpen = true; render(); }
+function closeSetupChat(){ S.setup.chatOpen = false; render(); }
 
 function renderSetupBody(){
   const el = document.getElementById("setup-body"); if(!el) return;
@@ -4234,22 +5417,46 @@ function setupGateMissing(){
 }
 
 // Union of every saved step manifest — same dedupe rules as the planner:
-// tags by exact string, fields by object:name (fieldKey). "[…]" names are
-// per-client parameterized schemes (documented convention) — never created
-// literally; surfaced separately for hand-naming.
+// tags by exact string, fields by object:name (fieldKey), and calendars /
+// custom values / pipelines by name. "[…]" names are per-client parameterized
+// schemes (documented convention) — never created literally; surfaced
+// separately for hand-naming.
 function setupManifestUnion(steps){
   const tags = new Set(), fields = new Map();
+  const cals = new Map(), cvs = new Map(), pipes = new Map();
   steps.filter(s => s.manifest && !s.manifest.tbd).forEach(s => {
     const m = s.manifest;
     [...(m.creates_tags || []), ...(m.requires_tags || [])].forEach(t => tags.add(t));
     (m.requires_fields || []).forEach(f => { const k = fieldKey(f); if(!fields.has(k)) fields.set(k, f); });
+    unionByName(cals, m.requires_calendars);
+    unionByName(cvs, m.requires_custom_values);
+    unionByName(pipes, m.requires_pipelines);
   });
   const all = [...tags], allF = [...fields.values()];
+  const allC = [...cals.values()], allV = [...cvs.values()], allP = [...pipes.values()];
+  // a bracketed custom-value VALUE is per-client too — creating it literally
+  // would write the placeholder text into the client's account.
+  const param = (x) => x.name.startsWith("[") || (typeof x.value === "string" && x.value.startsWith("["));
   return {
     tags: all.filter(t => !t.startsWith("[")),
     fields: allF.filter(f => !f.name.startsWith("[")),
-    paramItems: all.filter(t => t.startsWith("[")).concat(allF.filter(f => f.name.startsWith("[")).map(fieldLabel)),
+    calendars: allC.filter(c => !param(c)),
+    customValues: allV.filter(v => !param(v)),
+    pipelines: allP.filter(p => !param(p)),
+    paramItems: all.filter(t => t.startsWith("["))
+      .concat(allF.filter(f => f.name.startsWith("[")).map(fieldLabel))
+      .concat(allC.filter(param).map(c => `${c.name} (calendar)`))
+      .concat(allV.filter(param).map(v => `${v.name} (custom value)`))
+      .concat(allP.filter(param).map(p => `${p.name} (pipeline)`)),
   };
+}
+
+// First-wins dedupe by CASE-INSENSITIVE name: the create is by name and GHL
+// rejects a same-name create regardless of case, so two spellings of one name
+// must never both reach the create loop. The authored casing is preserved as
+// the stored value.
+function unionByName(map, list){
+  (list || []).forEach(x => { const k = x.name.toLowerCase(); if(!map.has(k)) map.set(k, x); });
 }
 
 async function preflightSetup(){
@@ -4278,8 +5485,24 @@ function computeSetupDiff(){
   const fKeys = new Set(pf.fields.map(f => (f.model || "contact") + ":" + (f.name || "").toLowerCase()));
   const tagsToCreate = u.tags.filter(t => !tagNames.has(t.toLowerCase()));
   const fieldsToCreate = u.fields.filter(f => !fKeys.has(fieldObject(f) + ":" + f.name.toLowerCase()));
-  return { union: u, tagsToCreate, fieldsToCreate,
-    tagsExisting: u.tags.length - tagsToCreate.length, fieldsExisting: u.fields.length - fieldsToCreate.length };
+  const calendarsToCreate = missingByName(u.calendars, pf.calendars);
+  const customValuesToCreate = missingByName(u.customValues, pf.customValues);
+  const pipelinesToCreate = missingByName(u.pipelines, pf.pipelines);
+  return { union: u, tagsToCreate, fieldsToCreate, calendarsToCreate, customValuesToCreate, pipelinesToCreate,
+    tagsExisting: u.tags.length - tagsToCreate.length, fieldsExisting: u.fields.length - fieldsToCreate.length,
+    calendarsExisting: u.calendars.length - calendarsToCreate.length,
+    customValuesExisting: u.customValues.length - customValuesToCreate.length,
+    pipelinesExisting: u.pipelines.length - pipelinesToCreate.length };
+}
+
+// Declared-minus-live by name, case-insensitive — same rule as tags. The match
+// is on NAME ONLY, deliberately: an existing pipeline whose stages differ, or a
+// custom value holding a different value, counts as "already exists" and is
+// left untouched. Setup creates what is missing and never mutates an asset the
+// client already has.
+function missingByName(declared, inventory){
+  const have = new Set((inventory || []).map(x => (x.name || "").toLowerCase()));
+  return declared.filter(x => !have.has(x.name.toLowerCase()));
 }
 
 function renderSetupRunCard(){
@@ -4292,7 +5515,7 @@ function renderSetupRunCard(){
     inner = `<button class="btn-primary" style="width:auto" onclick="preflightSetup()" ${S.setup.busy ? "disabled" : ""}>Preflight &amp; preview</button>
       <div class="msg" style="margin-top:6px">Reads the live sub-account inventory first — nothing is written until you confirm the preview.</div>`;
   } else {
-    const d = S.setup.diff, n = d.tagsToCreate.length + d.fieldsToCreate.length;
+    const d = S.setup.diff, n = setupCreateCount(d);
     inner = renderSetupDiff(d) + `
       <div style="display:flex;gap:8px;margin-top:10px">
         <button class="btn-primary" style="width:auto" onclick="confirmRunSetup()" ${S.setup.running ? "disabled" : ""}>
@@ -4303,13 +5526,32 @@ function renderSetupRunCard(){
   return `<div class="card"><div class="phase-h">Run GHL setup — ${esc((S.buildPlan.plan && S.buildPlan.plan.title) || "build plan")}</div>${inner}</div>`;
 }
 
+// The button's promise must equal what the run loop writes — one source of truth
+// for the count so the two can never drift as kinds are added.
+function setupCreateCount(d){
+  return d.tagsToCreate.length + d.fieldsToCreate.length + d.calendarsToCreate.length
+    + d.customValuesToCreate.length + d.pipelinesToCreate.length;
+}
+
+// Preview labels: a custom value's VALUE and a pipeline's STAGE ORDER are part
+// of the create payload, so both are shown — setup never mutates an existing
+// asset (see missingByName), which makes this preview the only chance to catch
+// a wrong value or a mis-ordered stage list before it is written.
+function cvLabel(v){ return `${v.name} = ${v.value}`; }
+function pipeLabel(p){ return `${p.name} (${p.stages.join(" → ")})`; }
+
 function renderSetupDiff(d){
   const pf = S.setup.preflight;
+  const u = d.union;
+  const line = (label, toCreate, existing, fmt) => `<div class="mf-line"><span class="mf-k">${label}:</span> ${toCreate.length} to create · ${existing} already exist${toCreate.length ? " — " + esc(toCreate.map(fmt).join(" · ")) : ""}</div>`;
   return [
     `<div class="mf-line"><span class="mf-k">Tags:</span> ${d.tagsToCreate.length} to create · ${d.tagsExisting} already exist${d.tagsToCreate.length ? " — " + esc(d.tagsToCreate.join(" · ")) : ""}</div>`,
     `<div class="mf-line"><span class="mf-k">Fields:</span> ${d.fieldsToCreate.length} to create · ${d.fieldsExisting} already exist${d.fieldsToCreate.length ? " — " + esc(d.fieldsToCreate.map(fieldLabel).join(" · ")) : ""}</div>`,
+    u.calendars.length ? line("Calendars", d.calendarsToCreate, d.calendarsExisting, c => c.name) : "",
+    u.customValues.length ? line("Custom values", d.customValuesToCreate, d.customValuesExisting, cvLabel) : "",
+    u.pipelines.length ? line("Pipelines", d.pipelinesToCreate, d.pipelinesExisting, pipeLabel) : "",
     d.union.paramItems.length ? `<div class="mf-line">⚠ <span class="mf-k">Parameterized schemes (name per client, by hand):</span> ${esc(d.union.paramItems.join(" · "))}</div>` : "",
-    `<div class="mf-line"><span class="mf-k">Inventory (read-only):</span> ${pf.customValues.length} custom values · ${pf.calendars.length} calendars · ${pf.pipelines.length} pipelines — manifests don't declare these yet; create by hand where the plan needs them</div>`,
+    `<div class="mf-line"><span class="mf-k">Live sub-account inventory:</span> ${pf.tags.length} tags · ${pf.fields.length} fields · ${pf.customValues.length} custom values · ${pf.calendars.length} calendars · ${pf.pipelines.length} pipelines</div>`,
   ].join("");
 }
 
@@ -4335,6 +5577,9 @@ async function confirmRunSetup(){
 
   const tagByName = new Map(pf.tags.map(t => [(t.name || "").toLowerCase(), t]));
   const fieldByKey = new Map(pf.fields.map(f => [(f.model || "contact") + ":" + (f.name || "").toLowerCase(), f]));
+  const calendarByName = new Map(pf.calendars.map(c => [(c.name || "").toLowerCase(), c]));
+  const cvByName = new Map(pf.customValues.map(v => [(v.name || "").toLowerCase(), v]));
+  const pipelineByName = new Map(pf.pipelines.map(p => [(p.name || "").toLowerCase(), p]));
   const log = [];
   const push = async (entry) => {
     log.push({ ...entry, ts: new Date().toISOString() });
@@ -4343,16 +5588,27 @@ async function confirmRunSetup(){
     if(S.activeClientId === cid && S.module === "setup") renderSetupBody();
   };
 
+  // Order follows the foundational sequence in .claude/skills/ghl-setup: data
+  // model (tags/fields/values) before scheduling (7) before pipelines (8).
   const items = [
     ...d.union.tags.map(t => ({ kind: "tag", name: t })),
     ...d.union.fields.map(f => ({ kind: "field", name: f.name, object: fieldObject(f), f })),
+    ...d.union.customValues.map(v => ({ kind: "custom_value", name: v.name, value: v.value })),
+    ...d.union.calendars.map(c => ({ kind: "calendar", name: c.name })),
+    ...d.union.pipelines.map(p => ({ kind: "pipeline", name: p.name, stages: p.stages })),
   ];
   let failed = false;
   for(const it of items){
     if(S.activeClientId !== cid){ S.setup.running = false; return; }   // client switched — abort; row stays 'running' → shown as interrupted
     try{
       if(it.kind === "tag") await setupTagItem(it, tagByName, push, ctx);
-      else await setupFieldItem(it, fieldByKey, push, ctx);
+      else if(it.kind === "field") await setupFieldItem(it, fieldByKey, push, ctx);
+      else if(it.kind === "custom_value") await setupCustomValueItem(it, cvByName, push, ctx);
+      else if(it.kind === "calendar") await setupCalendarItem(it, calendarByName, push, ctx);
+      else if(it.kind === "pipeline") await setupPipelineItem(it, pipelineByName, push, ctx);
+      // no bare else: an unrecognized kind can never reach a mismatched handler
+      // and write the wrong asset — it fails the run loudly instead.
+      else throw new Error(`unknown setup item kind: ${it.kind}`);
     }catch(e){
       await push({ kind: it.kind, object: it.object, name: it.name, action: "error", error: e.message });
       failed = true;
@@ -4397,14 +5653,53 @@ async function setupFieldItem(it, fieldByKey, push, ctx){
   }
 }
 
+// The three non-tag/field kinds. Unlike tags (400 "already exist") and fields
+// (400 + meta.existingId), the verified write matrix documents NO duplicate-create
+// error shape for these, so there is nothing to key a recovery off and none is
+// invented: the preflight-inventory lookup is what prevents a duplicate create
+// being attempted at all, and any genuine API error propagates untouched to
+// confirmRunSetup's fail-stop.
+async function setupCalendarItem(it, calendarByName, push, ctx){
+  const hit = calendarByName.get(it.name.toLowerCase());
+  if(hit){ await push({ kind: "calendar", name: it.name, action: "found", ghl_id: hit.id || null }); return; }
+  // {locationId, name} is the whole verified create payload — the proxy forces
+  // locationId in (bodyLocation), and the rest defaults server-side
+  // (calendarType "event", classic widget, 30-min slots).
+  const r = await ghl("create_calendar", { name: it.name }, ctx);
+  await push({ kind: "calendar", name: it.name, action: "created", ghl_id: (r.calendar && r.calendar.id) || null });
+}
+
+async function setupCustomValueItem(it, cvByName, push, ctx){
+  const hit = cvByName.get(it.name.toLowerCase());
+  if(hit){ await push({ kind: "custom_value", name: it.name, action: "found", ghl_id: hit.id || null }); return; }
+  const r = await ghl("create_custom_value", { name: it.name, value: it.value }, ctx);
+  await push({ kind: "custom_value", name: it.name, action: "created", ghl_id: (r.customValue && r.customValue.id) || null });
+}
+
+async function setupPipelineItem(it, pipelineByName, push, ctx){
+  const hit = pipelineByName.get(it.name.toLowerCase());
+  if(hit){ await push({ kind: "pipeline", name: it.name, action: "found", ghl_id: hit.id || null }); return; }
+  // position is REQUIRED per stage (missing → 422) and is derived from array
+  // index here, never authored in the manifest — declaration order IS the stage
+  // order, which is what the preview showed for confirmation.
+  const stages = it.stages.map((s, i) => ({ name: s, position: i }));
+  const r = await ghl("create_pipeline", { name: it.name, stages }, ctx);
+  await push({ kind: "pipeline", name: it.name, action: "created", ghl_id: (r.pipeline && r.pipeline.id) || null });
+}
+
 // name → GHL id registry (fields set values by fieldId, not name). Deep-merge,
 // never overwrite: partial/failed runs still keep every id that landed.
 async function mergeGhlMap(cid, baseMap, log){
-  const map = { ...baseMap, tags: { ...(baseMap.tags || {}) }, fields: { ...(baseMap.fields || {}) } };
+  const map = { ...baseMap, tags: { ...(baseMap.tags || {}) }, fields: { ...(baseMap.fields || {}) },
+    calendars: { ...(baseMap.calendars || {}) }, custom_values: { ...(baseMap.custom_values || {}) },
+    pipelines: { ...(baseMap.pipelines || {}) } };
   log.forEach(e => {
     if(e.action === "error" || !e.ghl_id) return;
     if(e.kind === "tag") map.tags[e.name] = e.ghl_id;
     if(e.kind === "field") map.fields[e.object + ":" + e.name] = e.ghl_id;
+    if(e.kind === "calendar") map.calendars[e.name] = e.ghl_id;
+    if(e.kind === "custom_value") map.custom_values[e.name] = e.ghl_id;
+    if(e.kind === "pipeline") map.pipelines[e.name] = e.ghl_id;
   });
   const { data } = await sb.from("clients").update({ ghl_map: map }).eq("id", cid).select().single();
   if(data && S.activeClientId === cid) S.activeClient = data;
