@@ -4,6 +4,16 @@ Numbered incidents and the lesson each one bought. Numbering continues the bug
 history in the Notion Console spec; entries land here when the lesson should sit
 next to the code. Newest first.
 
+## Bug #20 — Gap Report print white-frame: a print-CSS page margin is outside the box model, no element background reaches it (August 1 2026)
+
+**Symptom:** fixing an unrelated Gap Report print bug (body pages starting flush against the sheet edge instead of having consistent top/bottom breathing room) introduced a new one: every body page printed with a solid white band across the top ~52px and bottom ~52px, even though `html{background:var(--midnight)}` and `body{background:var(--midnight)}` were both already set. Caught in verification before it ever committed or shipped — never reached production.
+
+**Root cause:** the fix used `@page{margin:52px 0}` to reserve consistent space on every printed sheet. In CSS's paged-media model, the `@page` margin area is a genuinely separate box, outside the normal document flow that `html`/`body` backgrounds propagate through. No element's background — no matter how far up the DOM it's set — paints into that margin band. It renders as whatever the physical page/sheet color is by default: white.
+
+**Fix (same session):** `@page` accepts its own `background` property, and that's the only thing that fills its own margin area: `@page{margin:52px 0;background:#0D1F2D}`. Used the literal hex, not `var(--midnight)` — `@page` has no real element context to resolve a custom property through, and while `var()` happened to resolve correctly in the Chrome version used to verify this, that's not something to rely on across browser/version differences for a print-only code path that's hard to visually spot-check regularly. Matches this repo's existing precedent of hardcoded hex for backgrounds in similarly unusual contexts (modal overlays).
+
+**The lesson:** when a fix introduces a NEW per-page/per-region reserved space in print CSS (margins, headers, footers via `@page`), do not assume the existing page background will simply extend into it — `@page`'s margin boxes are explicitly outside normal CSS inheritance/painting for element backgrounds. Verify with a real print-to-PDF render and pixel-sample the actual margin area itself, not just the content region — a corner-only check can miss a margin band failing if the corners happen to fall inside content rather than the new margin. This is the print-CSS-specific instance of a more general pattern: introducing a new reserved/blank region in a layout is a distinct claim from "the existing background will cover it," and needs its own explicit verification, not an inherited assumption.
+
 ## Bug #19 — retrieve-vs-create failure: nearest-sounding engine matched instead of judged (July 5 2026)
 
 **Symptom:** on the 123 Business plan, (a) "Manual invoice creation /

@@ -23,6 +23,7 @@
 - [ ] Tested after deploy: hard refresh, check console for errors.
 - [ ] Any AI output that later feeds a lookup (matched_engine → engine_key) is enum-validated
       at parse time against the shared const (KNOWN_ENGINE_KEYS) — never persisted free-text (Bug #18).
+- [ ] New print-CSS reserved space (an @page margin, header, or footer band) has its OWN background set — an @page margin area is outside the box model, no element background (html/body/anything) paints into it (Bug #20).
 
 ## Build-Plan Depth (manifest + node workflow — completeness by construction)
 Engines DECLARE their tags/fields in `spec.manifest`; the planner COMPUTES per-engine
