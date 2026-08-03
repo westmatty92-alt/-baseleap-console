@@ -375,6 +375,9 @@
   .bp-arch-toggle{margin-top:12px;background:none;border:1px solid var(--line);color:var(--muted);font-size:12px;padding:6px 12px;border-radius:8px;cursor:pointer;transition:border-color .15s,color .15s}
   .bp-arch-toggle:hover{border-color:var(--run);color:var(--run)}
   .bp-head-top{display:flex;align-items:center;justify-content:space-between;gap:12px}
+  /* Hierarchy is created by STRENGTHENING the total, not by fading the components: .msg is
+     already 12px var(--muted), so dimming the parts further would land near 3:1 contrast. */
+  .bp-head-total{color:var(--ink);font-weight:600}
   .bp-del-btn{background:none;border:1px solid var(--line);color:var(--muted);font-size:12px;font-weight:500;padding:6px 12px;border-radius:8px;cursor:pointer;transition:border-color .15s,color .15s}
   .bp-del-btn:hover{border-color:var(--err);color:var(--err)}
   .bp-del-panel{margin-top:12px;padding:14px 16px;border:1px solid var(--line);border-radius:10px;background:var(--bg)}
@@ -4888,11 +4891,12 @@ const STATUS_VALUES = ["queued","building","testing","done"];
 function stepTrack(s){ return s.track || "automation"; }   // null → CRM (migration 011 default)
 function byIdStep(id){ return S.buildPlan.steps.find(x => x.id === id) || null; }
 function statusOptions(status){ return STATUS_VALUES.map(v => `<option value="${v}" ${status===v?"selected":""}>${v}</option>`).join(""); }
+function doneCount(list){ return list.filter(s => s.status === "done").length; }
 
 function renderSavedPlan(){
   if(S.buildPlan.panel) return renderEngineDetail();   // detail view fully REPLACES the table (mutually exclusive)
   const p = S.buildPlan.plan, steps = S.buildPlan.steps;
-  const done = steps.filter(s => s.status === "done").length;
+  const done = doneCount(steps);
   const head = `
     <div class="card">
       <div class="bp-head-top">
@@ -4902,7 +4906,7 @@ function renderSavedPlan(){
       <div class="phase-h">Build plan · ${esc(p.status || "")}</div>
       <div class="phase-t">${esc(p.title || "Untitled plan")}</div>
       <div class="msg">${esc(p.summary || "")}</div>
-      <div class="msg" style="margin-top:6px">${done} of ${steps.length} steps done</div>
+      <div class="msg" style="margin-top:6px"><span class="bp-head-total">${done} of ${steps.length} steps done</span>${renderStepBreakdown(steps)}</div>
       ${renderDeletePanel()}
     </div>`;
   // CRM always shown; App / Agent Builder only when steps of that track exist.
@@ -4962,20 +4966,44 @@ function partitionTestGates(steps){
   return { engines: steps.filter(s => !nested.has(s.id)), gatesByParent };
 }
 
+// THE single categorization of saved-plan rows — the header breakdown and the section
+// render both call this, so a row can never be counted as one kind and drawn as another.
+// EXHAUSTIVE + DISJOINT BY CONSTRUCTION: setup is removed first and partitionTestGates
+// splits the exact remainder, so setup+engines+gates can never fail to re-sum to
+// steps.length (the header cannot contradict its own total). An UNMATCHED test-gate
+// stays in `engines` on purpose — that is the slot it actually renders in.
+function categorizeSteps(steps){
+  const setup = steps.filter(s => s.agent === "setup");
+  const { engines, gatesByParent } = partitionTestGates(steps.filter(s => s.agent !== "setup"));
+  return { setup, engines, gates: [...gatesByParent.values()].flat(), gatesByParent };
+}
+
+// Component fractions appended to the header total, so "17" is derivable on screen
+// instead of being a number with no visible parts (setup rows live only in the Setup
+// badge, test-gates only inside an engine dropdown). Engines lead because they are what
+// the table shows. A zero-length category is OMITTED, never printed as "0/0".
+function renderStepBreakdown(steps){
+  const c = categorizeSteps(steps);
+  const segs = [[c.engines, "engine", "engines"], [c.setup, "setup", "setup"], [c.gates, "test gate", "test gates"]]
+    .filter(([list]) => list.length)
+    .map(([list, sing, plur]) => `${doneCount(list)}/${list.length} ${list.length === 1 ? sing : plur}`);
+  return segs.length ? ` · ${segs.join(" · ")}` : "";
+}
+
 function renderPlanSection(track, allSteps){
   const cKey = "seccol:" + track, open = !S.buildPlan.expanded[cKey];   // default open
-  const done = allSteps.filter(s => s.status === "done").length;
-  const setupSteps = allSteps.filter(s => s.agent === "setup");
-  const setupDone = setupSteps.filter(s => s.status === "done").length;
+  const done = doneCount(allSteps);
+  // Test-gates nest into their engine's dropdown (last sub-row); engines + any
+  // unmatched gate render at the top level. Rollup counts (done/allSteps) are
+  // unchanged — every step still exists once, only its render slot moves. Same
+  // categorizeSteps the header breakdown uses, so badge and header can't disagree.
+  const { setup: setupSteps, engines, gatesByParent } = categorizeSteps(allSteps);
+  const setupDone = doneCount(setupSteps);
   const setupOk = setupSteps.length > 0 && setupDone === setupSteps.length;
   const sKey = "secsetup:" + track, setupOpen = !!S.buildPlan.expanded[sKey];
   const setupBadge = setupSteps.length
     ? `<button class="bp-setup-badge ${setupOk ? "bp-setup-ok" : "bp-setup-no"}" onclick="event.stopPropagation();toggleStepDepth('${escAttr(sKey)}')">Setup ${setupOk ? "✓" : "○"} ${setupDone}/${setupSteps.length}</button>`
     : "";
-  // Test-gates nest into their engine's dropdown (last sub-row); engines + any
-  // unmatched gate render at the top level. Rollup counts (done/allSteps) are
-  // unchanged — every step still exists once, only its render slot moves.
-  const { engines, gatesByParent } = partitionTestGates(allSteps.filter(s => s.agent !== "setup"));
   // pill tint reflects the group's rollup: all done / in progress / not started
   const secState = !allSteps.length ? "empty" : done === allSteps.length ? "done" : done > 0 ? "prog" : "todo";
   const thead = `<div class="bp-thead"><span>Task</span><span>Description</span><span>Progress</span><span>Hrs</span><span>Status</span></div>`;
