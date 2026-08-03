@@ -4978,14 +4978,18 @@ function categorizeSteps(steps){
   return { setup, engines, gates: [...gatesByParent.values()].flat(), gatesByParent };
 }
 
-// Component fractions appended to the header total, so "17" is derivable on screen
-// instead of being a number with no visible parts (setup rows live only in the Setup
-// badge, test-gates only inside an engine dropdown). Engines lead because they are what
-// the table shows. A zero-length category is OMITTED, never printed as "0/0".
-function renderStepBreakdown(steps){
-  const c = categorizeSteps(steps);
-  const segs = [[c.engines, "engine", "engines"], [c.setup, "setup", "setup"], [c.gates, "test gate", "test gates"]]
-    .filter(([list]) => list.length)
+// Component fractions appended to a total, so "17" is derivable on screen instead of being
+// a number with no visible parts (setup rows live only in the Setup badge, test-gates only
+// inside an engine dropdown). Engines lead because they are what the table shows. A
+// zero-length category is OMITTED, never printed as "0/0".
+// opts.omit skips categories the CALL SITE already shows adjacently — the section pill
+// passes ["setup"] because the Setup badge sits beside it; the header passes nothing
+// because it has no adjacent badge. One builder for both, so the two can never drift in
+// wording or pluralization.
+function renderStepBreakdown(steps, opts){
+  const c = categorizeSteps(steps), omit = (opts && opts.omit) || [];
+  const segs = [[c.engines, "engine", "engines", "engines"], [c.setup, "setup", "setup", "setup"], [c.gates, "test gate", "test gates", "gates"]]
+    .filter(([list, , , key]) => list.length && !omit.includes(key))
     .map(([list, sing, plur]) => `${doneCount(list)}/${list.length} ${list.length === 1 ? sing : plur}`);
   return segs.length ? ` · ${segs.join(" · ")}` : "";
 }
@@ -5014,7 +5018,7 @@ function renderPlanSection(track, allSteps){
           <span>${open ? "▾" : "▸"}</span>
           <span class="bp-pill-dot"></span>
           <span>${esc(TRACK_LABELS[track] || track)}</span>
-          <span class="bp-sec-roll">${done}/${allSteps.length} complete</span>
+          <span class="bp-sec-roll">${done}/${allSteps.length} complete${renderStepBreakdown(allSteps, { omit: ["setup"] })}</span>
         </button>
         ${setupBadge}
       </div>
