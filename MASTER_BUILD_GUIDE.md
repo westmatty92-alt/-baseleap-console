@@ -23,6 +23,7 @@
 - [ ] Tested after deploy: hard refresh, check console for errors.
 - [ ] Any AI output that later feeds a lookup (matched_engine → engine_key) is enum-validated
       at parse time against the shared const (KNOWN_ENGINE_KEYS) — never persisted free-text (Bug #18).
+- [ ] New print-CSS reserved space (an @page margin, header, or footer band) has its OWN background set — an @page margin area is outside the box model, no element background (html/body/anything) paints into it (Bug #20).
 
 ## Build-Plan Depth (manifest + node workflow — completeness by construction)
 Engines DECLARE their tags/fields in `spec.manifest`; the planner COMPUTES per-engine
@@ -121,6 +122,35 @@ with the saved build.**
   delete + archive → Gap Report/Proposal placement. Out of scope of THAT cycle: retiring
   `gaps.selection`, System Composer (Order 15.99). (Gap Report copy: DONE — Order 15.997,
   migration 013. Proposal copy: still pending.)
+
+## Saved build plan — row categories + header step breakdown (Aug 3 2026)
+A saved plan's `build_steps` rows fall into THREE render slots, and the header total must be
+derivable from what is on screen. `categorizeSteps(steps)` is the SINGLE categorization —
+`renderSavedPlan`'s header breakdown AND `renderPlanSection`'s badge/table both call it, so a
+row can never be counted as one kind and drawn as another.
+- **The three categories:** `setup` (`agent === 'setup'` — never a table row; summarized in the
+  section's **Setup ✓/○ n/m** badge, status editable via `renderSetupMini`) · `engines` (the
+  top-level `.bp-row` table rows) · `gates` (test-gates nested inside their engine's dropdown).
+- **EXHAUSTIVE + DISJOINT BY CONSTRUCTION:** setup is filtered out first and `partitionTestGates`
+  splits the exact remainder, so `setup + engines + gates === steps.length` ALWAYS — the header
+  cannot contradict its own total. An UNMATCHED test-gate (no marker/workflow-sibling) stays in
+  `engines` ON PURPOSE: that is the slot it actually renders in. Do not "fix" this by filtering
+  gates out of `engines` — the two must agree with the render, not with the title convention.
+- **Header line:** `4 of 17 steps done · 4/4 engines · 0/9 setup · 0/4 test gates`. The total is
+  unchanged and still counts every row (it was never wrong); the appended component fractions are
+  what make 17 derivable. **A zero-length category is OMITTED, never printed as `0/0`.** Segment
+  order is engines → setup → test gates (engines first = what the table shows). Empty plan
+  degrades to the bare `0 of 0 steps done`.
+- **THE BUG THIS FIXES** (reported Aug 3 2026): the header read `4 of 17` beside four visible
+  all-Done rows. 17 was CORRECT (9 setup + 4 engines + 4 test-gates) but underivable — the 9 were
+  double-reported (inside 17 *and* as `Setup 0/9`) and the 4 gates were one expand-click deep.
+  The defect was legibility, not arithmetic; the fix adds no filtering and changes no total.
+- **Contrast note:** hierarchy comes from STRENGTHENING the total (`.bp-head-total`,
+  `var(--ink)` + weight 600), NOT from fading the components — `.msg` is already 12px
+  `var(--muted)`, so dimming further lands near 3:1. Don't re-add a muted class on the parts.
+- Render-only change: zero DB writes, no schema/migration, `build_steps` untouched. The folder
+  grid card (`planCounts` — `N engines · N steps`) is a separate surface and independently
+  corroborates (`4 engines · 17 steps`).
 
 ## Gap Report — client-facing Preview / print view (branded; on `fix/condition-empty-branch-autorepair`, not yet merged)
 A separate presentational view (`.cr-*` classes, `renderClientReport()`/`openClientReport()`/
