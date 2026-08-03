@@ -186,6 +186,22 @@ both assumptions were correct. Artifacts left in the sub-account (no delete
 action exists in the proxy): calendar `Console Probe Calendar 20260803`, joining
 the earlier `Console Probe Calendar` and tag `console-probe-202607062319`.
 
+**Persistent test artifacts in "123 business" (the proxy has NO delete action for
+any kind — every one of these must be removed BY HAND in GHL if unwanted).** Keep
+this list current: an unexplained asset in a client-facing sub-account is worse
+than a documented one.
+
+| Artifact | Kind | GHL id | Origin |
+|---|---|---|---|
+| `console-probe-202607062319` | tag | — | July 6 2026 write-matrix probe |
+| `Console Probe Calendar` | calendar | `FqKxaILGRoCr1plIb0ys` | July 6 2026 write-matrix probe |
+| `Console Probe Calendar 20260803` | calendar | `agRdRQ1h1OoPdPvlh96F` | Aug 3 2026 calendar-envelope probe |
+| `deliveries` | calendar | `6uZbRMQC8Ky8VgV16B5k` | Aug 3 2026 — **first live Setup Agent CHAT run** (`setup_runs` `60f985cd`, `build_plan_id` NULL) |
+
+The July 6 run also created the review-engine tags and contact fields listed in
+`setup_runs` `13909aeb` — those are a legitimate build-plan provisioning run, not
+probe residue, and are left alone.
+
 **Idempotency facts (the safety valve's backstops):**
 - List-after-create can lag a few seconds (a tag created then immediately
   re-listed was missing; visible ~2 min later). Preflight inventory once,
