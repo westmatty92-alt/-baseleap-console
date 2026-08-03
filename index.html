@@ -107,8 +107,16 @@
   .setup-chat-x:hover{color:var(--ink);background:rgba(0,0,0,.05)}
   .setup-chat-log{flex:1;overflow-y:auto;padding:14px}
   .setup-chat-empty{font-size:12px;color:var(--muted);line-height:1.6}
-  .setup-chat-compose{border-top:1px solid var(--line);padding:12px}
+  .setup-chat-compose{border-top:1px solid var(--line);padding:12px;display:flex;flex-direction:column;gap:8px}
   .setup-chat-compose .notes{margin-top:0;min-height:60px}
+  .setup-chat-send{width:auto;align-self:flex-end;padding:6px 16px;font-size:12px}
+  .setup-chat-msg{font-size:12.5px;line-height:1.55;padding:8px 11px;border-radius:9px;margin-bottom:8px;white-space:pre-wrap}
+  .sc-user{background:var(--midnight);color:#F4F5F0;margin-left:24px}
+  .sc-agent{background:var(--surface);border:1px solid var(--line);color:var(--ink);margin-right:24px}
+  .setup-chat-thinking{color:var(--muted);font-style:italic}
+  .setup-chat-card{border:1px solid var(--line);border-radius:10px;background:var(--surface);padding:12px;margin-bottom:8px}
+  .setup-chat-card .phase-h{margin-bottom:8px}
+  .setup-chat-note{font-size:12px;color:var(--muted);line-height:1.6;margin-top:4px}
 
   /* Modal — hardcoded hex backgrounds (never CSS vars, per build rules) */
   .modal-overlay{position:fixed;inset:0;background:rgba(13,31,45,.55);display:none;align-items:center;justify-content:center;z-index:50}
@@ -736,9 +744,14 @@ function freshBuildPlan(){ return { loaded:false, msg:"", plans:[], activePlanId
 // one chat-requested item was created. `loaded` and `chatOpen` stay flat — they
 // are genuinely shared (client-load state, UI state) — as does `run`, the PLAN
 // run pointer.
+// chat additionally carries the conversation (`messages`), the manifest awaiting
+// the operator's confirmation (`pending`), and `thinking` for the propose step.
+// All of it lives in freshSetup so resetClientState() clears a half-finished chat
+// on client switch — a pending manifest must never survive into another client.
 function freshSetup(){ return { loaded:false, run:null, chatOpen:false, running:null,
   tab:  { preflight:null, diff:null, busy:false, msg:"" },
-  chat: { preflight:null, diff:null, busy:false, msg:"", run:null } }; }
+  chat: { preflight:null, diff:null, busy:false, msg:"", run:null,
+          messages:[], pending:null, thinking:false } }; }
 function setupNs(origin){ return origin === "chat" ? S.setup.chat : S.setup.tab; }
 // EVERY preview invalidation goes through here so "clear BOTH namespaces" can never
 // be half-applied. A stale preview is the silent-wrong-write vector: whatever made
@@ -747,6 +760,10 @@ function setupNs(origin){ return origin === "chat" ? S.setup.chat : S.setup.tab;
 function invalidateSetupPreviews(){
   S.setup.tab.preflight = null;  S.setup.tab.diff = null;
   S.setup.chat.preflight = null; S.setup.chat.diff = null;
+  // A pending chat proposal without its diff is meaningless — it would render as
+  // nothing while still looking "in flight" in state. Clear it with the diff it
+  // depended on, so the operator re-asks against fresh inventory.
+  S.setup.chat.pending = null;
 }
 
 const S = {
@@ -5380,20 +5397,72 @@ function renderSetup(){
   renderSetupBody();
 }
 
-/* Layout shell only — no AI, no message model, no persistence yet (deliberately a
-   separate cycle). The message list is an empty region; the composer is inert. */
+/* The COMPOSER is rendered once by this function and never re-rendered: every
+   conversation update rewrites #setup-chat-log alone (renderSetupChatLog), so
+   in-progress composer text and log scroll survive a run's live log updates. */
 function renderSetupChatPanel(){
   return `<div class="setup-chat">
     <div class="setup-chat-head">
       <span>Setup Agent</span>
       <button class="setup-chat-x" onclick="closeSetupChat()" title="Close chat" aria-label="Close chat">✕</button>
     </div>
-    <div class="setup-chat-log" id="setup-chat-log">
-      <div class="setup-chat-empty">Ask about this client's GHL setup — what the run will create, what already exists, or why a step is blocked.</div>
-    </div>
+    <div class="setup-chat-log" id="setup-chat-log">${renderSetupChatLogInner()}</div>
     <div class="setup-chat-compose">
-      <textarea id="setup-chat-input" class="notes" placeholder="Message the Setup Agent…"></textarea>
+      <textarea id="setup-chat-input" class="notes" placeholder="Message the Setup Agent…"
+        onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendSetupChat();}"></textarea>
+      <button class="btn-primary setup-chat-send" onclick="sendSetupChat()">Send</button>
     </div>
+  </div>`;
+}
+
+// Rewrites the log region ONLY — never the composer (see renderSetupChatPanel).
+function renderSetupChatLog(){
+  const el = document.getElementById("setup-chat-log"); if(!el) return;
+  const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+  el.innerHTML = renderSetupChatLogInner();
+  if(atBottom) el.scrollTop = el.scrollHeight;   // follow a live run, but don't yank a scrolled-back operator
+}
+
+function renderSetupChatLogInner(){
+  const c = S.setup.chat;
+  if(!c.messages.length && !c.pending && !c.run)
+    return `<div class="setup-chat-empty">Ask about this client's GHL setup — what the run will create, what already exists, or why a step is blocked.</div>`;
+  return c.messages.map(m => `<div class="setup-chat-msg sc-${esc(m.role)}">${esc(m.text)}</div>`).join("")
+    + (c.thinking ? `<div class="setup-chat-msg sc-agent setup-chat-thinking">Working…</div>` : "")
+    + renderChatPendingCard()
+    + renderChatRunLog()
+    + (c.msg ? `<div class="setup-chat-note">${esc(c.msg)}</div>` : "");
+}
+
+/* The confirmation gate — identical contract to the tab: the operator sees the
+   real diff (same renderSetupDiff, same live inventory) and NOTHING is written
+   until they confirm. A chat request never auto-executes. */
+function renderChatPendingCard(){
+  const c = S.setup.chat;
+  if(!c.pending) return "";
+  if(c.busy) return `<div class="setup-chat-card"><div class="msg">Reading the live sub-account inventory…</div></div>`;
+  if(!c.diff) return "";
+  const n = setupCreateCount(c.diff);
+  const heldByTab = S.setup.running === "tab";
+  return `<div class="setup-chat-card">
+    <div class="phase-h">${esc(c.pending.summary)}</div>
+    ${renderSetupDiff(c.diff, c.preflight)}
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="btn-primary" style="width:auto" onclick="confirmRunChatSetup()" ${S.setup.running || !n ? "disabled" : ""}>
+        ${S.setup.running === "chat" ? "Running…" : heldByTab ? "Setup run in progress (build plan)" : n ? `Confirm — create ${n} item${n===1?"":"s"}` : "Nothing to create"}</button>
+      <button class="btn-ghost" onclick="cancelChatSetup()" ${S.setup.running === "chat" ? "disabled" : ""}>Cancel</button>
+    </div>
+  </div>`;
+}
+
+function renderChatRunLog(){
+  const run = S.setup.chat.run;
+  if(!run || !(run.log || []).length) return "";
+  return `<div class="setup-chat-card">
+    <div class="phase-h">Run · ${esc(run.status)}</div>
+    ${(run.log || []).map(e => `<div class="mf-line">${e.action === "created" ? "＋" : e.action === "found" ? "→" : "✗"}
+      ${esc(e.kind)} · <span class="mf-k">${esc(e.name)}</span> —
+      ${e.action === "error" ? `<span style="color:#C0392B">${esc(e.error)}</span>` : esc(e.action)}</div>`).join("")}
   </div>`;
 }
 
@@ -5401,6 +5470,80 @@ function renderSetupChatPanel(){
    S.setup.chatOpen, so neither touches #app classes or localStorage directly. */
 function openSetupChat(){ S.setup.chatOpen = true; render(); }
 function closeSetupChat(){ S.setup.chatOpen = false; render(); }
+
+function chatSay(role, text){ S.setup.chat.messages.push({ role, text }); }
+
+/* THE AI SEAM. Commit 2 ships a deterministic stand-in so the whole chat path —
+   propose → validate → preflight → confirm → run — is exercisable without the AI
+   and without /api/ai (which 501s on localhost). Commit 3 replaces THIS FUNCTION
+   ONLY with the ai() call; everything downstream is already the real thing.
+   Returns { manifest, summary } or throws with an operator-facing message. */
+function proposeChatManifest(text){
+  const t = text.trim();
+  const m = /^add (?:a |an )?(calendar|tag|custom value|pipeline)\s+(?:called\s+)?(.+)$/i.exec(t);
+  if(!m) throw new Error(`I can't turn that into a setup action yet. Try: "add a calendar called Consultation Call". (Natural-language understanding arrives with the AI layer.)`);
+  const kind = m[1].toLowerCase(), name = m[2].trim().replace(/^["']|["']$/g, "");
+  const base = { requires_tags: [], creates_tags: [], requires_fields: [] };
+  if(kind === "calendar") return { manifest: { ...base, requires_calendars: [{ name }] }, summary: `Add calendar “${name}”` };
+  if(kind === "tag")      return { manifest: { ...base, creates_tags: [name] },            summary: `Add tag “${name}”` };
+  if(kind === "pipeline") throw new Error(`A pipeline needs its stages — a pipeline with no stages can't be created. Tell me the stages in order.`);
+  throw new Error(`A custom value needs the value as well as the name.`);
+}
+
+/* Propose → validate → preflight. NOTHING is written here: this only produces the
+   diff the operator then confirms. */
+async function sendSetupChat(){
+  const el = document.getElementById("setup-chat-input");
+  const text = (el && el.value || "").trim();
+  const c = S.setup.chat;
+  if(!text || c.thinking || S.setup.running === "chat") return;
+  if(el) el.value = "";
+  chatSay("user", text);
+  c.pending = null; c.diff = null; c.preflight = null; c.msg = "";
+
+  const missing = setupGateMissing({ requirePlan: false });
+  if(missing.length){ chatSay("agent", "Blocked — " + missing.join(" · ")); renderSetupChatLog(); return; }
+
+  c.thinking = true; renderSetupChatLog();
+  let proposal;
+  try{ proposal = proposeChatManifest(text); }
+  catch(e){ c.thinking = false; chatSay("agent", e.message); renderSetupChatLog(); return; }
+
+  // Same validator that gates AI-formulated plan output — a chat manifest is held
+  // to the identical shape contract, so a malformed one can never reach the run loop.
+  try{ validateManifest(proposal.manifest, "chat manifest"); }
+  catch(e){ c.thinking = false; chatSay("agent", "That didn't produce a valid setup item: " + e.message); renderSetupChatLog(); return; }
+
+  c.thinking = false;
+  c.pending = proposal;
+  chatSay("agent", proposal.summary + " — reading the live inventory to see what's already there.");
+  renderSetupChatLog();
+  // The synthetic step: a manifest with NO build_steps row behind it, fed through
+  // the same setupManifestUnion/computeSetupDiff the build plan uses.
+  await preflightSetup("chat", [{ manifest: proposal.manifest }]);
+  renderSetupChatLog();
+}
+
+function cancelChatSetup(){
+  const c = S.setup.chat;
+  if(S.setup.running === "chat") return;
+  c.pending = null; c.diff = null; c.preflight = null;
+  chatSay("agent", "Cancelled — nothing was written.");
+  renderSetupChatLog();
+}
+
+async function confirmRunChatSetup(){
+  if(!S.setup.chat.pending) return;
+  await runSetupItems({ origin: "chat", buildPlanId: null, checklist: [] });
+  S.setup.chat.pending = null;      // the diff is spent; cross-invalidation already cleared it
+  renderSetupChatLog();
+}
+
+// Anything that moves the LOCK or a run's log must repaint BOTH surfaces: the lock
+// is client-wide, so a chat run has to disable the tab's Confirm (and explain why)
+// and vice versa. Safe to call when the chat is closed — renderSetupChatLog no-ops
+// when #setup-chat-log isn't mounted.
+function renderSetupSurfaces(){ renderSetupBody(); renderSetupChatLog(); }
 
 function renderSetupBody(){
   const el = document.getElementById("setup-body"); if(!el) return;
@@ -5428,7 +5571,7 @@ async function loadSetupData(cid){
     await ensureBuildPlanLoaded(cid);
   }catch(e){ S.setup.tab.msg = "Load failed: " + e.message; }
   S.setup.loaded = true;
-  if(S.activeClientId === cid && S.module === "setup") renderSetupBody();
+  if(S.activeClientId === cid && S.module === "setup") renderSetupSurfaces();
 }
 
 // Same data as loadBuildPlanData but WITHOUT its renderAutomation() tail —
@@ -5481,7 +5624,7 @@ async function saveSetupSettings(){
   S.activeClient = data;
   invalidateSetupPreviews();   // connection changed — stale inventory on BOTH surfaces
   setSetupMsg("Connection saved ✓");
-  renderSetupBody();
+  renderSetupSurfaces();
 }
 
 async function markInvoicePaid(){
@@ -5489,7 +5632,7 @@ async function markInvoicePaid(){
   if(error){ setSetupMsg("Mark paid failed: " + error.message); return; }
   S.activeClient = data;
   setSetupMsg("Invoice marked paid ✓");
-  renderSetupBody();
+  renderSetupSurfaces();
 }
 
 async function disconnectGhl(){
@@ -5498,7 +5641,7 @@ async function disconnectGhl(){
   S.activeClient = data;
   invalidateSetupPreviews();
   setSetupMsg("Token cleared from the console. Also revoke the integration inside GHL (sub-account Settings → Private Integrations) to fully de-authorize. Location ID and the created-item map are kept.");
-  renderSetupBody();
+  renderSetupSurfaces();
 }
 
 /* ---- Card 2: gate + manifest union + preflight + dry-run ---- */
@@ -5568,7 +5711,7 @@ async function preflightSetup(origin, steps){
   const missing = setupGateMissing({ requirePlan: org !== "chat" });
   if(missing.length){ setSetupMsg("Blocked — " + missing.join(" · "), org); return; }
   const src = steps || S.buildPlan.steps;
-  ns.busy = true; ns.msg = "Preflighting — reading the live sub-account inventory…"; renderSetupBody();
+  ns.busy = true; ns.msg = "Preflighting — reading the live sub-account inventory…"; renderSetupSurfaces();
   try{
     const [tags, fields, cvs, cals, pipes] = await Promise.all([
       ghl("list_tags"), ghl("list_fields"), ghl("list_custom_values"), ghl("list_calendars"), ghl("list_pipelines"),
@@ -5581,7 +5724,7 @@ async function preflightSetup(origin, steps){
     ns.msg = "";
   }catch(e){ ns.preflight = null; ns.diff = null; ns.msg = "Preflight failed: " + e.message; }
   ns.busy = false;
-  renderSetupBody();
+  renderSetupSurfaces();
 }
 
 function computeSetupDiff(steps, pf){
@@ -5685,7 +5828,7 @@ async function runSetupItems(cfg){
   const ctx = { ghl_location_id: S.activeClient.ghl_location_id, ghl_pit_token: S.activeClient.ghl_pit_token };
   const baseMap = S.activeClient.ghl_map || {};
   const d = ns.diff, pf = ns.preflight;
-  S.setup.running = cfg.origin; renderSetupBody();
+  S.setup.running = cfg.origin; renderSetupSurfaces();
 
   // An interrupted run from a dead session stays 'running' forever — close it out.
   // DB-DRIVEN, NOT POINTER-DRIVEN: sweep EVERY still-'running' row for this client
@@ -5698,7 +5841,7 @@ async function runSetupItems(cfg){
   const { data: swept, error: sweepErr } = await sb.from("setup_runs")
     .update({ status: "failed", finished_at: new Date().toISOString() })
     .eq("client_id", cid).eq("status", "running").select();
-  if(sweepErr){ setSetupMsg("Could not close out interrupted runs: " + sweepErr.message, cfg.origin); S.setup.running = null; renderSetupBody(); return; }
+  if(sweepErr){ setSetupMsg("Could not close out interrupted runs: " + sweepErr.message, cfg.origin); S.setup.running = null; renderSetupSurfaces(); return; }
   if(swept && swept.length && S.setup.run && swept.some(r => r.id === S.setup.run.id))
     S.setup.run = swept.find(r => r.id === S.setup.run.id);   // keep the tab's pointer truthful
 
@@ -5706,7 +5849,7 @@ async function runSetupItems(cfg){
     operator_id: S.user.id, client_id: cid, build_plan_id: cfg.buildPlanId,
     status: "running", log: [], checklist: cfg.checklist,
   }).select().single();
-  if(insErr){ setSetupMsg("Could not start run: " + insErr.message, cfg.origin); S.setup.running = null; renderSetupBody(); return; }
+  if(insErr){ setSetupMsg("Could not start run: " + insErr.message, cfg.origin); S.setup.running = null; renderSetupSurfaces(); return; }
   // A chat run must NOT become the tab's Last-run/checklist pointer.
   if(cfg.origin === "chat") ns.run = run; else S.setup.run = run;
 
@@ -5720,7 +5863,7 @@ async function runSetupItems(cfg){
     log.push({ ...entry, ts: new Date().toISOString() });
     const { data } = await sb.from("setup_runs").update({ log }).eq("id", run.id).select().single();
     if(data){ if(cfg.origin === "chat") ns.run = data; else S.setup.run = data; }
-    if(S.activeClientId === cid && S.module === "setup") renderSetupBody();
+    if(S.activeClientId === cid && S.module === "setup") renderSetupSurfaces();
   };
 
   // Order follows the foundational sequence in .claude/skills/ghl-setup: data
@@ -5765,7 +5908,7 @@ async function runSetupItems(cfg){
   ns.msg = failed
     ? "Run FAILED — the log shows exactly what succeeded and what stopped it. Fix the cause and re-run: existing items skip (idempotent)."
     : "Setup run complete ✓ — created items and their GHL ids are recorded on the client.";
-  if(S.activeClientId === cid && S.module === "setup") renderSetupBody();
+  if(S.activeClientId === cid && S.module === "setup") renderSetupSurfaces();
 }
 
 async function setupTagItem(it, tagByName, push, ctx){
