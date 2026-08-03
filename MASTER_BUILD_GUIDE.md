@@ -148,6 +148,24 @@ row can never be counted as one kind and drawn as another.
 - **Contrast note:** hierarchy comes from STRENGTHENING the total (`.bp-head-total`,
   `var(--ink)` + weight 600), NOT from fading the components — `.msg` is already 12px
   `var(--muted)`, so dimming further lands near 3:1. Don't re-add a muted class on the parts.
+- **Section pill (follow-on, same night):** the `.bp-sec-roll` rollup carries the SAME kind of
+  breakdown, MINUS whatever the ADJACENT Setup badge already shows —
+  `4/17 complete · 4/4 engines · 0/4 test gates` beside `Setup ○ 0/9`. Built by the same
+  builder via `renderStepBreakdown(steps, {omit:["setup"]})`; the header passes no opts and is
+  byte-identical to before, so the two can never drift in wording or pluralization.
+  **THE ROW INVARIANT — setup is stated EXACTLY ONCE per section row:** the pill omits it
+  because the badge carries it, and when a track has NO setup steps the badge is not rendered
+  AND the zero-length rule drops the segment, so it is stated zero times rather than once in
+  the wrong place. Both sides key off the same `setup.length` predicate, so the
+  complementarity holds BY CONSTRUCTION, not by two rules happening to agree.
+  **Two rejected designs, do not "simplify" back into either:** (1) giving the pill all three
+  segments re-creates the adjacent double-report this whole fix removed — the badge sits
+  inches away, and with one track it also duplicates the header string verbatim one line
+  above; (2) engines-only (`4/4 engines`) is the ORIGINAL BUG IN MINIATURE — on a collapsed
+  section it reads as "track finished" while test-gates and setup are still outstanding.
+  Layout verified by measured probe: single line down to 480px section width, graceful WRAP at
+  420px (bar height 38 → 54), never clipped, never overlapping the badge, no horizontal body
+  scroll.
 - Render-only change: zero DB writes, no schema/migration, `build_steps` untouched. The folder
   grid card (`planCounts` — `N engines · N steps`) is a separate surface and independently
   corroborates (`4 engines · 17 steps`).
