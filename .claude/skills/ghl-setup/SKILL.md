@@ -153,8 +153,8 @@ application/json` on writes). The Setup Agent codes against THIS table only.
 | Field create (opportunity) | same | `{name, dataType, model:"opportunity"}` | 201 — `model` maps 1:1 to the manifest field `object` (default contact) |
 | Custom values list | `GET /locations/{loc}/customValues` | — | 200 `{customValues:[{id,name,fieldKey,value?}]}` |
 | Custom value create | `POST /locations/{loc}/customValues` | `{name, value}` | 201 `{customValue:{id,fieldKey:"{{ custom_values.<slug> }}",...}}` |
-| Calendars list | `GET /calendars/?locationId={loc}` | — | 200 `{calendars:[...]}` |
-| Calendar create | `POST /calendars/` | `{locationId, name}` minimum | 201 — defaults: `calendarType:"event"`, classic widget, 30-min slots |
+| Calendars list | `GET /calendars/?locationId={loc}` | — | 200 `{calendars:[{id,name,locationId,…~45 fields}]}` — **row shape re-probed 2026-08-03**: every row carries a non-empty string `id` and `name` (the only two keys setup reads) |
+| Calendar create | `POST /calendars/` | `{locationId, name}` minimum | 201 `{calendar:{id,locationId,name,widgetSlug,calendarType,…}}` — **envelope re-probed 2026-08-03**: the id is at `r.calendar.id`, NOT `r.id` and NOT `r.data.id` (both confirmed absent). Defaults: `calendarType:"event"`, classic widget, 30-min slots |
 | Pipelines list | `GET /opportunities/pipelines?locationId={loc}` | — | 200 `{pipelines:[{id,name,stages:[{id,name,position,stageWinProbability,...}]}]}` |
 | Pipeline create | `POST /opportunities/pipelines` | `{locationId, name, stages:[{name, position}]}` — stages inline in the create payload (no separate stage call); `position` (number) REQUIRED per stage, else 422 | 201 `{pipeline:{id, stages:[{id,...}], locationId}}` — stage ids returned inline |
 
@@ -171,6 +171,37 @@ application/json` on writes). The Setup Agent codes against THIS table only.
   ticks) — NOT gated by opportunities.* even though the endpoint lives under
   `/opportunities/pipelines`. All five setup-item kinds are agent-creatable:
   nothing demotes to the human checklist for API reasons.
+
+**Calendar probe (2026-08-03) — the Order 15.7 uncertainty is CLOSED.** The
+appendix originally spelled out list-row and create-envelope shapes for tags /
+fields / custom values / pipelines but ELIDED both for calendars, so
+`missingByName` reading `x.name` and `setupCalendarItem` reading
+`r.calendar.id` were INFERRED. Both are now live-verified against "123
+business": list returned 6 rows all carrying non-empty string `name` + `id`;
+`create_calendar {name:"Console Probe Calendar 20260803"}` returned
+`{calendar:{id:"agRdRQ1h1OoPdPvlh96F", name:…}, traceId}`, and the alternatives
+`r.id` / `r.data.id` were probed and confirmed absent. A re-list showed the new
+calendar with the SAME id the create returned. **No code change was needed** —
+both assumptions were correct. Artifacts left in the sub-account (no delete
+action exists in the proxy): calendar `Console Probe Calendar 20260803`, joining
+the earlier `Console Probe Calendar` and tag `console-probe-202607062319`.
+
+**Persistent test artifacts in "123 business" (the proxy has NO delete action for
+any kind — every one of these must be removed BY HAND in GHL if unwanted).** Keep
+this list current: an unexplained asset in a client-facing sub-account is worse
+than a documented one.
+
+| Artifact | Kind | GHL id | Origin |
+|---|---|---|---|
+| `console-probe-202607062319` | tag | — | July 6 2026 write-matrix probe |
+| `Console Probe Calendar` | calendar | `FqKxaILGRoCr1plIb0ys` | July 6 2026 write-matrix probe |
+| `Console Probe Calendar 20260803` | calendar | `agRdRQ1h1OoPdPvlh96F` | Aug 3 2026 calendar-envelope probe |
+| `deliveries` | calendar | `6uZbRMQC8Ky8VgV16B5k` | Aug 3 2026 — **first live Setup Agent CHAT run** (`setup_runs` `60f985cd`, `build_plan_id` NULL) |
+| `g money` | calendar | `fNKN8F5xtXDG4fJB8ML0` | Aug 4 2026 — **first live run through the AI layer** (`setup_runs` `70c9c628`, `build_plan_id` NULL) |
+
+The July 6 run also created the review-engine tags and contact fields listed in
+`setup_runs` `13909aeb` — those are a legitimate build-plan provisioning run, not
+probe residue, and are left alone.
 
 **Idempotency facts (the safety valve's backstops):**
 - List-after-create can lag a few seconds (a tag created then immediately

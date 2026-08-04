@@ -107,8 +107,16 @@
   .setup-chat-x:hover{color:var(--ink);background:rgba(0,0,0,.05)}
   .setup-chat-log{flex:1;overflow-y:auto;padding:14px}
   .setup-chat-empty{font-size:12px;color:var(--muted);line-height:1.6}
-  .setup-chat-compose{border-top:1px solid var(--line);padding:12px}
+  .setup-chat-compose{border-top:1px solid var(--line);padding:12px;display:flex;flex-direction:column;gap:8px}
   .setup-chat-compose .notes{margin-top:0;min-height:60px}
+  .setup-chat-send{width:auto;align-self:flex-end;padding:6px 16px;font-size:12px}
+  .setup-chat-msg{font-size:12.5px;line-height:1.55;padding:8px 11px;border-radius:9px;margin-bottom:8px;white-space:pre-wrap}
+  .sc-user{background:var(--midnight);color:#F4F5F0;margin-left:24px}
+  .sc-agent{background:var(--surface);border:1px solid var(--line);color:var(--ink);margin-right:24px}
+  .setup-chat-thinking{color:var(--muted);font-style:italic}
+  .setup-chat-card{border:1px solid var(--line);border-radius:10px;background:var(--surface);padding:12px;margin-bottom:8px}
+  .setup-chat-card .phase-h{margin-bottom:8px}
+  .setup-chat-note{font-size:12px;color:var(--muted);line-height:1.6;margin-top:4px}
 
   /* Modal — hardcoded hex backgrounds (never CSS vars, per build rules) */
   .modal-overlay{position:fixed;inset:0;background:rgba(13,31,45,.55);display:none;align-items:center;justify-content:center;z-index:50}
@@ -717,7 +725,46 @@ function freshAutomation(){ return { tab:"gaps", loaded:false, msg:"", gaps:[], 
 // sel = the active compose session's folder-scoped gap-selection map ({gapId: 'accepted'|'declined'};
 // undecided = absent). Committed to build_plan_gaps on Save; never the dormant client gaps.selection.
 function freshBuildPlan(){ return { loaded:false, msg:"", plans:[], activePlanId:null, planCounts:{}, plan:null, steps:[], draft:null, draftGaps:null, generating:false, saving:false, expanded:{}, panel:null, zoom:1, pan:{x:0,y:0}, tab:"plan", composing:false, sel:{}, scope:null, scopePlanId:null, scopeErr:"", del:null, showArchived:false }; }
-function freshSetup(){ return { loaded:false, msg:"", run:null, preflight:null, diff:null, running:false, busy:false, chatOpen:false }; }
+// NAMESPACE THE PREVIEW, LOCK THE EXECUTION. `tab` and `chat` each own their
+// preflight/diff because SHARING them is a silent wrong-write: a chat preview
+// overwriting the tab's diff would make the tab's Confirm button create the
+// CHAT's items while the operator believes they approved the build plan's —
+// no error, no symptom. Execution is the opposite: ONE lock for the whole
+// client, because two concurrent runs against one sub-account both preflighted
+// the same inventory (so both attempt the same create, and calendars/custom
+// values/pipelines have NO duplicate-create recovery) and because the stale-run
+// cleanup in runSetupItems marks any other 'running' row failed.
+// `running` is an OWNER TAG (null | "tab" | "chat"), not a boolean: it is
+// simultaneously the lock and the identity of the holder, so the blocked
+// surface can say WHY it is blocked instead of showing a dead button. It stays
+// falsy when idle, so existing truthiness checks keep their meaning.
+// `msg` is namespaced for the same reason: concurrent preflights are ALLOWED by
+// design (namespaced busy, not locked), and a chat run's "Setup run complete ✓"
+// landing in the tab would tell the operator their build-plan setup finished when
+// one chat-requested item was created. `loaded` and `chatOpen` stay flat — they
+// are genuinely shared (client-load state, UI state) — as does `run`, the PLAN
+// run pointer.
+// chat additionally carries the conversation (`messages`), the manifest awaiting
+// the operator's confirmation (`pending`), and `thinking` for the propose step.
+// All of it lives in freshSetup so resetClientState() clears a half-finished chat
+// on client switch — a pending manifest must never survive into another client.
+function freshSetup(){ return { loaded:false, run:null, chatOpen:false, running:null,
+  tab:  { preflight:null, diff:null, busy:false, msg:"" },
+  chat: { preflight:null, diff:null, busy:false, msg:"", run:null,
+          messages:[], pending:null, thinking:false } }; }
+function setupNs(origin){ return origin === "chat" ? S.setup.chat : S.setup.tab; }
+// EVERY preview invalidation goes through here so "clear BOTH namespaces" can never
+// be half-applied. A stale preview is the silent-wrong-write vector: whatever made
+// one surface's cached inventory wrong (a completed run, a changed connection) made
+// the other's wrong too.
+function invalidateSetupPreviews(){
+  S.setup.tab.preflight = null;  S.setup.tab.diff = null;
+  S.setup.chat.preflight = null; S.setup.chat.diff = null;
+  // A pending chat proposal without its diff is meaningless — it would render as
+  // nothing while still looking "in flight" in state. Clear it with the diff it
+  // depended on, so the operator re-asks against fresh inventory.
+  S.setup.chat.pending = null;
+}
 
 const S = {
   user: null,
@@ -3181,17 +3228,23 @@ function classifyGapRoute(g, catalogByKey){
 // Shared retry-once wiring for the sweep's per-gap AI calls (same doctrine as
 // generatePlanDraft): only a contract violation earns the retry, with the named
 // violation fed back; transport/proxy errors propagate immediately.
-async function aiJsonWithRetry({ system, userMsg, max_tokens, validate, what }){
+// `history` (optional, default none) prepends prior turns for the multi-turn chat
+// caller; the retry still appends its correction to the CURRENT user message, so
+// the fed-back violation stays attached to the turn that caused it. `tag` (default
+// "sweep") only names the console prefix — a chat failure logging under "[sweep]"
+// would send the next investigation to the wrong module.
+async function aiJsonWithRetry({ system, userMsg, max_tokens, validate, what, history, tag }){
+  const lg = tag || "sweep";
   const attempt = async (msg) => {
     let out;
-    const raw = await ai({ system, messages: [{ role:"user", content: msg }], max_tokens });
+    const raw = await ai({ system, messages: [...(history || []), { role:"user", content: msg }], max_tokens });
     // Capture the raw output on any contract failure — the throw only carries the
     // error string, so without this the actual generation is discarded and the next
     // investigation is blind. Logged with `what` (e.g. "parameterize (lead_response)").
     try{ out = JSON.parse(raw.replace(/```json|```/g, "").trim()); }
-    catch(e){ console.error(`[sweep] ${what} — unparseable AI output:\n`, raw); throw new Error("invalid JSON"); }
+    catch(e){ console.error(`[${lg}] ${what} — unparseable AI output:\n`, raw); throw new Error("invalid JSON"); }
     try{ validate(out); }
-    catch(e){ console.error(`[sweep] ${what} — validation failed (${e.message}); raw output:\n`, raw); throw e; }
+    catch(e){ console.error(`[${lg}] ${what} — validation failed (${e.message}); raw output:\n`, raw); throw e; }
     return out;
   };
   try{ return await attempt(userMsg); }
@@ -5318,7 +5371,15 @@ async function ghl(action, payload, ctx){
 // manifest field type → GHL customFields dataType (contact/opportunity create)
 const GHL_DATATYPE = { text: "TEXT", number: "NUMERICAL", currency: "MONETORY", date: "DATE" };
 
-function setSetupMsg(t){ S.setup.msg = t; const el = document.getElementById("setup-msg"); if(el) el.textContent = t; }
+// origin defaults to "tab": every existing call site is a tab-surface control
+// (settings card, checklist, gate) and keeps its current behavior untouched.
+// The DOM fast-path only applies to the tab's own #setup-msg node — a chat
+// message is rendered by the chat panel, never written into the tab's slot.
+function setSetupMsg(t, origin){
+  const org = origin || "tab";
+  setupNs(org).msg = t;
+  if(org === "tab"){ const el = document.getElementById("setup-msg"); if(el) el.textContent = t; }
+}
 
 /* The chat column is a SIBLING of #setup-body, never a child. renderSetupBody()
    re-renders #setup-body alone after every setup action and after the initial data
@@ -5342,20 +5403,72 @@ function renderSetup(){
   renderSetupBody();
 }
 
-/* Layout shell only — no AI, no message model, no persistence yet (deliberately a
-   separate cycle). The message list is an empty region; the composer is inert. */
+/* The COMPOSER is rendered once by this function and never re-rendered: every
+   conversation update rewrites #setup-chat-log alone (renderSetupChatLog), so
+   in-progress composer text and log scroll survive a run's live log updates. */
 function renderSetupChatPanel(){
   return `<div class="setup-chat">
     <div class="setup-chat-head">
       <span>Setup Agent</span>
       <button class="setup-chat-x" onclick="closeSetupChat()" title="Close chat" aria-label="Close chat">✕</button>
     </div>
-    <div class="setup-chat-log" id="setup-chat-log">
-      <div class="setup-chat-empty">Ask about this client's GHL setup — what the run will create, what already exists, or why a step is blocked.</div>
-    </div>
+    <div class="setup-chat-log" id="setup-chat-log">${renderSetupChatLogInner()}</div>
     <div class="setup-chat-compose">
-      <textarea id="setup-chat-input" class="notes" placeholder="Message the Setup Agent…"></textarea>
+      <textarea id="setup-chat-input" class="notes" placeholder="Message the Setup Agent…"
+        onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendSetupChat();}"></textarea>
+      <button class="btn-primary setup-chat-send" onclick="sendSetupChat()">Send</button>
     </div>
+  </div>`;
+}
+
+// Rewrites the log region ONLY — never the composer (see renderSetupChatPanel).
+function renderSetupChatLog(){
+  const el = document.getElementById("setup-chat-log"); if(!el) return;
+  const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+  el.innerHTML = renderSetupChatLogInner();
+  if(atBottom) el.scrollTop = el.scrollHeight;   // follow a live run, but don't yank a scrolled-back operator
+}
+
+function renderSetupChatLogInner(){
+  const c = S.setup.chat;
+  if(!c.messages.length && !c.pending && !c.run)
+    return `<div class="setup-chat-empty">Ask about this client's GHL setup — what the run will create, what already exists, or why a step is blocked.</div>`;
+  return c.messages.map(m => `<div class="setup-chat-msg sc-${esc(m.role)}">${esc(m.text)}</div>`).join("")
+    + (c.thinking ? `<div class="setup-chat-msg sc-agent setup-chat-thinking">Working…</div>` : "")
+    + renderChatPendingCard()
+    + renderChatRunLog()
+    + (c.msg ? `<div class="setup-chat-note">${esc(c.msg)}</div>` : "");
+}
+
+/* The confirmation gate — identical contract to the tab: the operator sees the
+   real diff (same renderSetupDiff, same live inventory) and NOTHING is written
+   until they confirm. A chat request never auto-executes. */
+function renderChatPendingCard(){
+  const c = S.setup.chat;
+  if(!c.pending) return "";
+  if(c.busy) return `<div class="setup-chat-card"><div class="msg">Reading the live sub-account inventory…</div></div>`;
+  if(!c.diff) return "";
+  const n = setupCreateCount(c.diff);
+  const heldByTab = S.setup.running === "tab";
+  return `<div class="setup-chat-card">
+    <div class="phase-h">${esc(c.pending.summary)}</div>
+    ${renderSetupDiff(c.diff, c.preflight)}
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="btn-primary" style="width:auto" onclick="confirmRunChatSetup()" ${S.setup.running || !n ? "disabled" : ""}>
+        ${S.setup.running === "chat" ? "Running…" : heldByTab ? "Setup run in progress (build plan)" : n ? `Confirm — create ${n} item${n===1?"":"s"}` : "Nothing to create"}</button>
+      <button class="btn-ghost" onclick="cancelChatSetup()" ${S.setup.running === "chat" ? "disabled" : ""}>Cancel</button>
+    </div>
+  </div>`;
+}
+
+function renderChatRunLog(){
+  const run = S.setup.chat.run;
+  if(!run || !(run.log || []).length) return "";
+  return `<div class="setup-chat-card">
+    <div class="phase-h">Run · ${esc(run.status)}</div>
+    ${(run.log || []).map(e => `<div class="mf-line">${e.action === "created" ? "＋" : e.action === "found" ? "→" : "✗"}
+      ${esc(e.kind)} · <span class="mf-k">${esc(e.name)}</span> —
+      ${e.action === "error" ? `<span style="color:#C0392B">${esc(e.error)}</span>` : esc(e.action)}</div>`).join("")}
   </div>`;
 }
 
@@ -5363,6 +5476,219 @@ function renderSetupChatPanel(){
    S.setup.chatOpen, so neither touches #app classes or localStorage directly. */
 function openSetupChat(){ S.setup.chatOpen = true; render(); }
 function closeSetupChat(){ S.setup.chatOpen = false; render(); }
+
+function chatSay(role, text){ S.setup.chat.messages.push({ role, text }); }
+
+/* ---- THE AI SEAM (commit 3 — was a regex stand-in through commit 2) ----
+   Text → a validated setup manifest, or a plain-text reply. This is the ONLY
+   AI in the chat path: everything downstream (preflight → diff → confirm →
+   runSetupItems) is deterministic and unchanged.
+
+   The AI is deliberately BLIND to the live inventory. It translates intent into
+   a declaration; whether a thing already exists is answered by computeSetupDiff
+   against a fresh preflight, which stays the single source of truth. */
+
+const SETUP_CHAT_KINDS = ["requires_tags","creates_tags","requires_fields",
+  "requires_calendars","requires_custom_values","requires_pipelines"];
+
+const SETUP_CHAT_SYSTEM = `You are the Setup Agent for the Baseleap Console. You turn an operator's request into a GHL setup manifest, or you answer them in plain words. You never write anything yourself — an operator reviews a real diff and confirms before anything is created.
+
+YOU CAN DECLARE EXACTLY FIVE KINDS OF THING. Nothing else exists for you:
+1. Tags        — "creates_tags": ["tag name", ...]
+2. Custom fields — "requires_fields": [{"name":"Field Name","type":"text|number|currency|date","object":"contact|opportunity"}]
+3. Custom values — "requires_custom_values": [{"name":"Value Name","value":"the actual value"}]
+4. Calendars   — "requires_calendars": [{"name":"Calendar Name"}]
+5. Pipelines   — "requires_pipelines": [{"name":"Pipeline Name","stages":["First","Second","Third"]}]
+
+HARD RULES:
+- Setup ONLY CREATES. It can never delete, rename, reorder, merge, or edit anything that already exists. Never promise or imply otherwise.
+- "type" must be exactly one of text, number, currency, date — lowercase. "object" must be exactly contact or opportunity (omit for contact).
+- Pipeline stages are plain strings in the order they should appear. Declaration order IS stage order. Never write a "position" — it is derived. Stage names must be unique within a pipeline. A pipeline cannot be created without at least one stage.
+- Never invent a sixth key. If the manifest needs something outside the five kinds above, that request is out of scope.
+- Never use a bracketed placeholder like [Client Name] as a name or a value. Every name and value must be the literal text to create.
+- Use "creates_tags" for tags; leave "requires_tags" empty.
+- Name things exactly as the operator asked. Do not rephrase, title-case, pluralize, or "improve" their wording.
+
+RESPOND WITH ONE JSON OBJECT, NOTHING ELSE. Two possible shapes:
+
+To propose setup items:
+{"action":"propose","summary":"one short line naming exactly what will be created","manifest":{"requires_tags":[],"creates_tags":[],"requires_fields":[]}}
+"requires_tags", "creates_tags" and "requires_fields" are ALWAYS present, as empty arrays when unused. Add "requires_calendars", "requires_custom_values" or "requires_pipelines" only when that kind is actually being created.
+
+To say anything else — a refusal, a clarifying question, or an answer:
+{"action":"reply","message":"what you want to say to the operator"}
+
+USE "reply", NOT "propose", WHEN:
+- The request is outside the five kinds (workflows, automations, emails, users, integrations, deleting or renaming things, anything else). Say plainly what setup can and cannot do. NEVER approximate an out-of-scope request with a manifest, and never propose a near-miss item instead.
+- Something required is missing — a pipeline with no stages given, a custom value with no value. Ask for exactly what you need.
+- They are asking a question rather than requesting a change. Answer from the context below; if the answer is not in it, say so rather than guessing.
+
+The summary is read by a human next to the real diff, so it must describe exactly what the manifest declares — no more.`;
+
+// Read-only context, assembled from state already in memory — no extra API calls.
+// The build-plan union is what makes the panel's "what will the run create?"
+// promise answerable; anything not here the AI is told to decline rather than guess.
+function chatSetupContext(){
+  const c = S.activeClient, lines = [`Client: ${c.business_name}${c.industry ? ` (${c.industry})` : ""}`];
+  const blocked = setupGateMissing({ requirePlan: false });
+  lines.push(blocked.length ? `Setup is BLOCKED: ${blocked.join(" · ")}` : "Setup is unblocked (paid, location ID and token present).");
+  if(S.buildPlan.plan && S.buildPlan.steps.length){
+    const u = setupManifestUnion(S.buildPlan.steps);
+    lines.push(`The saved build plan declares: ${u.tags.length} tag(s), ${u.fields.length} field(s), ${u.customValues.length} custom value(s), ${u.calendars.length} calendar(s), ${u.pipelines.length} pipeline(s).`);
+    if(u.tags.length) lines.push(`Plan tags: ${u.tags.join(" · ")}`);
+    if(u.fields.length) lines.push(`Plan fields: ${u.fields.map(fieldLabel).join(" · ")}`);
+    if(u.paramItems.length) lines.push(`Needs hand-naming (placeholders, never auto-created): ${u.paramItems.join(" · ")}`);
+  } else {
+    lines.push("No saved build plan is loaded, so I know nothing about planned setup items.");
+  }
+  return lines.join("\n");
+}
+
+/* Prior turns for the API. Three things this must fix, all of which produce a
+   400 or a wasted turn otherwise: the Messages API rejects consecutive same-role
+   messages (Cancel right after a proposal pushes two agent turns in a row), it
+   requires the first message to be user, and unbounded history grows the bill
+   every turn. The CURRENT user message is excluded — aiJsonWithRetry appends it. */
+function chatHistoryForAi(){
+  const recent = S.setup.chat.messages.slice(0, -1).slice(-10)
+    .map(m => ({ role: m.role === "user" ? "user" : "assistant", content: m.text }));
+  while(recent.length && recent[0].role !== "user") recent.shift();
+  return recent.reduce((acc, m) => {
+    const last = acc[acc.length - 1];
+    if(last && last.role === m.role) last.content += "\n" + m.content; else acc.push(m);
+    return acc;
+  }, []);
+}
+
+// Discriminated shape. A `reply` is a legitimate response, NOT a contract
+// violation — only a malformed one earns the retry.
+function validateChatProposal(o){
+  if(!o || typeof o !== "object" || Array.isArray(o)) throw new Error("response is not an object");
+  if(o.action !== "propose" && o.action !== "reply") throw new Error(`action must be "propose" or "reply"`);
+  if(o.action === "reply"){
+    if(typeof o.message !== "string" || !o.message.trim()) throw new Error("reply needs a non-empty message");
+    return;
+  }
+  if(typeof o.summary !== "string" || !o.summary.trim()) throw new Error("propose needs a non-empty summary");
+  if(!o.manifest || typeof o.manifest !== "object" || Array.isArray(o.manifest)) throw new Error("propose needs a manifest object");
+  // The SAME validator that gates AI-formulated plan output — a chat manifest is
+  // held to the identical shape contract, unmodified.
+  validateManifest(o.manifest, "manifest");
+  hardenChatManifest(o.manifest);
+}
+
+/* Chat-only hardening: three ways a manifest passes validateManifest yet still
+   produces a SILENTLY WRONG write, plus canonicalization. Deliberately additive —
+   validateManifest itself is untouched, so the formulate path keeps its behavior. */
+function hardenChatManifest(m){
+  Object.keys(m).forEach(k => {
+    // validateManifest ignores unknown keys and setupManifestUnion never reads
+    // them, so an invented sixth kind would be silently DROPPED while the summary
+    // still claimed it — the diff would contradict its own summary.
+    if(!SETUP_CHAT_KINDS.includes(k)) throw new Error(`manifest has an unsupported key "${k}" — setup can only create tags, fields, custom values, calendars and pipelines`);
+  });
+  (m.requires_fields || []).forEach((f, i) => {
+    // setupFieldItem does GHL_DATATYPE[type] || "TEXT", so an unrecognized type
+    // is not rejected downstream — a currency field would be silently created as
+    // text. Accept any casing, then canonicalize so the map always resolves.
+    const t = String(f.type).trim().toLowerCase();
+    if(!GHL_DATATYPE[t]) throw new Error(`requires_fields[${i}].type "${f.type}" is not one of text, number, currency, date`);
+    f.type = t;
+  });
+  (m.requires_pipelines || []).forEach((p, i) => {
+    // Nothing upstream checks this: setupPipelineItem maps stages to
+    // {name, position:i} and posts them, so duplicates would both be created.
+    const seen = new Set();
+    p.stages.forEach(s => {
+      const k = s.trim().toLowerCase();
+      if(seen.has(k)) throw new Error(`requires_pipelines[${i}] ("${p.name}") repeats the stage "${s.trim()}" — stage names must be unique`);
+      seen.add(k);
+    });
+  });
+  // A bracketed name routes to paramItems and is never created, so a proposal
+  // built from placeholders would preview as "nothing to create" instead of
+  // failing honestly. An operator typing a concrete request never wants one.
+  const named = [...(m.creates_tags || []), ...(m.requires_tags || [])]
+    .concat([...(m.requires_fields || []), ...(m.requires_calendars || []),
+             ...(m.requires_custom_values || []), ...(m.requires_pipelines || [])].map(x => x.name))
+    .concat((m.requires_custom_values || []).map(v => v.value));
+  if(named.some(n => String(n).trim().startsWith("[")))
+    throw new Error("manifest uses a bracketed placeholder — every name and value must be the literal text to create");
+  if(!named.length) throw new Error("propose declared no items — use action \"reply\" if there is nothing to create");
+}
+
+/* Returns { action:"propose", manifest, summary } or { action:"reply", message }.
+   Throws only on a genuine failure (transport, or two contract violations). */
+async function proposeChatManifest(text){
+  return await aiJsonWithRetry({
+    system: SETUP_CHAT_SYSTEM + "\n\nCONTEXT FOR THIS CLIENT:\n" + chatSetupContext(),
+    userMsg: text,
+    history: chatHistoryForAi(),
+    max_tokens: 1200,
+    validate: validateChatProposal,
+    what: "setup chat",
+    tag: "setup-chat",
+  });
+}
+
+/* Propose → validate → preflight. NOTHING is written here: this only produces the
+   diff the operator then confirms. */
+async function sendSetupChat(){
+  const el = document.getElementById("setup-chat-input");
+  const text = (el && el.value || "").trim();
+  const c = S.setup.chat;
+  if(!text || c.thinking || S.setup.running === "chat") return;
+  if(el) el.value = "";
+  chatSay("user", text);
+  c.pending = null; c.diff = null; c.preflight = null; c.msg = "";
+
+  const missing = setupGateMissing({ requirePlan: false });
+  if(missing.length){ chatSay("agent", "Blocked — " + missing.join(" · ")); renderSetupChatLog(); return; }
+
+  c.thinking = true; renderSetupChatLog();
+  let proposal;
+  // proposeChatManifest validates before returning (shape → validateManifest →
+  // hardenChatManifest), so anything that arrives here is already contract-clean.
+  try{ proposal = await proposeChatManifest(text); }
+  catch(e){ c.thinking = false; chatSay("agent", "That didn't produce a valid setup item: " + e.message); renderSetupChatLog(); return; }
+
+  // A refusal, a clarifying question or an answer. Returns to the operator as text
+  // and stops HERE — no inventory read, no diff, no confirm button. Any manifest a
+  // hedging model attached to a reply is ignored by construction: it is never read.
+  if(proposal.action === "reply"){
+    c.thinking = false; chatSay("agent", proposal.message); renderSetupChatLog(); return;
+  }
+
+  c.thinking = false;
+  c.pending = proposal;
+  chatSay("agent", proposal.summary + " — reading the live inventory to see what's already there.");
+  renderSetupChatLog();
+  // The synthetic step: a manifest with NO build_steps row behind it, fed through
+  // the same setupManifestUnion/computeSetupDiff the build plan uses.
+  await preflightSetup("chat", [{ manifest: proposal.manifest }]);
+  renderSetupChatLog();
+}
+
+function cancelChatSetup(){
+  const c = S.setup.chat;
+  if(S.setup.running === "chat") return;
+  c.pending = null; c.diff = null; c.preflight = null;
+  chatSay("agent", "Cancelled — nothing was written.");
+  renderSetupChatLog();
+}
+
+async function confirmRunChatSetup(){
+  if(!S.setup.chat.pending) return;
+  await runSetupItems({ origin: "chat", buildPlanId: null, checklist: [] });
+  S.setup.chat.pending = null;      // the diff is spent; cross-invalidation already cleared it
+  renderSetupChatLog();
+}
+
+// Anything that moves the LOCK or a run's log must repaint BOTH surfaces: the lock
+// is client-wide, so a chat run has to disable the tab's Confirm (and explain why)
+// and vice versa. Safe to call when the chat is closed — renderSetupChatLog no-ops
+// when #setup-chat-log isn't mounted.
+function renderSetupSurfaces(){ renderSetupBody(); renderSetupChatLog(); }
 
 function renderSetupBody(){
   const el = document.getElementById("setup-body"); if(!el) return;
@@ -5372,19 +5698,25 @@ function renderSetupBody(){
     return;
   }
   el.innerHTML = renderSetupSettings() + renderSetupRunCard() + renderSetupLogCard() + renderSetupChecklist()
-    + `<div class="msg" id="setup-msg">${esc(S.setup.msg)}</div>`;
+    + `<div class="msg" id="setup-msg">${esc(S.setup.tab.msg)}</div>`;
 }
 
 async function loadSetupData(cid){
   try{
+    // PLAN runs only. A chat run carries build_plan_id null and checklist [], so
+    // without this filter a reload after any chat run would load it here and render
+    // the tab's checklist card EMPTY — destroying visible operator progress. Chat
+    // run state lives in S.setup.chat.run and is session-ephemeral (the setup_runs
+    // row still persists as the audit record).
     const { data: runs, error } = await sb.from("setup_runs").select("*")
-      .eq("client_id", cid).order("created_at", { ascending: false }).limit(1);
+      .eq("client_id", cid).not("build_plan_id", "is", null)
+      .order("created_at", { ascending: false }).limit(1);
     if(error) throw new Error(error.message);
     S.setup.run = (runs && runs[0]) || null;
     await ensureBuildPlanLoaded(cid);
-  }catch(e){ S.setup.msg = "Load failed: " + e.message; }
+  }catch(e){ S.setup.tab.msg = "Load failed: " + e.message; }
   S.setup.loaded = true;
-  if(S.activeClientId === cid && S.module === "setup") renderSetupBody();
+  if(S.activeClientId === cid && S.module === "setup") renderSetupSurfaces();
 }
 
 // Same data as loadBuildPlanData but WITHOUT its renderAutomation() tail —
@@ -5435,9 +5767,9 @@ async function saveSetupSettings(){
   const { data, error } = await sb.from("clients").update(patch).eq("id", S.activeClientId).select().single();
   if(error){ setSetupMsg("Save failed: " + error.message); return; }
   S.activeClient = data;
-  S.setup.preflight = null; S.setup.diff = null;   // connection changed — stale inventory
+  invalidateSetupPreviews();   // connection changed — stale inventory on BOTH surfaces
   setSetupMsg("Connection saved ✓");
-  renderSetupBody();
+  renderSetupSurfaces();
 }
 
 async function markInvoicePaid(){
@@ -5445,25 +5777,30 @@ async function markInvoicePaid(){
   if(error){ setSetupMsg("Mark paid failed: " + error.message); return; }
   S.activeClient = data;
   setSetupMsg("Invoice marked paid ✓");
-  renderSetupBody();
+  renderSetupSurfaces();
 }
 
 async function disconnectGhl(){
   const { data, error } = await sb.from("clients").update({ ghl_pit_token: null }).eq("id", S.activeClientId).select().single();
   if(error){ setSetupMsg("Disconnect failed: " + error.message); return; }
   S.activeClient = data;
-  S.setup.preflight = null; S.setup.diff = null;
+  invalidateSetupPreviews();
   setSetupMsg("Token cleared from the console. Also revoke the integration inside GHL (sub-account Settings → Private Integrations) to fully de-authorize. Location ID and the created-item map are kept.");
-  renderSetupBody();
+  renderSetupSurfaces();
 }
 
 /* ---- Card 2: gate + manifest union + preflight + dry-run ---- */
-function setupGateMissing(){
+// opts.requirePlan defaults TRUE (the tab runs a build plan's manifest). Chat
+// passes false: "add another calendar" is not tied to any build_steps row. Every
+// CLIENT-level gate still applies to chat — a chat run writes to the same live
+// sub-account, so paid/location/token are non-negotiable either way.
+function setupGateMissing(opts){
+  const requirePlan = !opts || opts.requirePlan !== false;
   const c = S.activeClient, missing = [];
   if(!c.paid_at) missing.push("invoice not marked paid");
   if(!c.ghl_location_id) missing.push("no GHL location ID");
   if(!c.ghl_pit_token) missing.push("no Private Integration Token");
-  if(!S.buildPlan.plan) missing.push("no saved build plan");
+  if(requirePlan && !S.buildPlan.plan) missing.push("no saved build plan");
   return missing;
 }
 
@@ -5510,28 +5847,33 @@ function unionByName(map, list){
   (list || []).forEach(x => { const k = x.name.toLowerCase(); if(!map.has(k)) map.set(k, x); });
 }
 
-async function preflightSetup(){
-  const missing = setupGateMissing();
-  if(missing.length){ setSetupMsg("Blocked — " + missing.join(" · ")); return; }
-  S.setup.busy = true; S.setup.msg = "Preflighting — reading the live sub-account inventory…"; renderSetupBody();
+// origin selects the namespace AND the manifest source: the tab previews the saved
+// build plan's steps, chat previews its own synthetic single-item manifest. Two
+// concurrent preflights are harmless (five read-only list calls each), so this is
+// namespaced-busy, not locked — only EXECUTION is exclusive.
+async function preflightSetup(origin, steps){
+  const org = origin || "tab", ns = setupNs(org);
+  const missing = setupGateMissing({ requirePlan: org !== "chat" });
+  if(missing.length){ setSetupMsg("Blocked — " + missing.join(" · "), org); return; }
+  const src = steps || S.buildPlan.steps;
+  ns.busy = true; ns.msg = "Preflighting — reading the live sub-account inventory…"; renderSetupSurfaces();
   try{
     const [tags, fields, cvs, cals, pipes] = await Promise.all([
       ghl("list_tags"), ghl("list_fields"), ghl("list_custom_values"), ghl("list_calendars"), ghl("list_pipelines"),
     ]);
-    S.setup.preflight = {
+    ns.preflight = {
       tags: tags.tags || [], fields: fields.customFields || [],
       customValues: cvs.customValues || [], calendars: cals.calendars || [], pipelines: pipes.pipelines || [],
     };
-    S.setup.diff = computeSetupDiff();
-    S.setup.msg = "";
-  }catch(e){ S.setup.preflight = null; S.setup.diff = null; S.setup.msg = "Preflight failed: " + e.message; }
-  S.setup.busy = false;
-  renderSetupBody();
+    ns.diff = computeSetupDiff(src, ns.preflight);
+    ns.msg = "";
+  }catch(e){ ns.preflight = null; ns.diff = null; ns.msg = "Preflight failed: " + e.message; }
+  ns.busy = false;
+  renderSetupSurfaces();
 }
 
-function computeSetupDiff(){
-  const pf = S.setup.preflight;
-  const u = setupManifestUnion(S.buildPlan.steps);
+function computeSetupDiff(steps, pf){
+  const u = setupManifestUnion(steps);
   const tagNames = new Set(pf.tags.map(t => (t.name || "").toLowerCase()));
   const fKeys = new Set(pf.fields.map(f => (f.model || "contact") + ":" + (f.name || "").toLowerCase()));
   const tagsToCreate = u.tags.filter(t => !tagNames.has(t.toLowerCase()));
@@ -5558,20 +5900,24 @@ function missingByName(declared, inventory){
 
 function renderSetupRunCard(){
   const missing = setupGateMissing();
+  const ns = S.setup.tab;
+  // The lock's owner tag lets a chat-held run explain itself here instead of
+  // leaving this button mysteriously dead.
+  const heldByChat = S.setup.running === "chat";
   let inner;
   if(missing.length){
     inner = `<button class="btn-primary" style="width:auto" disabled>Run GHL setup</button>
       <div class="msg" style="margin-top:6px">Blocked — ${missing.map(esc).join(" · ")}</div>`;
-  } else if(!S.setup.preflight){
-    inner = `<button class="btn-primary" style="width:auto" onclick="preflightSetup()" ${S.setup.busy ? "disabled" : ""}>Preflight &amp; preview</button>
+  } else if(!ns.preflight){
+    inner = `<button class="btn-primary" style="width:auto" onclick="preflightSetup('tab')" ${ns.busy ? "disabled" : ""}>Preflight &amp; preview</button>
       <div class="msg" style="margin-top:6px">Reads the live sub-account inventory first — nothing is written until you confirm the preview.</div>`;
   } else {
-    const d = S.setup.diff, n = setupCreateCount(d);
-    inner = renderSetupDiff(d) + `
+    const d = ns.diff, n = setupCreateCount(d);
+    inner = renderSetupDiff(d, ns.preflight) + `
       <div style="display:flex;gap:8px;margin-top:10px">
         <button class="btn-primary" style="width:auto" onclick="confirmRunSetup()" ${S.setup.running ? "disabled" : ""}>
-          ${S.setup.running ? "Running…" : (n ? `Confirm — create ${n} item${n === 1 ? "" : "s"}` : "Record inventory & start checklist (0 to create)")}</button>
-        <button class="btn-ghost" onclick="preflightSetup()" ${S.setup.running || S.setup.busy ? "disabled" : ""}>Refresh preview</button>
+          ${S.setup.running === "tab" ? "Running…" : heldByChat ? "Setup run in progress (chat)" : (n ? `Confirm — create ${n} item${n === 1 ? "" : "s"}` : "Record inventory & start checklist (0 to create)")}</button>
+        <button class="btn-ghost" onclick="preflightSetup('tab')" ${S.setup.running || ns.busy ? "disabled" : ""}>Refresh preview</button>
       </div>`;
   }
   return `<div class="card"><div class="phase-h">Run GHL setup — ${esc((S.buildPlan.plan && S.buildPlan.plan.title) || "build plan")}</div>${inner}</div>`;
@@ -5591,8 +5937,7 @@ function setupCreateCount(d){
 function cvLabel(v){ return `${v.name} = ${v.value}`; }
 function pipeLabel(p){ return `${p.name} (${p.stages.join(" → ")})`; }
 
-function renderSetupDiff(d){
-  const pf = S.setup.preflight;
+function renderSetupDiff(d, pf){
   const u = d.union;
   const line = (label, toCreate, existing, fmt) => `<div class="mf-line"><span class="mf-k">${label}:</span> ${toCreate.length} to create · ${existing} already exist${toCreate.length ? " — " + esc(toCreate.map(fmt).join(" · ")) : ""}</div>`;
   return [
@@ -5607,24 +5952,51 @@ function renderSetupDiff(d){
 }
 
 /* ---- Card 3: sequential execution loop — fail-stop, live log ---- */
+// The tab's entry point. Both entry points funnel into runSetupItems so the
+// fail-stop loop, the throwing per-kind dispatch and the found/create
+// idempotency exist in exactly ONE place and can never drift into two versions.
 async function confirmRunSetup(){
-  if(S.setup.running || !S.setup.diff) return;
+  if(!S.buildPlan.plan) return;                       // tab runs a saved plan's manifest
+  return runSetupItems({ origin: "tab", buildPlanId: S.buildPlan.plan.id,
+    checklist: humanChecklistTemplate(S.buildPlan.steps, S.activeClient.ghl_location_id) });
+}
+
+// cfg = { origin:"tab"|"chat", buildPlanId:uuid|null, checklist:[] }
+// Chat passes buildPlanId null (a chat request is not tied to any build_steps row,
+// and stamping a plan id would make the chat run block that build's deletion) and
+// checklist [] (humanChecklistTemplate is build-scoped foundational work — domain,
+// A2P, Stripe — which a one-off chat request must never reset).
+async function runSetupItems(cfg){
+  const ns = setupNs(cfg.origin);
+  if(S.setup.running || !ns.diff) return;             // THE LOCK: any run blocks any other
   const cid = S.activeClientId;
   const ctx = { ghl_location_id: S.activeClient.ghl_location_id, ghl_pit_token: S.activeClient.ghl_pit_token };
   const baseMap = S.activeClient.ghl_map || {};
-  const d = S.setup.diff, pf = S.setup.preflight;
-  S.setup.running = true; renderSetupBody();
+  const d = ns.diff, pf = ns.preflight;
+  S.setup.running = cfg.origin; renderSetupSurfaces();
 
-  // an interrupted run from a dead session stays 'running' forever — close it out
-  if(S.setup.run && S.setup.run.status === "running")
-    await sb.from("setup_runs").update({ status: "failed", finished_at: new Date().toISOString() }).eq("id", S.setup.run.id).select().single();
+  // An interrupted run from a dead session stays 'running' forever — close it out.
+  // DB-DRIVEN, NOT POINTER-DRIVEN: sweep EVERY still-'running' row for this client
+  // regardless of build_plan_id. A pointer-driven sweep could only ever reach the
+  // one row the in-memory pointer happened to hold, which (a) can never reach a
+  // CHAT run — those carry build_plan_id null and loadSetupData filters them out,
+  // so nothing would ever close them — and (b) misses an older orphaned PLAN run,
+  // since the pointer only ever holds the most recent one (limit(1)).
+  // .select() returns the swept rows so a 0-row update can't report false success.
+  const { data: swept, error: sweepErr } = await sb.from("setup_runs")
+    .update({ status: "failed", finished_at: new Date().toISOString() })
+    .eq("client_id", cid).eq("status", "running").select();
+  if(sweepErr){ setSetupMsg("Could not close out interrupted runs: " + sweepErr.message, cfg.origin); S.setup.running = null; renderSetupSurfaces(); return; }
+  if(swept && swept.length && S.setup.run && swept.some(r => r.id === S.setup.run.id))
+    S.setup.run = swept.find(r => r.id === S.setup.run.id);   // keep the tab's pointer truthful
 
   const { data: run, error: insErr } = await sb.from("setup_runs").insert({
-    operator_id: S.user.id, client_id: cid, build_plan_id: S.buildPlan.plan.id,
-    status: "running", log: [], checklist: humanChecklistTemplate(S.buildPlan.steps, ctx.ghl_location_id),
+    operator_id: S.user.id, client_id: cid, build_plan_id: cfg.buildPlanId,
+    status: "running", log: [], checklist: cfg.checklist,
   }).select().single();
-  if(insErr){ setSetupMsg("Could not start run: " + insErr.message); S.setup.running = false; renderSetupBody(); return; }
-  S.setup.run = run;
+  if(insErr){ setSetupMsg("Could not start run: " + insErr.message, cfg.origin); S.setup.running = null; renderSetupSurfaces(); return; }
+  // A chat run must NOT become the tab's Last-run/checklist pointer.
+  if(cfg.origin === "chat") ns.run = run; else S.setup.run = run;
 
   const tagByName = new Map(pf.tags.map(t => [(t.name || "").toLowerCase(), t]));
   const fieldByKey = new Map(pf.fields.map(f => [(f.model || "contact") + ":" + (f.name || "").toLowerCase(), f]));
@@ -5635,8 +6007,8 @@ async function confirmRunSetup(){
   const push = async (entry) => {
     log.push({ ...entry, ts: new Date().toISOString() });
     const { data } = await sb.from("setup_runs").update({ log }).eq("id", run.id).select().single();
-    if(data) S.setup.run = data;
-    if(S.activeClientId === cid && S.module === "setup") renderSetupBody();
+    if(data){ if(cfg.origin === "chat") ns.run = data; else S.setup.run = data; }
+    if(S.activeClientId === cid && S.module === "setup") renderSetupSurfaces();
   };
 
   // Order follows the foundational sequence in .claude/skills/ghl-setup: data
@@ -5650,7 +6022,7 @@ async function confirmRunSetup(){
   ];
   let failed = false;
   for(const it of items){
-    if(S.activeClientId !== cid){ S.setup.running = false; return; }   // client switched — abort; row stays 'running' → shown as interrupted
+    if(S.activeClientId !== cid){ S.setup.running = null; return; }   // client switched — abort; row stays 'running' → shown as interrupted
     try{
       if(it.kind === "tag") await setupTagItem(it, tagByName, push, ctx);
       else if(it.kind === "field") await setupFieldItem(it, fieldByKey, push, ctx);
@@ -5671,13 +6043,17 @@ async function confirmRunSetup(){
   const { data: fin } = await sb.from("setup_runs").update({
     status: failed ? "failed" : "complete", finished_at: new Date().toISOString(),
   }).eq("id", run.id).select().single();
-  if(fin) S.setup.run = fin;
-  S.setup.running = false;
-  S.setup.preflight = null; S.setup.diff = null;   // any re-run starts from a fresh preflight
-  S.setup.msg = failed
+  if(fin){ if(cfg.origin === "chat") ns.run = fin; else S.setup.run = fin; }
+  S.setup.running = null;
+  // CROSS-INVALIDATION — clear BOTH namespaces, not just the one that ran. The run
+  // mutated the live inventory, so the OTHER surface's cached preview is now stale,
+  // and confirming a stale preview is exactly the silent-wrong-write this design
+  // exists to prevent. Any re-run starts from a fresh preflight.
+  invalidateSetupPreviews();
+  ns.msg = failed
     ? "Run FAILED — the log shows exactly what succeeded and what stopped it. Fix the cause and re-run: existing items skip (idempotent)."
     : "Setup run complete ✓ — created items and their GHL ids are recorded on the client.";
-  if(S.activeClientId === cid && S.module === "setup") renderSetupBody();
+  if(S.activeClientId === cid && S.module === "setup") renderSetupSurfaces();
 }
 
 async function setupTagItem(it, tagByName, push, ctx){

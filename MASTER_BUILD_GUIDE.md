@@ -205,11 +205,13 @@ full-screen branded report; **Print / Save as PDF** inside it calls `window.prin
   rendering, page-by-page, at every round — not visual description alone.
 
 ## Setup Agent chat panel — layout shell & derived nav override (July 30 2026; map: docs/planning/setup_chat_nav_derived_state.svg/.png)
-THIS CYCLE IS LAYOUT + STATE WIRING ONLY. The chat renders as an EMPTY SHELL (header,
-message region, inert composer) — no AI call, no message model, no persistence, no DB
-work. Chat behaviour is a separate follow-on. The Setup Agent content column is
-untouched: settings, Run GHL setup, diff preview, log and checklist keep their exact
-markup and behaviour.
+**SUPERSEDED IN PART (Aug 3 2026) — see "Setup Agent chat — live execution" below.** The
+July 30 cycle described here was LAYOUT + STATE WIRING ONLY: an empty shell with an inert
+composer, no AI call, no message model, no persistence, no DB work. The nav-override and
+layout rules in this section are still exactly true and still binding. What is NO LONGER
+true is "inert": the chat now carries a message model, a confirmation gate and real GHL
+writes. The Setup Agent content column remains untouched — settings, Run GHL setup, diff
+preview, log and checklist keep their markup and behaviour.
 - **Two independent sidebar classes, one visual result.** `#app.nav-collapsed` = the
   operator's PERSISTED preference (☰ / `toggleNav()` / `localStorage bl_nav_collapsed`).
   `#app.nav-forced` = a TRANSIENT override applied while the chat is open. `setNavForced(on)`
@@ -248,6 +250,132 @@ markup and behaviour.
   functions under test out of `index.html` (only the data layer stubbed): 9/9 checks,
   including localStorage read before/after both round-trips and a DOM-identity check that the
   chat panel survives `renderSetupBody()` with composer text and scrollTop intact.
+
+## Setup Agent chat — live execution (Aug 3 2026) — documentation catching up to reality
+The chat now runs real GHL setup through the SAME pipeline the build plan uses. Nothing is
+forked: the fail-stop loop, the throwing per-kind dispatch and the found/create idempotency
+exist in exactly one place (`runSetupItems`). A chat request builds a SYNTHETIC step
+(`[{manifest}]`) with NO `build_steps` row behind it and feeds it through
+`setupManifestUnion` → `computeSetupDiff` → `runSetupItems`.
+- **NAMESPACE THE PREVIEW, LOCK THE EXECUTION.** `S.setup.tab` and `S.setup.chat` each own
+  `preflight`/`diff`/`busy`/`msg`. Sharing them is a SILENT WRONG WRITE — a chat preview
+  overwriting the tab's diff would make the tab's Confirm create the CHAT's items while the
+  operator believes they approved the plan's, with no error and no symptom. Execution is the
+  opposite: ONE client-wide lock, because two runs against one sub-account both preflighted
+  the same inventory (both attempt the same create; calendars/custom values/pipelines have NO
+  duplicate-create recovery) and the stale-run sweep would mark the other run failed
+  mid-flight. `running` is an OWNER TAG (`null|"tab"|"chat"`) so the blocked surface can say
+  WHY; falsy when idle so existing truthiness checks hold. It REJECTS rather than queues — a
+  queued run would execute against a stale preflight.
+- **Cross-invalidation** via `invalidateSetupPreviews()`: any completed run, or any connection
+  change, clears BOTH namespaces' preflight/diff plus `chat.pending`. Whatever made one
+  surface's cached inventory wrong made the other's wrong too.
+- **Chat runs carry `build_plan_id: null`** (so they never block a build's deletion via
+  `deleteBuild`'s count) and `checklist: []` (`humanChecklistTemplate` is build-scoped
+  foundational work a one-off request must never reset). `loadSetupData` therefore filters
+  `.not("build_plan_id","is",null)` so `S.setup.run` stays the PLAN pointer — without it a
+  reload after any chat run would render the tab's checklist card EMPTY.
+- **Interrupted-run sweep is DB-DRIVEN, not pointer-driven**: every still-`running` row for
+  the client, regardless of `build_plan_id`. A pointer-driven sweep could never reach a chat
+  run (filtered out of `loadSetupData`) and missed older orphaned plan runs beyond `limit(1)`.
+- **PROVEN LIVE IN PRODUCTION (not just by harness).** Commit 2's "NOT VERIFIED" list is now
+  closed except the AI layer. A real chat request created calendar "deliveries" in 123
+  Business's live sub-account, cross-verified at four independent layers:
+  `setup_runs` row `60f985cd` (`build_plan_id` NULL — the first-ever chat-origin row —
+  `status` complete, `checklist` length 0) → its single log entry
+  `{kind:"calendar", name:"deliveries", action:"created", ghl_id:"6uZbRMQC8Ky8VgV16B5k"}` →
+  `clients.ghl_map.calendars.deliveries` holding that same id → a live `list_calendars`
+  showing 8 calendars including `deliveries` at that id. So `preflightSetup("chat")`, the
+  diff render, Confirm, and `runSetupItems({origin:"chat"})` are all live-proven.
+- **The `loadSetupData` exclusion filter is no longer vacuous.** With the chat run as the
+  NEWEST row the two queries finally diverge: unfiltered returns the chat run
+  (`checklist_len` 0), filtered returns plan run `13909aeb` (`checklist_len` 5) — exactly the
+  bug the filter prevents.
+- Harness: 102/102 assertions against the shipped source (extract-and-eval, not retyped
+  copies) covering the lock in both directions, namespace independence, cross-invalidation,
+  gate behaviour with and without a plan, and that the fail-stop loop / throwing dispatch /
+  `setup_runs` insert each appear exactly once. **Commit 3 raised this to 161/161.**
+
+## Setup Agent chat — the AI layer (commit 3, Aug 4 2026)
+
+`proposeChatManifest` is no longer a regex stand-in: it is a real `ai()` call, and it is the
+ONLY AI in the chat path. Everything downstream (preflight → diff → confirmation gate →
+`runSetupItems` → GHL writes) is deterministic and was not touched.
+
+- **Output is a DISCRIMINATED UNION**, which is what makes refusing a first-class response
+  rather than a degenerate manifest: `{action:"propose", summary, manifest}` or
+  `{action:"reply", message}`. A `reply` covers all three non-propose cases — out of scope,
+  needs clarification (a pipeline with no stages given), or a question — and returns to the
+  operator as text. **A `reply` STOPS BEFORE `preflightSetup`**: no inventory read, no diff,
+  no confirm button. A manifest attached to a `reply` by a hedging model is ignored by
+  construction, because `sendSetupChat` returns before anything reads it.
+- **Scope is exactly the five supported kinds** (tags, fields, custom values, calendars,
+  pipelines) — the ones `runSetupItems` can actually write. `SETUP_CHAT_SYSTEM` states three
+  rules that are real properties of the pipeline, not style: setup ONLY CREATES (never
+  deletes, renames or edits — `missingByName` leaves anything existing untouched); no
+  bracketed placeholders (they route to `paramItems` and are never created); stage `position`
+  is never authored (derived from array index). Out of scope → say plainly what setup can and
+  cannot do and STOP — never approximate the request with a manifest, never propose a
+  near-miss item instead.
+- **The AI is deliberately BLIND to the live inventory.** It is a text→manifest translator;
+  "does this already exist" is answered by `computeSetupDiff` against a fresh preflight,
+  which stays the single source of truth.
+- **VALIDATION CHAIN, every response, before anything reaches the pipeline:** `JSON.parse`
+  (fences stripped) → `validateChatProposal` (discriminated shape) → **`validateManifest`,
+  the existing shared validator, UNMODIFIED** → `hardenChatManifest`. Any failure stops with
+  an operator-facing chat message and zero writes.
+- **`hardenChatManifest` is chat-only and ADDITIVE** — it closes three ways a manifest passes
+  `validateManifest` yet still produces a SILENTLY WRONG write, so it must not be folded into
+  the shared validator (that would change formulate's behavior):
+  1. **Field type vocabulary.** `validateManifest` requires only a non-empty string and
+     `setupFieldItem` does `GHL_DATATYPE[type] || "TEXT"` — so `type:"dropdown"` would be
+     silently created as a TEXT field. Rejected. A *capitalized* type (`"Number"`) is
+     plausible model output and would ALSO silently fall back to TEXT, so it is accepted
+     case-insensitively and CANONICALIZED to lowercase.
+  2. **Unknown top-level keys.** `validateManifest` ignores them and `setupManifestUnion`
+     never reads them, so an invented sixth kind (`requires_workflows`) would be silently
+     DROPPED while the summary still claimed it — the diff would contradict its own summary.
+  3. **Duplicate pipeline stage names.** Nothing upstream checks this: `setupPipelineItem`
+     maps stages to `{name, position:i}` and posts them, so duplicates would both be created.
+     Checked case- and whitespace-insensitively.
+  Plus placeholder-bracket rejection and an empty-manifest guard.
+- `aiJsonWithRetry` is reused, inheriting its doctrine unchanged (one retry on a CONTRACT
+  VIOLATION only with the named violation fed back; transport and truncation errors propagate
+  immediately). Two additive params: `history` for multi-turn, and `tag` for the console
+  prefix so chat failures don't log under `[sweep]`.
+- `chatHistoryForAi()` exists for three hard Messages-API constraints, each of which
+  otherwise costs a 400 or a wasted turn: consecutive same-role turns are MERGED (Cancel
+  straight after a proposal pushes two agent turns in a row), leading assistant turns are
+  dropped (the first message must be user), and history is capped at 10 prior turns. The
+  CURRENT user message is excluded — `aiJsonWithRetry` appends it.
+- `chatSetupContext()` is read-only and makes **no extra API calls** — client, gate state and
+  the build plan's `setupManifestUnion` summary, all already in memory. This is what makes
+  the panel's own empty-state promise ("what the run will create, what already exists, or why
+  a step is blocked") honest; anything outside it the AI is told to decline rather than guess.
+- **NOT mechanically detectable, stated so it isn't mistaken for covered:** a summary that
+  misdescribes its own manifest. No validator can catch that. The control is the confirmation
+  gate — the operator confirms against the rendered diff, never the summary text.
+- Harness: 161/161 against the shipped source, including an adversarial band of
+  passes-structural-checks-but-subtly-wrong cases (empty-string custom value, duplicate and
+  case-differing stages, bad/null field object, out-of-vocabulary and capitalized types,
+  invented sixth kind, stages as objects, placeholder name and value, empty manifest) plus
+  retry doctrine and history mapping. The AI itself is stubbed with canned raw output — see
+  the next line.
+- **PROVEN LIVE (Aug 4 2026 — this bullet previously read "LIVE-UNVERIFIED at commit time").**
+  `/api/ai` 501s on localhost, so the harness could only stub the AI; the real model's
+  behavior was tested by operator against the `215ff94` preview
+  (`baseleap-console-4owwdsqb3`, deployed 21:38:11Z), five cases including the one that
+  mattered most — **an out-of-scope request produced a plain refusal and NO diff**, so the
+  scope rule holds against a real model and not just against canned output.
+- **What the DB corroborates, and what it structurally cannot.** Case 1 left a real audit
+  trail: `setup_runs` `70c9c628` at 21:43:27Z (5 min after that deploy), `build_plan_id` NULL
+  + `checklist` [] = a chat run, one log entry creating calendar `g money`
+  (`fNKN8F5xtXDG4fJB8ML0`), finished in 620ms. Note the name is stored VERBATIM — lowercase,
+  not title-cased — which is direct evidence the prompt's "do not rephrase, title-case or
+  improve their wording" rule held on live output. **The refusal path leaves NO server-side
+  trace by design** — no `setup_runs` row, no `ghl_map` entry, no GHL call — so case 2 rests
+  on the operator's direct observation and nothing else can ever corroborate it. That is the
+  correct behavior (a refusal must write nothing), not a gap in the evidence.
 
 ## Feasibility gate (the core business rule, enforced by data)
 Gaps are written by the Audit Assistant with `validation_status = 'pending'`. The Automation Agent
