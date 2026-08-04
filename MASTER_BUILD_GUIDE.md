@@ -361,11 +361,21 @@ ONLY AI in the chat path. Everything downstream (preflight → diff → confirma
   invented sixth kind, stages as objects, placeholder name and value, empty manifest) plus
   retry doctrine and history mapping. The AI itself is stubbed with canned raw output — see
   the next line.
-- **LIVE-UNVERIFIED at commit time.** `/api/ai` 501s on localhost, so the real model's
-  behavior on live phrasings — does it actually refuse out-of-scope requests cleanly and emit
-  valid shapes — needs a preview deployment and an operator, exactly as commit 2's live
-  calendar test did. Everything above is proven against the shipped source, not against the
-  model.
+- **PROVEN LIVE (Aug 4 2026 — this bullet previously read "LIVE-UNVERIFIED at commit time").**
+  `/api/ai` 501s on localhost, so the harness could only stub the AI; the real model's
+  behavior was tested by operator against the `215ff94` preview
+  (`baseleap-console-4owwdsqb3`, deployed 21:38:11Z), five cases including the one that
+  mattered most — **an out-of-scope request produced a plain refusal and NO diff**, so the
+  scope rule holds against a real model and not just against canned output.
+- **What the DB corroborates, and what it structurally cannot.** Case 1 left a real audit
+  trail: `setup_runs` `70c9c628` at 21:43:27Z (5 min after that deploy), `build_plan_id` NULL
+  + `checklist` [] = a chat run, one log entry creating calendar `g money`
+  (`fNKN8F5xtXDG4fJB8ML0`), finished in 620ms. Note the name is stored VERBATIM — lowercase,
+  not title-cased — which is direct evidence the prompt's "do not rephrase, title-case or
+  improve their wording" rule held on live output. **The refusal path leaves NO server-side
+  trace by design** — no `setup_runs` row, no `ghl_map` entry, no GHL call — so case 2 rests
+  on the operator's direct observation and nothing else can ever corroborate it. That is the
+  correct behavior (a refusal must write nothing), not a gap in the evidence.
 
 ## Feasibility gate (the core business rule, enforced by data)
 Gaps are written by the Audit Assistant with `validation_status = 'pending'`. The Automation Agent

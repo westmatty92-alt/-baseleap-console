@@ -197,6 +197,7 @@ than a documented one.
 | `Console Probe Calendar` | calendar | `FqKxaILGRoCr1plIb0ys` | July 6 2026 write-matrix probe |
 | `Console Probe Calendar 20260803` | calendar | `agRdRQ1h1OoPdPvlh96F` | Aug 3 2026 calendar-envelope probe |
 | `deliveries` | calendar | `6uZbRMQC8Ky8VgV16B5k` | Aug 3 2026 — **first live Setup Agent CHAT run** (`setup_runs` `60f985cd`, `build_plan_id` NULL) |
+| `g money` | calendar | `fNKN8F5xtXDG4fJB8ML0` | Aug 4 2026 — **first live run through the AI layer** (`setup_runs` `70c9c628`, `build_plan_id` NULL) |
 
 The July 6 run also created the review-engine tags and contact fields listed in
 `setup_runs` `13909aeb` — those are a legitimate build-plan provisioning run, not
