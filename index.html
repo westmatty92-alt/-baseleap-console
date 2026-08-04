@@ -3228,17 +3228,23 @@ function classifyGapRoute(g, catalogByKey){
 // Shared retry-once wiring for the sweep's per-gap AI calls (same doctrine as
 // generatePlanDraft): only a contract violation earns the retry, with the named
 // violation fed back; transport/proxy errors propagate immediately.
-async function aiJsonWithRetry({ system, userMsg, max_tokens, validate, what }){
+// `history` (optional, default none) prepends prior turns for the multi-turn chat
+// caller; the retry still appends its correction to the CURRENT user message, so
+// the fed-back violation stays attached to the turn that caused it. `tag` (default
+// "sweep") only names the console prefix — a chat failure logging under "[sweep]"
+// would send the next investigation to the wrong module.
+async function aiJsonWithRetry({ system, userMsg, max_tokens, validate, what, history, tag }){
+  const lg = tag || "sweep";
   const attempt = async (msg) => {
     let out;
-    const raw = await ai({ system, messages: [{ role:"user", content: msg }], max_tokens });
+    const raw = await ai({ system, messages: [...(history || []), { role:"user", content: msg }], max_tokens });
     // Capture the raw output on any contract failure — the throw only carries the
     // error string, so without this the actual generation is discarded and the next
     // investigation is blind. Logged with `what` (e.g. "parameterize (lead_response)").
     try{ out = JSON.parse(raw.replace(/```json|```/g, "").trim()); }
-    catch(e){ console.error(`[sweep] ${what} — unparseable AI output:\n`, raw); throw new Error("invalid JSON"); }
+    catch(e){ console.error(`[${lg}] ${what} — unparseable AI output:\n`, raw); throw new Error("invalid JSON"); }
     try{ validate(out); }
-    catch(e){ console.error(`[sweep] ${what} — validation failed (${e.message}); raw output:\n`, raw); throw e; }
+    catch(e){ console.error(`[${lg}] ${what} — validation failed (${e.message}); raw output:\n`, raw); throw e; }
     return out;
   };
   try{ return await attempt(userMsg); }
@@ -5473,21 +5479,156 @@ function closeSetupChat(){ S.setup.chatOpen = false; render(); }
 
 function chatSay(role, text){ S.setup.chat.messages.push({ role, text }); }
 
-/* THE AI SEAM. Commit 2 ships a deterministic stand-in so the whole chat path —
-   propose → validate → preflight → confirm → run — is exercisable without the AI
-   and without /api/ai (which 501s on localhost). Commit 3 replaces THIS FUNCTION
-   ONLY with the ai() call; everything downstream is already the real thing.
-   Returns { manifest, summary } or throws with an operator-facing message. */
-function proposeChatManifest(text){
-  const t = text.trim();
-  const m = /^add (?:a |an )?(calendar|tag|custom value|pipeline)\s+(?:called\s+)?(.+)$/i.exec(t);
-  if(!m) throw new Error(`I can't turn that into a setup action yet. Try: "add a calendar called Consultation Call". (Natural-language understanding arrives with the AI layer.)`);
-  const kind = m[1].toLowerCase(), name = m[2].trim().replace(/^["']|["']$/g, "");
-  const base = { requires_tags: [], creates_tags: [], requires_fields: [] };
-  if(kind === "calendar") return { manifest: { ...base, requires_calendars: [{ name }] }, summary: `Add calendar “${name}”` };
-  if(kind === "tag")      return { manifest: { ...base, creates_tags: [name] },            summary: `Add tag “${name}”` };
-  if(kind === "pipeline") throw new Error(`A pipeline needs its stages — a pipeline with no stages can't be created. Tell me the stages in order.`);
-  throw new Error(`A custom value needs the value as well as the name.`);
+/* ---- THE AI SEAM (commit 3 — was a regex stand-in through commit 2) ----
+   Text → a validated setup manifest, or a plain-text reply. This is the ONLY
+   AI in the chat path: everything downstream (preflight → diff → confirm →
+   runSetupItems) is deterministic and unchanged.
+
+   The AI is deliberately BLIND to the live inventory. It translates intent into
+   a declaration; whether a thing already exists is answered by computeSetupDiff
+   against a fresh preflight, which stays the single source of truth. */
+
+const SETUP_CHAT_KINDS = ["requires_tags","creates_tags","requires_fields",
+  "requires_calendars","requires_custom_values","requires_pipelines"];
+
+const SETUP_CHAT_SYSTEM = `You are the Setup Agent for the Baseleap Console. You turn an operator's request into a GHL setup manifest, or you answer them in plain words. You never write anything yourself — an operator reviews a real diff and confirms before anything is created.
+
+YOU CAN DECLARE EXACTLY FIVE KINDS OF THING. Nothing else exists for you:
+1. Tags        — "creates_tags": ["tag name", ...]
+2. Custom fields — "requires_fields": [{"name":"Field Name","type":"text|number|currency|date","object":"contact|opportunity"}]
+3. Custom values — "requires_custom_values": [{"name":"Value Name","value":"the actual value"}]
+4. Calendars   — "requires_calendars": [{"name":"Calendar Name"}]
+5. Pipelines   — "requires_pipelines": [{"name":"Pipeline Name","stages":["First","Second","Third"]}]
+
+HARD RULES:
+- Setup ONLY CREATES. It can never delete, rename, reorder, merge, or edit anything that already exists. Never promise or imply otherwise.
+- "type" must be exactly one of text, number, currency, date — lowercase. "object" must be exactly contact or opportunity (omit for contact).
+- Pipeline stages are plain strings in the order they should appear. Declaration order IS stage order. Never write a "position" — it is derived. Stage names must be unique within a pipeline. A pipeline cannot be created without at least one stage.
+- Never invent a sixth key. If the manifest needs something outside the five kinds above, that request is out of scope.
+- Never use a bracketed placeholder like [Client Name] as a name or a value. Every name and value must be the literal text to create.
+- Use "creates_tags" for tags; leave "requires_tags" empty.
+- Name things exactly as the operator asked. Do not rephrase, title-case, pluralize, or "improve" their wording.
+
+RESPOND WITH ONE JSON OBJECT, NOTHING ELSE. Two possible shapes:
+
+To propose setup items:
+{"action":"propose","summary":"one short line naming exactly what will be created","manifest":{"requires_tags":[],"creates_tags":[],"requires_fields":[]}}
+"requires_tags", "creates_tags" and "requires_fields" are ALWAYS present, as empty arrays when unused. Add "requires_calendars", "requires_custom_values" or "requires_pipelines" only when that kind is actually being created.
+
+To say anything else — a refusal, a clarifying question, or an answer:
+{"action":"reply","message":"what you want to say to the operator"}
+
+USE "reply", NOT "propose", WHEN:
+- The request is outside the five kinds (workflows, automations, emails, users, integrations, deleting or renaming things, anything else). Say plainly what setup can and cannot do. NEVER approximate an out-of-scope request with a manifest, and never propose a near-miss item instead.
+- Something required is missing — a pipeline with no stages given, a custom value with no value. Ask for exactly what you need.
+- They are asking a question rather than requesting a change. Answer from the context below; if the answer is not in it, say so rather than guessing.
+
+The summary is read by a human next to the real diff, so it must describe exactly what the manifest declares — no more.`;
+
+// Read-only context, assembled from state already in memory — no extra API calls.
+// The build-plan union is what makes the panel's "what will the run create?"
+// promise answerable; anything not here the AI is told to decline rather than guess.
+function chatSetupContext(){
+  const c = S.activeClient, lines = [`Client: ${c.business_name}${c.industry ? ` (${c.industry})` : ""}`];
+  const blocked = setupGateMissing({ requirePlan: false });
+  lines.push(blocked.length ? `Setup is BLOCKED: ${blocked.join(" · ")}` : "Setup is unblocked (paid, location ID and token present).");
+  if(S.buildPlan.plan && S.buildPlan.steps.length){
+    const u = setupManifestUnion(S.buildPlan.steps);
+    lines.push(`The saved build plan declares: ${u.tags.length} tag(s), ${u.fields.length} field(s), ${u.customValues.length} custom value(s), ${u.calendars.length} calendar(s), ${u.pipelines.length} pipeline(s).`);
+    if(u.tags.length) lines.push(`Plan tags: ${u.tags.join(" · ")}`);
+    if(u.fields.length) lines.push(`Plan fields: ${u.fields.map(fieldLabel).join(" · ")}`);
+    if(u.paramItems.length) lines.push(`Needs hand-naming (placeholders, never auto-created): ${u.paramItems.join(" · ")}`);
+  } else {
+    lines.push("No saved build plan is loaded, so I know nothing about planned setup items.");
+  }
+  return lines.join("\n");
+}
+
+/* Prior turns for the API. Three things this must fix, all of which produce a
+   400 or a wasted turn otherwise: the Messages API rejects consecutive same-role
+   messages (Cancel right after a proposal pushes two agent turns in a row), it
+   requires the first message to be user, and unbounded history grows the bill
+   every turn. The CURRENT user message is excluded — aiJsonWithRetry appends it. */
+function chatHistoryForAi(){
+  const recent = S.setup.chat.messages.slice(0, -1).slice(-10)
+    .map(m => ({ role: m.role === "user" ? "user" : "assistant", content: m.text }));
+  while(recent.length && recent[0].role !== "user") recent.shift();
+  return recent.reduce((acc, m) => {
+    const last = acc[acc.length - 1];
+    if(last && last.role === m.role) last.content += "\n" + m.content; else acc.push(m);
+    return acc;
+  }, []);
+}
+
+// Discriminated shape. A `reply` is a legitimate response, NOT a contract
+// violation — only a malformed one earns the retry.
+function validateChatProposal(o){
+  if(!o || typeof o !== "object" || Array.isArray(o)) throw new Error("response is not an object");
+  if(o.action !== "propose" && o.action !== "reply") throw new Error(`action must be "propose" or "reply"`);
+  if(o.action === "reply"){
+    if(typeof o.message !== "string" || !o.message.trim()) throw new Error("reply needs a non-empty message");
+    return;
+  }
+  if(typeof o.summary !== "string" || !o.summary.trim()) throw new Error("propose needs a non-empty summary");
+  if(!o.manifest || typeof o.manifest !== "object" || Array.isArray(o.manifest)) throw new Error("propose needs a manifest object");
+  // The SAME validator that gates AI-formulated plan output — a chat manifest is
+  // held to the identical shape contract, unmodified.
+  validateManifest(o.manifest, "manifest");
+  hardenChatManifest(o.manifest);
+}
+
+/* Chat-only hardening: three ways a manifest passes validateManifest yet still
+   produces a SILENTLY WRONG write, plus canonicalization. Deliberately additive —
+   validateManifest itself is untouched, so the formulate path keeps its behavior. */
+function hardenChatManifest(m){
+  Object.keys(m).forEach(k => {
+    // validateManifest ignores unknown keys and setupManifestUnion never reads
+    // them, so an invented sixth kind would be silently DROPPED while the summary
+    // still claimed it — the diff would contradict its own summary.
+    if(!SETUP_CHAT_KINDS.includes(k)) throw new Error(`manifest has an unsupported key "${k}" — setup can only create tags, fields, custom values, calendars and pipelines`);
+  });
+  (m.requires_fields || []).forEach((f, i) => {
+    // setupFieldItem does GHL_DATATYPE[type] || "TEXT", so an unrecognized type
+    // is not rejected downstream — a currency field would be silently created as
+    // text. Accept any casing, then canonicalize so the map always resolves.
+    const t = String(f.type).trim().toLowerCase();
+    if(!GHL_DATATYPE[t]) throw new Error(`requires_fields[${i}].type "${f.type}" is not one of text, number, currency, date`);
+    f.type = t;
+  });
+  (m.requires_pipelines || []).forEach((p, i) => {
+    // Nothing upstream checks this: setupPipelineItem maps stages to
+    // {name, position:i} and posts them, so duplicates would both be created.
+    const seen = new Set();
+    p.stages.forEach(s => {
+      const k = s.trim().toLowerCase();
+      if(seen.has(k)) throw new Error(`requires_pipelines[${i}] ("${p.name}") repeats the stage "${s.trim()}" — stage names must be unique`);
+      seen.add(k);
+    });
+  });
+  // A bracketed name routes to paramItems and is never created, so a proposal
+  // built from placeholders would preview as "nothing to create" instead of
+  // failing honestly. An operator typing a concrete request never wants one.
+  const named = [...(m.creates_tags || []), ...(m.requires_tags || [])]
+    .concat([...(m.requires_fields || []), ...(m.requires_calendars || []),
+             ...(m.requires_custom_values || []), ...(m.requires_pipelines || [])].map(x => x.name))
+    .concat((m.requires_custom_values || []).map(v => v.value));
+  if(named.some(n => String(n).trim().startsWith("[")))
+    throw new Error("manifest uses a bracketed placeholder — every name and value must be the literal text to create");
+  if(!named.length) throw new Error("propose declared no items — use action \"reply\" if there is nothing to create");
+}
+
+/* Returns { action:"propose", manifest, summary } or { action:"reply", message }.
+   Throws only on a genuine failure (transport, or two contract violations). */
+async function proposeChatManifest(text){
+  return await aiJsonWithRetry({
+    system: SETUP_CHAT_SYSTEM + "\n\nCONTEXT FOR THIS CLIENT:\n" + chatSetupContext(),
+    userMsg: text,
+    history: chatHistoryForAi(),
+    max_tokens: 1200,
+    validate: validateChatProposal,
+    what: "setup chat",
+    tag: "setup-chat",
+  });
 }
 
 /* Propose → validate → preflight. NOTHING is written here: this only produces the
@@ -5506,13 +5647,17 @@ async function sendSetupChat(){
 
   c.thinking = true; renderSetupChatLog();
   let proposal;
-  try{ proposal = proposeChatManifest(text); }
-  catch(e){ c.thinking = false; chatSay("agent", e.message); renderSetupChatLog(); return; }
-
-  // Same validator that gates AI-formulated plan output — a chat manifest is held
-  // to the identical shape contract, so a malformed one can never reach the run loop.
-  try{ validateManifest(proposal.manifest, "chat manifest"); }
+  // proposeChatManifest validates before returning (shape → validateManifest →
+  // hardenChatManifest), so anything that arrives here is already contract-clean.
+  try{ proposal = await proposeChatManifest(text); }
   catch(e){ c.thinking = false; chatSay("agent", "That didn't produce a valid setup item: " + e.message); renderSetupChatLog(); return; }
+
+  // A refusal, a clarifying question or an answer. Returns to the operator as text
+  // and stops HERE — no inventory read, no diff, no confirm button. Any manifest a
+  // hedging model attached to a reply is ignored by construction: it is never read.
+  if(proposal.action === "reply"){
+    c.thinking = false; chatSay("agent", proposal.message); renderSetupChatLog(); return;
+  }
 
   c.thinking = false;
   c.pending = proposal;
