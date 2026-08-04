@@ -170,6 +170,57 @@ row can never be counted as one kind and drawn as another.
   grid card (`planCounts` — `N engines · N steps`) is a separate surface and independently
   corroborates (`4 engines · 17 steps`).
 
+## PM Tracker — lifecycle lens (Order 15, Aug 4 2026)
+
+A **Tracker** subtab (`renderTracker()`/`renderTrackerBody()`, between Build Plan and
+Proposal) that re-presents the SAME `S.buildPlan.steps` by lifecycle state instead of by
+structural category. **THIS IS A LENS, NOT NEW MACHINERY** — and knowing that is what keeps a
+future change from re-implementing it.
+
+- **The lifecycle already existed and was already working.** `build_steps.status` has carried
+  the live CHECK `queued|building|testing|done` since migration 005; `STATUS_STAGE` maps it to
+  4 discrete stages; `setStepStatus()` writes it and stamps `completed_at`; `renderEngineRow`
+  already drew the progress bar, the blocked-by label and the actionable highlight. Order 15
+  added NONE of that. What it adds is the arrangement plus three facts the plan view computed
+  and then discarded: the actionable QUEUE, blocker IMPACT, and `completed_at` (which had
+  **zero read sites** anywhere in the app before this).
+- **Four buckets, EXHAUSTIVE AND DISJOINT BY CONSTRUCTION** (`trackerBuckets`): `done` and
+  `queued` are handled explicitly and everything else falls to in-flight, so every step lands
+  in exactly one bucket and the four re-sum to `steps.length` — the Tracker can never
+  disagree with the header total. The terminal else is a CATCH-ALL on purpose: a status added
+  to the CHECK later surfaces visibly as in-flight instead of silently vanishing.
+- Buckets are `position`-sorted, so the top of **Ready** is the genuine "do this next" —
+  `position` is the plan's topological order.
+- **`stepBlockers(s, opts)` / `isActionable(s)` are THE single definitions**, extracted from
+  two inline copies (`renderEngineRow`, `renderTestGateSubRow`) so three surfaces can't drift.
+  `opts.skipSameGap` is a **DISPLAY scope, not a truth change**: a nested test-gate is drawn
+  under its own engine, so naming that engine is a redundant pointer at the row above — but
+  the gate IS genuinely blocked by it, which is why the Tracker calls this WITHOUT the option
+  and buckets such a gate as Blocked. Behavior identity with the old inline code is asserted
+  over 300 randomized plans.
+- **A DONE step never renders blocked-by.** Real plans contain done steps whose upstream deps
+  are still queued (an operator completing work out of dependency order) — `stepBlockers`
+  correctly still reports those deps, so the ROW guards on `s.status !== "done"`. Without it
+  every such step displays a blocked-by list contradicting its own status. **Found on real
+  data (`de43a1b1`), not by the fixtures** — the guard is on the LABEL only; the computation
+  was never weakened to fix a display problem. NOTE: `renderEngineRow` still has this
+  cosmetic issue and was deliberately left alone (out of scope) — candidate cleanup.
+- **No new write path, no schema change.** Tracker rows drive the existing `setStepStatus()`;
+  `build_steps` has exactly 3 update sites (status, checklist, notes) and only one writes
+  status. The plan-level rollup is DERIVED and displayed only — `build_plans.status` is free
+  text with NO CHECK constraint and is not written here.
+- **Deferred, not dropped:** the `done`-click side effects from the original Order 15 text
+  (3-audience SOP generation + deployed-system ledger write). Neither has a substrate today —
+  a schema-wide search for `%ledger%`/`%sop%`/`%deployed%`/`%audience%` columns returns ZERO
+  rows across all 11 tables, so "done writes the ledger" has literally nothing to write to
+  until Order 16 exists. Also still absent: `import-build-plan-from-structured-input` (no such
+  function anywhere in the repo) and any Baseleap-own client/plan row — which is why
+  "Baseleap's own CRM plan = first test case" was not usable and `de43a1b1` was used instead.
+- Verification: 53/53 harness assertions against the shipped source, plus the real 17-step
+  plan partitioning 9 ready + 4 blocked + 0 in-flight + 4 done = 17, and a live browser check
+  of the unblock cascade (marking `Sub-account foundation` done moved Ready 9→12, Blocked
+  4→0, Done 4→5, total still 17; reverted, DB restored to `queued`/`completed_at` null).
+
 ## Gap Report — client-facing Preview / print view (branded; on `fix/condition-empty-branch-autorepair`, not yet merged)
 A separate presentational view (`.cr-*` classes, `renderClientReport()`/`openClientReport()`/
 `closeClientReport()`) over the operator Gap Report tab — a **Preview** button opens a
