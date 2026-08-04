@@ -457,13 +457,35 @@
   .bp-bar{position:relative;flex:1;min-width:0;height:7px;border-radius:20px;background:var(--line);overflow:hidden}
   .bp-bar i{display:block;height:100%;border-radius:20px}
   .bp-bar::after{content:"";position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(90deg,transparent 0 calc(25% - 1px),var(--surface) calc(25% - 1px) 25%)}
-  .bp-row.st-done .bp-bar i{background:linear-gradient(90deg,var(--run),var(--volt))}
-  .bp-row.st-building .bp-bar i,.bp-row.st-testing .bp-bar i{background:linear-gradient(90deg,#E8A13A,#EF9F27)}
-  .bp-row.st-queued .bp-bar i{background:var(--muted)}
+  /* GROUPED with the Tracker's rows on purpose: one definition of what a stage LOOKS
+     like, so the two surfaces can never show the same status in different colors. */
+  .bp-row.st-done .bp-bar i,.trk-row.st-done .bp-bar i{background:linear-gradient(90deg,var(--run),var(--volt))}
+  .bp-row.st-building .bp-bar i,.bp-row.st-testing .bp-bar i,
+  .trk-row.st-building .bp-bar i,.trk-row.st-testing .bp-bar i{background:linear-gradient(90deg,#E8A13A,#EF9F27)}
+  .bp-row.st-queued .bp-bar i,.trk-row.st-queued .bp-bar i{background:var(--muted)}
   .bp-stage{font-size:11px;color:var(--muted);text-transform:capitalize;white-space:nowrap;flex:none}
   .bp-hours{font-size:12px;color:var(--muted);white-space:nowrap}
   .bp-blocked{font-size:11px;color:#E24B4A;background:rgba(226,75,74,.08);padding:3px 9px;border-radius:8px;line-height:1.4;align-self:flex-start;max-width:100%}
   .bp-status-sel{font-size:12px;padding:5px 7px;border:1px solid var(--line);border-radius:6px;background:var(--surface);justify-self:start}
+  /* ---- PM Tracker (Order 15): a lifecycle lens over the same steps ---- */
+  .trk-dist{margin-top:8px;font-size:11.5px;color:var(--muted);text-transform:capitalize;letter-spacing:.01em}
+  .trk-sec{padding-top:14px}
+  .trk-sec-h{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:var(--depth)}
+  .trk-n{margin-left:auto;font-size:11.5px;font-weight:600;color:var(--muted);background:var(--canvas);border:1px solid var(--line);border-radius:20px;padding:2px 9px}
+  .trk-dot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--muted)}
+  .trk-ready   .trk-dot{background:var(--volt)}
+  .trk-blocked .trk-dot{background:#E24B4A}
+  .trk-inflight .trk-dot{background:#EF9F27}
+  .trk-done    .trk-dot{background:var(--run)}
+  .trk-hint{font-size:11.5px;color:var(--muted);margin:4px 0 10px}
+  .trk-row{display:grid;grid-template-columns:1fr 120px auto;align-items:center;gap:12px;padding:10px 0;border-top:1px solid var(--line)}
+  .trk-main{min-width:0}
+  .trk-title{font-size:13.5px;font-weight:600;color:var(--depth);line-height:1.35}
+  .trk-meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:4px}
+  .trk-unblocks{font-size:11px;color:var(--run);background:rgba(0,168,120,.1);border-radius:8px;padding:3px 9px;line-height:1.4}
+  .trk-when,.trk-hrs{font-size:11px;color:var(--muted);white-space:nowrap}
+  .trk-done .trk-title{color:var(--muted)}
+  @media(max-width:720px){ .trk-row{grid-template-columns:1fr auto} .trk-row .bp-c-prog{display:none} }
   .bp-subrow{display:flex;align-items:center;gap:8px;padding:8px 14px 8px 32px;font-size:12.5px;color:var(--depth);cursor:pointer;border-bottom:1px solid var(--line);background:var(--canvas)}
   .bp-subrow:hover{background:rgba(0,0,0,.04)}
   /* nested test-gate sub-row: keeps its own status control + an expandable test matrix */
@@ -2431,7 +2453,7 @@ function renderAutomation(){
 // The in-folder tab bar (+ a back control to the grid). Hidden when the engine-detail
 // panel is open (that view is full-page and carries its own "← Back to plan").
 function renderBuildsTabBar(){
-  const tabs = [["feasibility","Feasibility"],["report","Gap Report"],["finalize","Finalize"],["plan","Build Plan"],["proposal","Proposal"]];
+  const tabs = [["feasibility","Feasibility"],["report","Gap Report"],["finalize","Finalize"],["plan","Build Plan"],["tracker","Tracker"],["proposal","Proposal"]];
   return `
     <button class="bp-back" onclick="closeBuildFolder()">← All builds</button>
     <div class="subtabs">
@@ -2447,7 +2469,18 @@ function renderBuildsTabBody(){
   if(t === "finalize"){ renderFinalizeBody(); return; }
   if(t === "report"){ renderGapReportBody(); return; }
   if(t === "proposal"){ renderProposalBody(); return; }
+  if(t === "tracker"){ renderTrackerBody(); return; }
   renderBuildPlanBody();   // "plan"
+}
+
+// Same load-gate and message slot as renderBuildPlanBody. The Tracker reads a SAVED
+// plan only: a draft has no build_steps rows yet, so there is no lifecycle to track.
+function renderTrackerBody(){
+  const body = document.getElementById("automation-body");
+  if(!S.buildPlan.loaded){ body.innerHTML = `<div class="audit-empty">Loading builds…</div>`; loadBuildPlanData(S.activeClientId); return; }
+  const inner = S.buildPlan.activePlanId ? renderTracker()
+    : `<div class="card"><div class="msg">Save a build plan first — the Tracker follows saved steps.</div></div>`;
+  body.innerHTML = inner + `<div class="msg" id="buildplan-msg" style="margin-top:10px">${esc(S.buildPlan.msg)}</div>`;
 }
 
 // Module-top folder grid (extracted from the old renderBuildPlanBody grid branch).
@@ -4946,6 +4979,24 @@ function byIdStep(id){ return S.buildPlan.steps.find(x => x.id === id) || null; 
 function statusOptions(status){ return STATUS_VALUES.map(v => `<option value="${v}" ${status===v?"selected":""}>${v}</option>`).join(""); }
 function doneCount(list){ return list.filter(s => s.status === "done").length; }
 
+/* THE single blocker computation — the engine row, the nested test-gate row and the
+   Tracker all call this, so the three can never drift (same discipline as
+   categorizeSteps being THE single categorization).
+
+   opts.skipSameGap is a DISPLAY scope, not a truth change: a nested test-gate is drawn
+   underneath its own engine, so naming that engine as a blocker is a redundant pointer
+   at the row directly above. The gate is still genuinely blocked by it — which is why
+   the Tracker calls this WITHOUT the option and buckets such a gate as Blocked. */
+function stepBlockers(s, opts){
+  const skipSameGap = !!(opts && opts.skipSameGap);
+  return (s.depends_on || []).map(byIdStep)
+    .filter(t => t && t.status !== "done" && (!skipSameGap || t.gap_id !== s.gap_id));
+}
+
+// Unblocked and not started = the work that can actually begin now. Uses unscoped
+// blockers deliberately — see stepBlockers.
+function isActionable(s){ return s.status === "queued" && stepBlockers(s).length === 0; }
+
 function renderSavedPlan(){
   if(S.buildPlan.panel) return renderEngineDetail();   // detail view fully REPLACES the table (mutually exclusive)
   const p = S.buildPlan.plan, steps = S.buildPlan.steps;
@@ -5091,9 +5142,9 @@ function renderSetupMini(setupSteps){
 function renderEngineRow(s, gatesByParent){
   const stage = STATUS_STAGE[s.status] != null ? STATUS_STAGE[s.status] : 0;
   const pct = [0, 25, 75, 100][stage] || 0;   // 4 discrete stages (queued/building/testing/done); ticks in CSS keep it from reading as a continuous %
-  const blockers = (s.depends_on || []).map(byIdStep).filter(t => t && t.status !== "done");
+  const blockers = stepBlockers(s);
   const blocked = blockers.length ? `<span class="bp-blocked">blocked by: ${esc(blockers.map(b => b.title).join(", "))}</span>` : "";
-  const actionable = s.status === "queued" && blockers.length === 0;   // unblocked + not started = do next
+  const actionable = isActionable(s);   // unblocked + not started = do next
   const hasAutos = Array.isArray(s.workflow) && s.workflow.length;
   const rowKey = "eng:" + s.id, expanded = !!S.buildPlan.expanded[rowKey];
   return `
@@ -5149,7 +5200,7 @@ function renderChecklistItems(step){
 // suppressed; cross-engine blockers still surface.
 function renderTestGateSubRow(g){
   const rowKey = "tg:" + g.id, open = !!S.buildPlan.expanded[rowKey];
-  const blockers = (g.depends_on || []).map(byIdStep).filter(t => t && t.status !== "done" && t.gap_id !== g.gap_id);
+  const blockers = stepBlockers(g, { skipSameGap: true });
   const blocked = blockers.length ? `<span class="bp-blocked">blocked by: ${esc(blockers.map(b => b.title).join(", "))}</span>` : "";
   const items = renderChecklistItems(g);
   return `<div class="bp-subrow bp-testgate st-${esc(g.status)}">
@@ -5158,6 +5209,119 @@ function renderTestGateSubRow(g){
       <select class="bp-status-sel" onchange="setStepStatus('${g.id}', this.value)">${statusOptions(g.status)}</select>
     </div>`
     + (open ? `<div class="bp-tg-checklist">${items || `<div class="msg">No test items.</div>`}</div>` : "");
+}
+
+/* ============================================================
+   PM TRACKER — a LENS, not new machinery (Order 15)
+   Re-presents the SAME S.buildPlan.steps by lifecycle state instead of by
+   structural category. Every status value, percentage, write path and count
+   comes from the existing plan code; what this adds is the arrangement plus
+   the three derived facts the plan view computes and then discards:
+   the actionable queue, blocker impact, and completed_at.
+   NO schema change, NO new write path — rows drive setStepStatus() unchanged.
+============================================================ */
+
+/* EXHAUSTIVE AND DISJOINT BY CONSTRUCTION: done and queued are handled explicitly
+   and everything else falls to inFlight, so every step lands in exactly one bucket
+   and the four re-sum to steps.length — the Tracker can never disagree with the
+   header total. The terminal else is deliberately a catch-all rather than an
+   equality test on building|testing: a status added to the CHECK constraint later
+   surfaces visibly as in-flight instead of silently vanishing from the view. */
+function trackerBuckets(steps){
+  const blocked = [], ready = [], inFlight = [], done = [];
+  (steps || []).forEach(s => {
+    if(s.status === "done") done.push(s);
+    else if(s.status === "queued") (stepBlockers(s).length ? blocked : ready).push(s);
+    else inFlight.push(s);
+  });
+  // position IS the plan's topological order, so sorting by it makes the top of
+  // Ready the genuine "do this next" rather than an artifact of row order.
+  const byPos = (a, b) => (a.position || 0) - (b.position || 0);
+  return { blocked: blocked.sort(byPos), ready: ready.sort(byPos),
+           inFlight: inFlight.sort(byPos), done: done.sort(byPos) };
+}
+
+// stepId -> how many not-yet-done steps are waiting on it. A done step is excluded
+// as a WAITER (it is no longer waiting on anything); whether the blocker itself is
+// done is a render decision, not a counting one.
+function blockerImpact(steps){
+  const impact = new Map();
+  (steps || []).forEach(s => {
+    if(s.status === "done") return;
+    (s.depends_on || []).forEach(id => impact.set(id, (impact.get(id) || 0) + 1));
+  });
+  return impact;
+}
+
+// Absolute date + relative age. completed_at has been written on every `done` since
+// migration 005 and read nowhere until now.
+function fmtCompletedAt(iso){
+  if(!iso) return "";
+  const t = new Date(iso);
+  if(isNaN(t.getTime())) return "";
+  const days = Math.floor((Date.now() - t.getTime()) / 86400000);
+  const rel = days <= 0 ? "today" : days === 1 ? "yesterday" : days + " days ago";
+  return `${t.toLocaleDateString(undefined, { month:"short", day:"numeric" })} · ${rel}`;
+}
+
+function renderTracker(){
+  const steps = S.buildPlan.steps, p = S.buildPlan.plan;
+  if(!steps.length) return `<div class="card"><div class="msg">This build has no steps yet.</div></div>`;
+  const b = trackerBuckets(steps), impact = blockerImpact(steps);
+  // Derived rollup only — build_plans.status is free text with no CHECK and is NOT
+  // written here; the tracker reports the plan's real state without redefining it.
+  const dist = STATUS_VALUES.map(v => `${steps.filter(s => s.status === v).length} ${v}`).join(" · ");
+  const head = `
+    <div class="card">
+      <div class="phase-h">Tracker · ${esc(p && p.title || "Build")}</div>
+      <div class="msg" style="margin-top:4px">
+        <span class="bp-head-total">${doneCount(steps)} of ${steps.length} steps done</span>${renderStepBreakdown(steps)}
+      </div>
+      <div class="trk-dist">${esc(dist)}</div>
+    </div>`;
+  const sections = [
+    ["ready",    "Ready",     b.ready,    "Unblocked and not started — top of this list is next."],
+    ["blocked",  "Blocked",   b.blocked,  "Waiting on an upstream step that isn't done."],
+    ["inflight", "In flight", b.inFlight, "Building or testing right now."],
+    ["done",     "Done",      b.done,     "Completed."],
+  ].map(([key, label, list, hint]) => renderTrackerSection(key, label, list, hint, impact)).join("");
+  return head + sections;
+}
+
+function renderTrackerSection(key, label, list, hint, impact){
+  return `
+    <div class="card trk-sec trk-${key}">
+      <div class="trk-sec-h"><span class="trk-dot"></span>${esc(label)}<span class="trk-n">${list.length}</span></div>
+      ${list.length ? `<div class="trk-hint">${esc(hint)}</div>` + list.map(s => renderTrackerRow(s, impact)).join("")
+                    : `<div class="msg">Nothing here.</div>`}
+    </div>`;
+}
+
+function renderTrackerRow(s, impact){
+  const stage = STATUS_STAGE[s.status] != null ? STATUS_STAGE[s.status] : 0;
+  const pct = [0, 25, 75, 100][stage] || 0;      // same four discrete stages as the plan row
+  const blockers = stepBlockers(s);              // unscoped: a gate blocked by its own engine IS blocked
+  const n = impact.get(s.id) || 0;
+  const meta = [
+    // A DONE step is never "blocked" — it already shipped. Real plans genuinely contain
+    // done steps whose upstream deps are still queued (an operator completing work out of
+    // dependency order), and without this guard every one of them renders a blocked-by
+    // list that contradicts its own status.
+    (blockers.length && s.status !== "done") ? `<span class="bp-blocked">blocked by: ${esc(blockers.map(x => x.title).join(", "))}</span>` : "",
+    // only meaningful while this step is itself outstanding — a done step blocks nothing
+    (n && s.status !== "done") ? `<span class="trk-unblocks">unblocks ${n}</span>` : "",
+    s.status === "done" && s.completed_at ? `<span class="trk-when">${esc(fmtCompletedAt(s.completed_at))}</span>` : "",
+    s.estimated_hours != null ? `<span class="trk-hrs">${esc(String(s.estimated_hours))}h</span>` : "",
+  ].filter(Boolean).join("");
+  return `
+    <div class="trk-row st-${esc(s.status)}">
+      <div class="trk-main">
+        <div class="trk-title">${esc(s.title)}</div>
+        <div class="trk-meta">${meta || `<span class="trk-hrs">—</span>`}</div>
+      </div>
+      <div class="bp-c-prog"><div class="bp-bar"><i style="width:${pct}%"></i></div></div>
+      <select class="bp-status-sel" onchange="setStepStatus('${s.id}', this.value)">${statusOptions(s.status)}</select>
+    </div>`;
 }
 
 /* Right slide-over — reuses the existing per-automation content renderers
