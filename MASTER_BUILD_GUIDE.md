@@ -221,6 +221,43 @@ future change from re-implementing it.
   of the unblock cascade (marking `Sub-account foundation` done moved Ready 9→12, Blocked
   4→0, Done 4→5, total still 17; reverted, DB restored to `queued`/`completed_at` null).
 
+## Order 16 — deployed-system ledger (v1, Aug 5 2026)
+
+A `deployed_systems` table (migration 014) plus a **Deployed** card and a per-row
+**Mark deployed** control on the Tracker. Plan + map: `docs/planning/order-16-deployed-systems-ledger.md`,
+`docs/planning/order_16_deployed_systems_ledger.svg`.
+
+- **It records an operator ASSERTION, not a derivation — that is the design, not a shortcut.**
+  The Setup Agent creates exactly five kinds (tags, fields, custom values, calendars,
+  pipelines) and **workflows are not among them**: engines are hand-built in GHL. `ghl_map`
+  proves an asset exists but is flat; `setup_runs` proves a run happened but only over those
+  five kinds. So "engine X is live for client Y" has no derivable source. Building it to
+  *look* derived would have been the lie.
+- **Grain = one deployed engine per client** — the gap ≈ engine ≈ sellable-unit grain.
+- **Snapshot + pointer.** `title`/`engine_key`/`mode` are copied at write; `build_plan_id` and
+  `build_step_id` are `ON DELETE SET NULL`. A plan delete cascades its steps away — the
+  snapshot is what survives, which is the entire reason it exists.
+- **Eligibility is `isDeployableEngine`, NOT `categorizeSteps().engines`.** The latter keeps
+  unmatched test gates on purpose (render slot). On the real plan both return 4, so their
+  agreement proves nothing; the divergence is asserted with a synthetic unmatched gate.
+- **Not wired to the `done` click, by decision.** Done is a PM act; "live in a client's
+  account" is a different claim. Confirm-gated, state-driven (`S.buildPlan.dep`), no native
+  `confirm()`. `markDeployed` re-checks both guards rather than trusting the render.
+- **Append-only except `removeDeployedSystem`** — a mis-assertion must be correctable.
+  Partial `UNIQUE(build_step_id) WHERE NOT NULL` turns a double-mark into a message.
+- **v1 never writes `engine_catalog`.** A `formulate` entry carries a read-only
+  "graduation-eligible" label; the catalog is also the price sheet and graduation stays the
+  operator's call. The ledger is the *evidence* a future graduation pass reads.
+- **Delete guard extended:** the open-folder delete counts `deployed_systems` alongside
+  `setup_runs`, and the blocked message names the actual condition(s).
+- **Out of v1, deliberately:** 3-audience SOP generation (no substrate; the three audiences
+  are undefined anywhere in the repo), the client-level cross-plan map (index.html:4122),
+  supersession/re-deploy semantics, automatic graduation.
+- **Verification honesty:** the DB contains no real deployed system — the four `done` steps on
+  `de43a1b1` were completed inside a 7-second span on 2026-07-24, i.e. a click-through. A live
+  test proves the mechanism, not that an engine shipped. 38/38 harness assertions run against
+  the shipped source and the real 17-step plan.
+
 ## Gap Report — client-facing Preview / print view (branded; on `fix/condition-empty-branch-autorepair`, not yet merged)
 A separate presentational view (`.cr-*` classes, `renderClientReport()`/`openClientReport()`/
 `closeClientReport()`) over the operator Gap Report tab — a **Preview** button opens a
