@@ -303,7 +303,7 @@ that run's log legible on the step it belongs to. Map:
   offered the button — same discipline as `markDeployed`. State-driven (`S.buildPlan.setupAssert`);
   no native `confirm()` anywhere in the file.
 - **Out of scope, deliberately:** evidence on the Tracker's own setup rows (**now a named
-  follow-up — Order 15.93 below**; v1 keeps the control in `renderSetupMini`, already the place
+  follow-up — Order 15.94 below**; v1 keeps the control in `renderSetupMini`, already the place
   setup status is advanced), and auto-writing `checklist[].done`.
 - **FIX, same day — the evidence was load-time-only (`refreshPlanSetupRuns`).** Found the moment
   it met a real run: Matthew ran the Setup Agent against plan `de43a1b1` (run `549e7c6a`, 32 items
@@ -321,7 +321,7 @@ that run's log legible on the step it belongs to. Map:
   against the shipped function with the DB/DOM boundaries mocked, including the exact reported
   scenario: 0/8 before → 8/8, 6/6, 8/8, 10/10 and 4/4 steps ready after.
 
-## Order 15.93 — setup-run evidence on the Tracker rows (SCOPED, NOT BUILT)
+## Order 15.94 — setup-run evidence on the Tracker rows (SCOPED, NOT BUILT)
 
 Split out of Order 15.92 rather than folded into its fix. **The Tracker contains zero evidence
 symbols** — `renderTrackerRow` shows title, status, blockers and `completed_at`, and nothing
