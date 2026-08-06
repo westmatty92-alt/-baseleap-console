@@ -486,6 +486,27 @@
   .trk-when,.trk-hrs{font-size:11px;color:var(--muted);white-space:nowrap}
   .trk-done .trk-title{color:var(--muted)}
   @media(max-width:720px){ .trk-row{grid-template-columns:1fr auto} .trk-row .bp-c-prog{display:none} }
+  /* deployed-system ledger (Order 16) — lives in the Done row's meta line and its own card */
+  .dep-mark{font-size:11px;font-weight:600;color:var(--run);background:#FFFFFF;border:1px solid var(--run);border-radius:8px;padding:3px 10px;cursor:pointer;line-height:1.4}
+  .dep-mark:hover{background:rgba(0,168,120,.08)}
+  .dep-pill{font-size:11px;font-weight:600;color:#FFFFFF;background:var(--run);border-radius:8px;padding:3px 9px;line-height:1.4;white-space:nowrap}
+  .dep-ask{display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px}
+  .dep-ask-q{font-size:11px;color:var(--depth);font-weight:600}
+  .dep-yes{font-size:11px;font-weight:600;color:#FFFFFF;background:var(--run);border:1px solid var(--run);border-radius:8px;padding:3px 10px;cursor:pointer}
+  .dep-no{font-size:11px;color:var(--muted);background:#FFFFFF;border:1px solid var(--line);border-radius:8px;padding:3px 10px;cursor:pointer}
+  .dep-yes:disabled,.dep-no:disabled{opacity:.6;cursor:default}
+  .dep-err{font-size:11px;color:#E24B4A}
+  .dep-card .trk-dot{background:var(--run)}
+  .dep-row{display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid var(--line)}
+  .dep-main{min-width:0;flex:1}
+  .dep-title{font-size:13.5px;font-weight:600;color:var(--depth);line-height:1.35}
+  .dep-meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:4px}
+  .dep-when{font-size:11px;color:var(--muted);white-space:nowrap}
+  .dep-mode{font-size:11px;color:var(--muted);background:var(--canvas);border:1px solid var(--line);border-radius:8px;padding:2px 8px}
+  .dep-grad{font-size:11px;color:var(--run);background:rgba(0,168,120,.1);border-radius:8px;padding:2px 8px}
+  .dep-rm{font-size:11px;color:var(--muted);background:#FFFFFF;border:1px solid var(--line);border-radius:8px;padding:3px 10px;cursor:pointer;flex:none}
+  .dep-rm:hover{color:#E24B4A;border-color:#E24B4A}
+  .dep-actions{display:flex;gap:6px;flex:none}
   .bp-subrow{display:flex;align-items:center;gap:8px;padding:8px 14px 8px 32px;font-size:12.5px;color:var(--depth);cursor:pointer;border-bottom:1px solid var(--line);background:var(--canvas)}
   .bp-subrow:hover{background:rgba(0,0,0,.04)}
   /* nested test-gate sub-row: keeps its own status control + an expandable test matrix */
@@ -746,7 +767,7 @@ function freshAudit(){ return { tab:"guide", guideNotes:{}, captureText:"", summ
 function freshAutomation(){ return { tab:"gaps", loaded:false, msg:"", gaps:[], drafts:{}, assessing:{}, errors:{}, assessingAll:false, validatingAll:false, progress:"", copyBusy:{}, copyAll:false }; }
 // sel = the active compose session's folder-scoped gap-selection map ({gapId: 'accepted'|'declined'};
 // undecided = absent). Committed to build_plan_gaps on Save; never the dormant client gaps.selection.
-function freshBuildPlan(){ return { loaded:false, msg:"", plans:[], activePlanId:null, planCounts:{}, plan:null, steps:[], draft:null, draftGaps:null, generating:false, saving:false, expanded:{}, panel:null, zoom:1, pan:{x:0,y:0}, tab:"plan", composing:false, sel:{}, scope:null, scopePlanId:null, scopeErr:"", del:null, showArchived:false }; }
+function freshBuildPlan(){ return { loaded:false, msg:"", plans:[], activePlanId:null, planCounts:{}, plan:null, steps:[], draft:null, draftGaps:null, generating:false, saving:false, expanded:{}, panel:null, zoom:1, pan:{x:0,y:0}, tab:"plan", composing:false, sel:{}, scope:null, scopePlanId:null, scopeErr:"", del:null, showArchived:false, deployed:[], dep:null }; }
 // NAMESPACE THE PREVIEW, LOCK THE EXECUTION. `tab` and `chat` each own their
 // preflight/diff because SHARING them is a silent wrong-write: a chat preview
 // overwriting the tab's diff would make the tab's Confirm button create the
@@ -2460,7 +2481,7 @@ function renderBuildsTabBar(){
       ${tabs.map(([id,lbl]) => `<button class="subtab ${S.buildPlan.tab===id?"active":""}" onclick="buildsTab('${id}')">${lbl}</button>`).join("")}
     </div>`;
 }
-function buildsTab(t){ S.buildPlan.del = null; S.buildPlan.tab = t; renderAutomation(); }
+function buildsTab(t){ S.buildPlan.del = null; S.buildPlan.dep = null; S.buildPlan.tab = t; renderAutomation(); }
 
 // Route the active in-folder tab to its body (each writes into #automation-body).
 function renderBuildsTabBody(){
@@ -4128,6 +4149,7 @@ async function loadBuildPlanData(clientId){
     if(error) throw new Error(error.message);
     S.buildPlan.plans = plans || [];
     S.buildPlan.planCounts = await loadBuildFolderCounts(S.buildPlan.plans);
+    S.buildPlan.deployed = await loadDeployedSystems(clientId);
     S.buildPlan.activePlanId = null; S.buildPlan.plan = null; S.buildPlan.steps = [];   // grid view
   }catch(e){ setBuildPlanMsg("Load failed: " + e.message); }
   S.buildPlan.loaded = true;
@@ -4155,13 +4177,25 @@ async function loadBuildFolderCounts(plans){
   return counts;
 }
 
+// The deployed-system ledger for this client (Order 16). CLIENT-scoped, not folder-scoped:
+// an entry outlives the plan it came from (build_plan_id is ON DELETE SET NULL), so
+// loading per-plan would lose exactly the rows the snapshot exists to preserve. On error
+// the ledger degrades to empty rather than breaking the build view — a missing ledger
+// hides a "Deployed" pill, it never blocks the plan.
+async function loadDeployedSystems(clientId){
+  const { data, error } = await sb.from("deployed_systems").select("*")
+    .eq("client_id", clientId).order("deployed_at", { ascending: false });
+  if(error){ console.error("deployed_systems load failed:", error.message); return []; }
+  return data || [];
+}
+
 // Open one build folder — load its steps, reset the engine-detail panel so a stale
 // popup from another folder can't bleed through.
 async function openBuildFolder(planId){
   const plan = S.buildPlan.plans.find(p => p.id === planId);
   if(!plan) return;
   S.buildPlan.activePlanId = planId; S.buildPlan.plan = plan; S.buildPlan.panel = null; S.buildPlan.steps = [];
-  S.buildPlan.composing = false; S.buildPlan.draft = null; S.buildPlan.draftGaps = null; S.buildPlan.sel = {}; S.buildPlan.del = null; S.buildPlan.tab = "plan";   // open on the Build Plan tab
+  S.buildPlan.composing = false; S.buildPlan.draft = null; S.buildPlan.draftGaps = null; S.buildPlan.sel = {}; S.buildPlan.del = null; S.buildPlan.dep = null; S.buildPlan.tab = "plan";   // open on the Build Plan tab
   try{
     const { data: steps, error } = await sb.from("build_steps").select("*")
       .eq("build_plan_id", planId).order("position");
@@ -4176,23 +4210,34 @@ function closeBuildFolder(){
   // Leave the build workspace back to the folder grid. An unsaved draft is discarded here
   // (nothing was written to the DB); a saved folder just closes.
   S.buildPlan.activePlanId = null; S.buildPlan.plan = null; S.buildPlan.steps = []; S.buildPlan.panel = null;
-  S.buildPlan.draft = null; S.buildPlan.draftGaps = null; S.buildPlan.composing = false; S.buildPlan.sel = {}; S.buildPlan.del = null; S.buildPlan.tab = "plan";
+  S.buildPlan.draft = null; S.buildPlan.draftGaps = null; S.buildPlan.composing = false; S.buildPlan.sel = {}; S.buildPlan.del = null; S.buildPlan.dep = null; S.buildPlan.tab = "plan";
   renderAutomation();
 }
 
 /* ---- Delete / archive a build (§9). Two-layer safety: a setup_runs COUNT picks
    delete-vs-archive for the UX; setup_runs.build_plan_id is an FK with NO cascade
    (RESTRICT-like), so the DB itself BLOCKS a hard-delete that would orphan provisioning
-   history even if the count is wrong/RLS-hidden. setup_runs is NEVER deleted. ---- */
+   history even if the count is wrong/RLS-hidden. setup_runs is NEVER deleted.
+   ORDER 16: deployed_systems is counted alongside it. A plan whose engines are LIVE in a
+   client's account is at least as protected-worthy as one with a provisioning run. The
+   ledger ROW survives a hard delete either way (build_plan_id is ON DELETE SET NULL) —
+   what the guard protects is the POINTER back to the plan and its steps. ---- */
 
-// Entry: count this build's setup_runs, then branch to confirm (0) or blocked+archive (≥1).
+// Entry: count this build's setup_runs AND ledger entries, then branch to confirm (both 0)
+// or blocked+archive (either ≥1). Both counts are kept so the panel can name the real
+// reason — telling an operator "there are setup runs" when the real blocker is a live
+// engine would send them looking at the wrong thing.
 async function deleteBuild(){
   const p = S.buildPlan.plan; if(!p || (S.buildPlan.del && S.buildPlan.del.busy)) return;
   S.buildPlan.del = { phase:"checking" }; renderAutomation();
-  const { count, error } = await sb.from("setup_runs")
-    .select("id", { count:"exact", head:true }).eq("build_plan_id", p.id);
-  if(error){ S.buildPlan.del = { phase:"error", msg:"Couldn't check setup runs: " + error.message }; renderAutomation(); return; }
-  S.buildPlan.del = (count && count > 0) ? { phase:"blocked", runs:count } : { phase:"confirm" };
+  const [runsRes, depRes] = await Promise.all([
+    sb.from("setup_runs").select("id", { count:"exact", head:true }).eq("build_plan_id", p.id),
+    sb.from("deployed_systems").select("id", { count:"exact", head:true }).eq("build_plan_id", p.id),
+  ]);
+  if(runsRes.error){ S.buildPlan.del = { phase:"error", msg:"Couldn't check setup runs: " + runsRes.error.message }; renderAutomation(); return; }
+  if(depRes.error){ S.buildPlan.del = { phase:"error", msg:"Couldn't check deployed systems: " + depRes.error.message }; renderAutomation(); return; }
+  const runs = runsRes.count || 0, deployed = depRes.count || 0;
+  S.buildPlan.del = (runs > 0 || deployed > 0) ? { phase:"blocked", runs, deployed } : { phase:"confirm" };
   renderAutomation();
 }
 
@@ -4215,7 +4260,7 @@ async function hardDeleteBuild(){
 // UPDATE does NOT re-stamp operator_id (RLS already covers it). .select().single() verifies.
 async function archiveBuild(){
   const p = S.buildPlan.plan; if(!p || !S.buildPlan.del || S.buildPlan.del.busy) return;
-  S.buildPlan.del = { phase:"blocked", runs:(S.buildPlan.del.runs || 0), busy:true }; renderAutomation();
+  S.buildPlan.del = { phase:"blocked", runs:(S.buildPlan.del.runs || 0), deployed:(S.buildPlan.del.deployed || 0), busy:true }; renderAutomation();
   const { data, error } = await sb.from("build_plans").update({ status:"archived" }).eq("id", p.id).select().single();
   if(error || !data){
     S.buildPlan.del = { phase:"error", msg:`Archive failed: ${error ? error.message : "no row returned"}.` };
@@ -5024,13 +5069,22 @@ function renderSavedPlan(){
 // Delete/archive control panel (§9). Idle → "" (the header shows just the Delete button);
 // otherwise a phase-specific inline panel — no native confirm() dialog (state-driven via
 // S.buildPlan.del: {phase:"checking"|"confirm"|"blocked"|"error", runs?, busy?, msg?}).
+// Names the ACTUAL blocking condition(s). Either count alone blocks; when both are
+// non-zero both are named, so the operator is never pointed at the wrong record.
+function deleteBlockReason(del){
+  const parts = [];
+  if(del.runs > 0)     parts.push(`${del.runs} setup run${del.runs === 1 ? "" : "s"} recorded`);
+  if(del.deployed > 0) parts.push(`${del.deployed} deployed system${del.deployed === 1 ? "" : "s"} in the ledger`);
+  return parts.join(" and ");
+}
+
 function renderDeletePanel(){
   const del = S.buildPlan.del;
   if(!del) return "";
-  if(del.phase === "checking") return `<div class="bp-del-panel"><span>Checking setup runs…</span></div>`;
+  if(del.phase === "checking") return `<div class="bp-del-panel"><span>Checking setup runs and deployed systems…</span></div>`;
   if(del.phase === "error") return `<div class="bp-del-panel danger"><span>${esc(del.msg)}</span>
     <div class="bp-del-actions"><button class="bp-del-no" onclick="cancelDelete()">Dismiss</button></div></div>`;
-  if(del.phase === "blocked") return `<div class="bp-del-panel"><span>This build has ${del.runs} setup run${del.runs===1?"":"s"} recorded — its provisioning history can't be safely deleted. Archive it instead.</span>
+  if(del.phase === "blocked") return `<div class="bp-del-panel"><span>This build has ${esc(deleteBlockReason(del))} — that record can't be safely deleted. Archive it instead.</span>
     <div class="bp-del-actions">
       <button class="bp-del-archive" onclick="archiveBuild()" ${del.busy?"disabled":""}>${del.busy?"Archiving…":"Archive instead"}</button>
       <button class="bp-del-no" onclick="cancelDelete()" ${del.busy?"disabled":""}>Cancel</button>
@@ -5264,10 +5318,160 @@ function fmtCompletedAt(iso){
   return `${t.toLocaleDateString(undefined, { month:"short", day:"numeric" })} · ${rel}`;
 }
 
+/* ============================================================
+   DEPLOYED-SYSTEM LEDGER (Order 16 v1) — deployed_systems, migration 014.
+
+   The ledger records that an ENGINE IS LIVE IN A CLIENT'S ACCOUNT. That is an
+   OPERATOR ASSERTION, not a derivation: the Setup Agent can mechanically create
+   exactly five kinds (tags, fields, custom values, calendars, pipelines) and
+   workflows are NOT among them — engines are hand-built in GHL. So nothing in the
+   data model can know this; a human states it, on purpose, through a confirm gate.
+   Deliberately NOT wired to the `done` click: marking a step done is a PM act,
+   asserting a system is live in a client's account is a different claim.
+   ============================================================ */
+
+// A deployed system is an ENGINE: an automation step carrying a real node workflow.
+// NOT categorizeSteps().engines — that deliberately includes UNMATCHED TEST GATES
+// because it is a render slot, not a truth claim. This is the same workflow test
+// partitionTestGates uses to identify an engine parent, so the two surfaces can never
+// disagree about what an engine is.
+function isDeployableEngine(s){
+  return !!s && s.agent === "automation" && Array.isArray(s.workflow) && s.workflow.length > 0;
+}
+
+// stepId -> ledger entry, for the rows of the plan on screen. Entries whose build_step_id
+// went NULL (their plan was deleted) are client-level history and match no row here.
+function deployedByStep(){
+  const m = new Map();
+  (S.buildPlan.deployed || []).forEach(d => { if(d.build_step_id) m.set(d.build_step_id, d); });
+  return m;
+}
+
+// Ledger entries belonging to the OPEN plan. The card is plan-scoped even though the
+// load is client-scoped — the cross-plan "what's live" view is its own increment.
+function planDeployed(){
+  const pid = S.buildPlan.activePlanId;
+  return (S.buildPlan.deployed || []).filter(d => d.build_plan_id === pid);
+}
+
+// Confirm state for both ledger mutations: {kind:"mark", stepId} | {kind:"remove", id},
+// plus busy/msg. Same state-driven pattern as the delete/archive panel — no native
+// confirm() dialog anywhere in this file.
+function askMarkDeployed(stepId){ S.buildPlan.dep = { kind:"mark", stepId }; renderAutomation(); }
+function askRemoveDeployed(id){ S.buildPlan.dep = { kind:"remove", id }; renderAutomation(); }
+function cancelDeployed(){ S.buildPlan.dep = null; renderAutomation(); }
+
+// Assert that this engine is live. Snapshots title/engine_key/mode at write time so the
+// entry keeps its identity after the plan (and its steps) are deleted. Guarded on BOTH
+// `done` and isDeployableEngine even though no other row renders the control — the
+// function must reject a bad call, not rely on the render to prevent it.
+async function markDeployed(stepId){
+  const dep = S.buildPlan.dep; if(dep && dep.busy) return;
+  const s = (S.buildPlan.steps || []).find(x => x.id === stepId);
+  if(!s){ S.buildPlan.dep = { kind:"mark", stepId, msg:"That step is no longer loaded." }; renderAutomation(); return; }
+  if(!isDeployableEngine(s)){ S.buildPlan.dep = { kind:"mark", stepId, msg:"Only an engine step (one carrying a workflow) can be marked deployed." }; renderAutomation(); return; }
+  if(s.status !== "done"){ S.buildPlan.dep = { kind:"mark", stepId, msg:"Mark the step done first — the ledger records what has actually shipped." }; renderAutomation(); return; }
+  S.buildPlan.dep = { kind:"mark", stepId, busy:true }; renderAutomation();
+  const { data, error } = await sb.from("deployed_systems").insert({
+    operator_id: S.user.id,
+    client_id: S.activeClient.id,
+    build_plan_id: S.buildPlan.activePlanId,
+    build_step_id: s.id,
+    title: s.title,
+    engine_key: s.matched_engine || null,   // NULL for a formulated engine — it has no catalog key
+    mode: s.mode || null,
+  }).select().single();
+  if(error || !data){
+    // The partial UNIQUE(build_step_id) makes a double-mark a plain message, not a crash.
+    const dupe = error && /duplicate key|unique/i.test(error.message || "");
+    S.buildPlan.dep = { kind:"mark", stepId,
+      msg: dupe ? "This engine is already in the ledger." : `Couldn't record it: ${error ? error.message : "no row returned"}.` };
+    renderAutomation(); return;
+  }
+  S.buildPlan.deployed = [data, ...(S.buildPlan.deployed || [])];   // re-render from the RETURNED row, never the optimistic object
+  S.buildPlan.dep = null;
+  setBuildPlanMsg("Recorded as deployed ✓");
+  renderAutomation();
+}
+
+// The one mutation of an otherwise append-only table. A mis-assertion has to be
+// correctable — an operator who marks the wrong engine live must be able to take it back.
+async function removeDeployedSystem(id){
+  const dep = S.buildPlan.dep; if(dep && dep.busy) return;
+  S.buildPlan.dep = { kind:"remove", id, busy:true }; renderAutomation();
+  const { data, error } = await sb.from("deployed_systems").delete().eq("id", id).select();
+  if(error || !data || data.length !== 1){
+    S.buildPlan.dep = { kind:"remove", id, msg:`Couldn't remove it: ${error ? error.message : "no row returned"} — nothing was changed.` };
+    renderAutomation(); return;
+  }
+  S.buildPlan.deployed = (S.buildPlan.deployed || []).filter(d => d.id !== id);
+  S.buildPlan.dep = null;
+  setBuildPlanMsg("Ledger entry removed ✓");
+  renderAutomation();
+}
+
+function fmtDeployedAt(iso){
+  if(!iso) return "";
+  const t = new Date(iso);
+  return isNaN(t.getTime()) ? "" : t.toLocaleDateString(undefined, { month:"short", day:"numeric", year:"numeric" });
+}
+
+// The ledger card. Plan-scoped list; a formulate-mode entry carries a READ-ONLY
+// graduation-eligible label — v1 never writes engine_catalog. Graduation stays the
+// operator's call ("never auto-write — the catalog is also the price sheet").
+function renderDeployedCard(){
+  const list = planDeployed(), dep = S.buildPlan.dep;
+  const rows = list.map(d => {
+    const asking = dep && dep.kind === "remove" && dep.id === d.id;
+    return `<div class="dep-row">
+      <div class="dep-main">
+        <div class="dep-title">${esc(d.title)}</div>
+        <div class="dep-meta">
+          <span class="dep-when">${esc(fmtDeployedAt(d.deployed_at))}</span>
+          ${d.mode ? `<span class="dep-mode">${esc(d.mode)}</span>` : ""}
+          ${d.mode === "formulate" ? `<span class="dep-grad">graduation-eligible</span>` : ""}
+        </div>
+        ${asking && dep.msg ? `<div class="dep-err">${esc(dep.msg)}</div>` : ""}
+      </div>
+      ${asking
+        ? `<div class="dep-actions">
+             <button class="dep-yes" onclick="removeDeployedSystem('${d.id}')" ${dep.busy?"disabled":""}>${dep.busy?"Removing…":"Confirm remove"}</button>
+             <button class="dep-no" onclick="cancelDeployed()" ${dep.busy?"disabled":""}>Cancel</button>
+           </div>`
+        : `<button class="dep-rm" onclick="askRemoveDeployed('${d.id}')">Remove</button>`}
+    </div>`;
+  }).join("");
+  return `
+    <div class="card trk-sec dep-card">
+      <div class="trk-sec-h"><span class="trk-dot"></span>Deployed<span class="trk-n">${list.length}</span></div>
+      ${list.length
+        ? `<div class="trk-hint">Live in this client's account — recorded by you, not derived.</div>${rows}`
+        : `<div class="msg">Nothing deployed yet.</div>`}
+    </div>`;
+}
+
+// The per-row ledger control. Rendered ONLY on a done engine step — every other row
+// (setup step, test gate, anything not yet done) gets nothing, which is why the Done
+// bucket is the only place either affordance appears.
+function renderDeployedControl(s, dmap){
+  if(s.status !== "done" || !isDeployableEngine(s)) return "";
+  const entry = dmap && dmap.get(s.id);
+  if(entry) return `<span class="dep-pill">Deployed · ${esc(fmtDeployedAt(entry.deployed_at))}</span>`;
+  const dep = S.buildPlan.dep;
+  const asking = dep && dep.kind === "mark" && dep.stepId === s.id;
+  if(!asking) return `<button class="dep-mark" onclick="askMarkDeployed('${s.id}')">Mark deployed</button>`;
+  return `<span class="dep-ask">
+      <span class="dep-ask-q">Record this engine as live in ${esc(S.activeClient.business_name)}?</span>
+      <button class="dep-yes" onclick="markDeployed('${s.id}')" ${dep.busy?"disabled":""}>${dep.busy?"Recording…":"Confirm"}</button>
+      <button class="dep-no" onclick="cancelDeployed()" ${dep.busy?"disabled":""}>Cancel</button>
+      ${dep.msg ? `<span class="dep-err">${esc(dep.msg)}</span>` : ""}
+    </span>`;
+}
+
 function renderTracker(){
   const steps = S.buildPlan.steps, p = S.buildPlan.plan;
   if(!steps.length) return `<div class="card"><div class="msg">This build has no steps yet.</div></div>`;
-  const b = trackerBuckets(steps), impact = blockerImpact(steps);
+  const b = trackerBuckets(steps), impact = blockerImpact(steps), dmap = deployedByStep();
   // Derived rollup only — build_plans.status is free text with no CHECK and is NOT
   // written here; the tracker reports the plan's real state without redefining it.
   const dist = STATUS_VALUES.map(v => `${steps.filter(s => s.status === v).length} ${v}`).join(" · ");
@@ -5284,20 +5488,22 @@ function renderTracker(){
     ["blocked",  "Blocked",   b.blocked,  "Waiting on an upstream step that isn't done."],
     ["inflight", "In flight", b.inFlight, "Building or testing right now."],
     ["done",     "Done",      b.done,     "Completed."],
-  ].map(([key, label, list, hint]) => renderTrackerSection(key, label, list, hint, impact)).join("");
-  return head + sections;
+  ].map(([key, label, list, hint]) => renderTrackerSection(key, label, list, hint, impact, dmap)).join("");
+  // The ledger card is appended AFTER the four buckets — it adds a surface, and changes
+  // no bucket arithmetic. The four buckets still re-sum to steps.length.
+  return head + sections + renderDeployedCard();
 }
 
-function renderTrackerSection(key, label, list, hint, impact){
+function renderTrackerSection(key, label, list, hint, impact, dmap){
   return `
     <div class="card trk-sec trk-${key}">
       <div class="trk-sec-h"><span class="trk-dot"></span>${esc(label)}<span class="trk-n">${list.length}</span></div>
-      ${list.length ? `<div class="trk-hint">${esc(hint)}</div>` + list.map(s => renderTrackerRow(s, impact)).join("")
+      ${list.length ? `<div class="trk-hint">${esc(hint)}</div>` + list.map(s => renderTrackerRow(s, impact, dmap)).join("")
                     : `<div class="msg">Nothing here.</div>`}
     </div>`;
 }
 
-function renderTrackerRow(s, impact){
+function renderTrackerRow(s, impact, dmap){
   const stage = STATUS_STAGE[s.status] != null ? STATUS_STAGE[s.status] : 0;
   const pct = [0, 25, 75, 100][stage] || 0;      // same four discrete stages as the plan row
   const blockers = stepBlockers(s);              // unscoped: a gate blocked by its own engine IS blocked
@@ -5312,6 +5518,7 @@ function renderTrackerRow(s, impact){
     (n && s.status !== "done") ? `<span class="trk-unblocks">unblocks ${n}</span>` : "",
     s.status === "done" && s.completed_at ? `<span class="trk-when">${esc(fmtCompletedAt(s.completed_at))}</span>` : "",
     s.estimated_hours != null ? `<span class="trk-hrs">${esc(String(s.estimated_hours))}h</span>` : "",
+    renderDeployedControl(s, dmap),
   ].filter(Boolean).join("");
   return `
     <div class="trk-row st-${esc(s.status)}">
