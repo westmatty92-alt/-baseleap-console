@@ -258,6 +258,61 @@ A `deployed_systems` table (migration 014) plus a **Deployed** card and a per-ro
   test proves the mechanism, not that an engine shipped. 38/38 harness assertions run against
   the shipped source and the real 17-step plan.
 
+## Order 15.92 — Setup run → build step evidence (Aug 6 2026)
+
+The Setup Agent finishes a run and the build plan has no idea. Proven on live data: plan
+`c0b5b431` has a **`complete` run** (`13909aeb`, 12 items created 2026-07-07) and **all five of
+its setup steps are still `queued`**; across all three plans `setup_done = 0`. This order makes
+that run's log legible on the step it belongs to. Map:
+`docs/planning/order_15_92_setup_run_step_evidence.svg`.
+
+- **The console gathers; the operator asserts.** Same doctrine as Order 16. Nothing is
+  auto-checked and nothing is auto-`done`, because the run genuinely cannot prove the step's
+  trailing human item (`Verify each item exists on a test contact`). Evidence is **derived on
+  every render and never persisted**, so it cannot go stale against the DB.
+- **It was never cosmetic.** `injectManifestSetupSteps` makes every engine `depends_on` its
+  manifest setup step, and `stepBlockers` tests `status !== "done"`. So a successful run left
+  every engine reading BLOCKED and the Tracker's Ready queue — the whole point of Order 15 —
+  wrong about what to do next. **`done` is the only status that unblocks; there is no honest
+  intermediate**, which is exactly why this is an assertion and not an auto-advance.
+- **Eligibility is `isEvidenceBearingSetupStep` (`agent === "setup"` AND a real `manifest`),
+  NOT `agent === "setup"`.** On the real plan only **1 of 5** setup steps qualifies. The other
+  four (sub-account, A2P, email domain, GBP) carry `manifest = null`: the Setup Agent creates
+  exactly five kinds and none of that work is among them, so no run can ever be evidence for
+  them. `{tbd:true}` is the historical thin-engine placeholder and is excluded too.
+- **The join is by LABEL LOOKUP, never by index.** `manifestLabelKeys` regenerates the exact
+  strings the injector built the checklist from (`manifestItemKeys` + `fieldLabel`), because
+  `owner` dedupe makes a later engine's checklist a **subset** of the manifest stored on it —
+  index alignment would silently attribute the wrong key. Regenerating rather than parsing is
+  also what survives a field name containing parentheses (`Review Credits Earned (Lifetime)`).
+- **`created` and `found` both mean "exists now"**, which is the only question a checklist item
+  asks; `error` is never evidence. Keys are lower-cased to match the case-insensitive union.
+- **All runs, not the latest.** The loop is fail-stop, so a manifest can legitimately split
+  across a failed run that created 8 of 12 and a later run that finished the rest — **a failed
+  run's partial log is still true**, the fail-stop halts the loop and never undoes a create.
+  Loaded ascending so the first success keeps its own timestamp. Chat runs are excluded *by
+  construction* (`build_plan_id` null), not by a filter.
+- **`[…]` param items can never be satisfied** — `setupManifestUnion` routes them to
+  `paramItems` and the run never creates them, so no log entry can exist. They render as
+  hand-work, never as a gap, and are excluded from the provable total.
+- **No schema change, no migration, no new write path.** `build_steps` keeps exactly 3 update
+  sites and the single status write stays `setStepStatus()`. `renderChecklistItems(step, ev)`
+  gained an **optional additive** second arg — with it omitted the output is byte-identical to
+  `main` (proved for 6 shapes), so the test-gate and detail-view renders are untouched.
+- **`confirmAssertSetupStep` re-checks eligibility itself** rather than trusting the render that
+  offered the button — same discipline as `markDeployed`. State-driven (`S.buildPlan.setupAssert`);
+  no native `confirm()` anywhere in the file.
+- **Out of scope, deliberately:** evidence on the Tracker's own setup rows (a later increment;
+  v1 keeps the control in `renderSetupMini`, already the place setup status is advanced), and
+  auto-writing `checklist[].done`.
+- **Verification:** 51 synthetic + 12 real-data + 12 cascade + 6 additive-identity assertions,
+  all against the shipped source. Real plan `c0b5b431` resolves **12 of 12** on the manifest step
+  and **0/0, never ready, never eligible** on all four foundational steps. Cascade run on the
+  real 7-step graph: asserting the manifest step removes it from both dependents' blocker lists,
+  the engine drops 5 blockers → 4, buckets re-sum. **Honest limit: no live browser click-through
+  was performed** — no local server, and a localhost origin carries no Supabase session. The
+  offline render (real rows, shipped CSS) was inspected visually instead.
+
 ## Gap Report — client-facing Preview / print view (branded; on `fix/condition-empty-branch-autorepair`, not yet merged)
 A separate presentational view (`.cr-*` classes, `renderClientReport()`/`openClientReport()`/
 `closeClientReport()`) over the operator Gap Report tab — a **Preview** button opens a
