@@ -6639,6 +6639,30 @@ async function runSetupItems(cfg){
     ? "Run FAILED — the log shows exactly what succeeded and what stopped it. Fix the cause and re-run: existing items skip (idempotent)."
     : "Setup run complete ✓ — created items and their GHL ids are recorded on the client.";
   if(S.activeClientId === cid && S.module === "setup") renderSetupSurfaces();
+  await refreshPlanSetupRuns(cfg.buildPlanId);
+}
+
+/* Order 15.92 — the run just changed what this plan's setup steps can PROVE, so the
+   evidence state has to be refreshed here. Without this, the Build Plan surface keeps
+   rendering the snapshot openBuildFolder took, which for a plan's FIRST run is empty —
+   and confirmRunSetup requires an open plan, so the folder is ALWAYS already open when a
+   tab run starts. That is precisely how a completed 32-item run showed 0 verified.
+
+   Runs LAST, after the completion message has already painted: the setup surfaces show no
+   evidence, so nothing on screen is waiting on this query.
+
+   Refreshed on FAILURE too — a failed run's partial log is still true evidence for the
+   items it did create (the fail-stop halts the loop, it never undoes a create).
+
+   GUARDED ON THE OPEN PLAN, not on planId alone. A run takes tens of seconds, and the
+   operator can open a DIFFERENT folder while it executes; assigning unconditionally would
+   stamp this plan's runs onto that one — showing evidence for work done elsewhere, which
+   is worse than showing none. A chat run carries buildPlanId null and can never be
+   evidence for any plan, so it returns before touching anything. */
+async function refreshPlanSetupRuns(planId){
+  if(!planId || S.buildPlan.activePlanId !== planId) return;
+  S.buildPlan.runs = await loadPlanSetupRuns(planId);
+  if(S.module === "automation") renderAutomation();   // normally unreachable (a run is started from the setup module); kept so the state and the view can't disagree
 }
 
 async function setupTagItem(it, tagByName, push, ctx){
