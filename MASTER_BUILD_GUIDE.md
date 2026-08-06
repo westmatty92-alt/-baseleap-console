@@ -302,9 +302,46 @@ that run's log legible on the step it belongs to. Map:
 - **`confirmAssertSetupStep` re-checks eligibility itself** rather than trusting the render that
   offered the button — same discipline as `markDeployed`. State-driven (`S.buildPlan.setupAssert`);
   no native `confirm()` anywhere in the file.
-- **Out of scope, deliberately:** evidence on the Tracker's own setup rows (a later increment;
-  v1 keeps the control in `renderSetupMini`, already the place setup status is advanced), and
-  auto-writing `checklist[].done`.
+- **Out of scope, deliberately:** evidence on the Tracker's own setup rows (**now a named
+  follow-up — Order 15.93 below**; v1 keeps the control in `renderSetupMini`, already the place
+  setup status is advanced), and auto-writing `checklist[].done`.
+- **FIX, same day — the evidence was load-time-only (`refreshPlanSetupRuns`).** Found the moment
+  it met a real run: Matthew ran the Setup Agent against plan `de43a1b1` (run `549e7c6a`, 32 items
+  created) and the surface still read 0. `S.buildPlan.runs` was written in exactly ONE place,
+  `openBuildFolder`, and nothing refreshed it afterwards. **`confirmRunSetup` requires an open
+  plan, so the folder is ALWAYS already open when a tab run starts** — meaning for a plan's first
+  run the snapshot is necessarily empty and *cannot* update. That is a proof, not a diagnosis.
+  `runSetupItems` now ends with `await refreshPlanSetupRuns(cfg.buildPlanId)`. It runs LAST, after
+  the completion message has painted (the setup surfaces show no evidence, so nothing on screen
+  waits on the query); it refreshes on FAILURE too, because a failed run's partial log is real
+  evidence; and it is **guarded on the OPEN plan, not on planId alone** — a run takes tens of
+  seconds and the operator can open a different folder mid-run, where an unconditional assignment
+  would stamp this plan's runs onto that one, showing evidence for work done elsewhere, which is
+  worse than showing none. A chat run (planId null) returns before querying. Verified 18/18
+  against the shipped function with the DB/DOM boundaries mocked, including the exact reported
+  scenario: 0/8 before → 8/8, 6/6, 8/8, 10/10 and 4/4 steps ready after.
+
+## Order 15.93 — setup-run evidence on the Tracker rows (SCOPED, NOT BUILT)
+
+Split out of Order 15.92 rather than folded into its fix. **The Tracker contains zero evidence
+symbols** — `renderTrackerRow` shows title, status, blockers and `completed_at`, and nothing
+about what a setup run proved. Order 15.92 put the evidence and the assert control in
+`renderSetupMini`, on the **Build Plan** tab behind the **Setup** badge. That was a deliberate v1
+boundary, but it is the wrong one in practice: the Tracker is the surface an operator reaches for
+when asking "what can I do next", and a manifest setup step sitting in **Ready** is exactly the
+row that a completed run has already satisfied.
+
+- **What it needs:** `renderTrackerRow` gains the tally for `isEvidenceBearingSetupStep` rows, and
+  probably the assert control too — otherwise the Tracker shows the fact and sends the operator
+  to another tab to act on it.
+- **What it must not do:** duplicate the derivation. `setupEvidenceMap`/`setupStepEvidence`/
+  `setupStepProven` are already THE definitions and must stay single, in the same way
+  `stepBlockers` was extracted from two inline copies in Order 15.
+- **Prerequisite already satisfied:** `S.buildPlan.runs` is now live rather than load-time-only
+  (the 15.92 fix above), so the Tracker would read fresh evidence without further plumbing.
+- **Open question for the operator:** whether the assert control belongs on two surfaces at once,
+  or whether the Tracker row should link to the Build Plan step instead. Worth deciding before
+  building, not after.
 - **Verification:** 51 synthetic + 12 real-data + 12 cascade + 6 additive-identity assertions,
   all against the shipped source. Real plan `c0b5b431` resolves **12 of 12** on the manifest step
   and **0/0, never ready, never eligible** on all four foundational steps. Cascade run on the
