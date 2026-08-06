@@ -317,9 +317,18 @@ that run's log legible on the step it belongs to. Map:
   evidence; and it is **guarded on the OPEN plan, not on planId alone** — a run takes tens of
   seconds and the operator can open a different folder mid-run, where an unconditional assignment
   would stamp this plan's runs onto that one, showing evidence for work done elsewhere, which is
-  worse than showing none. A chat run (planId null) returns before querying. Verified 18/18
+  worse than showing none. A chat run (planId null) returns before querying. Verified 27/27
   against the shipped function with the DB/DOM boundaries mocked, including the exact reported
-  scenario: 0/8 before → 8/8, 6/6, 8/8, 10/10 and 4/4 steps ready after.
+  scenario (0/8 before → 8/8, 6/6, 8/8, 10/10 and 4/4 steps ready after) and the chat-origin
+  chain proved rather than assumed: two call sites, chat's literal null, zero round-trips.
+- **Verification:** 51 synthetic + 12 real-data + 12 cascade + 6 additive-identity assertions,
+  all against the shipped source. Real plan `c0b5b431` resolves **12 of 12** on the manifest step
+  and **0/0, never ready, never eligible** on all four foundational steps. Cascade run on the
+  real 7-step graph: asserting the manifest step removes it from both dependents' blocker lists,
+  the engine drops 5 blockers → 4, buckets re-sum. **Honest limit: no live browser click-through
+  was performed** — no local server, and a localhost origin carries no Supabase session. The
+  offline render (real rows, shipped CSS) was inspected visually instead. With the fix's 27
+  above, the suite totals **108/108** — matching commit `2443a7d`'s message.
 
 ## Order 15.94 — setup-run evidence on the Tracker rows (SCOPED, NOT BUILT)
 
@@ -342,13 +351,8 @@ row that a completed run has already satisfied.
 - **Open question for the operator:** whether the assert control belongs on two surfaces at once,
   or whether the Tracker row should link to the Build Plan step instead. Worth deciding before
   building, not after.
-- **Verification:** 51 synthetic + 12 real-data + 12 cascade + 6 additive-identity assertions,
-  all against the shipped source. Real plan `c0b5b431` resolves **12 of 12** on the manifest step
-  and **0/0, never ready, never eligible** on all four foundational steps. Cascade run on the
-  real 7-step graph: asserting the manifest step removes it from both dependents' blocker lists,
-  the engine drops 5 blockers → 4, buckets re-sum. **Honest limit: no live browser click-through
-  was performed** — no local server, and a localhost origin carries no Supabase session. The
-  offline render (real rows, shipped CSS) was inspected visually instead.
+- **Verification:** none — nothing has been built. This section is a scope record, not a
+  contract.
 
 ## Gap Report — client-facing Preview / print view (branded; on `fix/condition-empty-branch-autorepair`, not yet merged)
 A separate presentational view (`.cr-*` classes, `renderClientReport()`/`openClientReport()`/
