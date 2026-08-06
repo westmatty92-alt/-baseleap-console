@@ -440,6 +440,24 @@
   .bp-setup-list{margin:0 0 10px;border:1px solid var(--line);border-radius:var(--radius);padding:6px 12px;background:var(--surface)}
   .bp-setup-item{display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--depth);padding:4px 0}
   .bp-setup-item span{flex:1}
+  /* setup-run evidence (Order 15.92) — the tally/chips are READ-ONLY annotations beside the
+     operator's own checkbox, so they are styled as quiet metadata, never as controls. No new
+     hex literals: brand tokens only. */
+  .bp-setup-name{flex:1;text-align:left;font-size:12.5px;font-weight:600;color:var(--depth);background:none;border:none;padding:0;cursor:pointer;font-family:inherit}
+  .bp-setup-name:hover{color:var(--run)}
+  .bp-setup-item .bp-ev-tally{flex:none;font-size:11px;font-weight:600;color:var(--muted)}
+  .bp-setup-item .bp-ev-tally.ev-all{color:var(--run)}
+  .bp-setup-ck{padding:8px 0 10px 18px;border-top:1px solid var(--line);margin-top:4px}
+  .bp-setup-ck .bp-ck{margin:0 0 6px}
+  .bp-setup-ck .bp-ck-lbl{font-size:12.5px;font-weight:500;color:var(--depth)}
+  .bp-setup-ck .disc-how{color:var(--muted)}
+  .bp-ev{font-size:11px;font-weight:600;margin-left:8px;white-space:nowrap}
+  .bp-ev-ok{color:var(--run)}
+  .bp-ev-hand,.bp-ev-none{color:var(--muted);font-style:italic;font-weight:500}
+  .bp-ev-act{margin-top:8px}
+  .bp-ev-btn{font-size:12px;padding:6px 12px}
+  .bp-ev-panel{margin-top:8px;border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px;background:var(--canvas)}
+  .bp-ev-p-h{font-size:13px;font-weight:700;color:var(--midnight);margin-bottom:6px}
   /* clean table */
   .bp-table{border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;background:var(--surface)}
   .bp-thead,.bp-row{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(0,2fr) 170px 50px auto;gap:18px}
@@ -767,7 +785,7 @@ function freshAudit(){ return { tab:"guide", guideNotes:{}, captureText:"", summ
 function freshAutomation(){ return { tab:"gaps", loaded:false, msg:"", gaps:[], drafts:{}, assessing:{}, errors:{}, assessingAll:false, validatingAll:false, progress:"", copyBusy:{}, copyAll:false }; }
 // sel = the active compose session's folder-scoped gap-selection map ({gapId: 'accepted'|'declined'};
 // undecided = absent). Committed to build_plan_gaps on Save; never the dormant client gaps.selection.
-function freshBuildPlan(){ return { loaded:false, msg:"", plans:[], activePlanId:null, planCounts:{}, plan:null, steps:[], draft:null, draftGaps:null, generating:false, saving:false, expanded:{}, panel:null, zoom:1, pan:{x:0,y:0}, tab:"plan", composing:false, sel:{}, scope:null, scopePlanId:null, scopeErr:"", del:null, showArchived:false, deployed:[], dep:null }; }
+function freshBuildPlan(){ return { loaded:false, msg:"", plans:[], activePlanId:null, planCounts:{}, plan:null, steps:[], draft:null, draftGaps:null, generating:false, saving:false, expanded:{}, panel:null, zoom:1, pan:{x:0,y:0}, tab:"plan", composing:false, sel:{}, scope:null, scopePlanId:null, scopeErr:"", del:null, showArchived:false, deployed:[], dep:null, runs:[], setupAssert:null }; }
 // NAMESPACE THE PREVIEW, LOCK THE EXECUTION. `tab` and `chat` each own their
 // preflight/diff because SHARING them is a silent wrong-write: a chat preview
 // overwriting the tab's diff would make the tab's Confirm button create the
@@ -4195,14 +4213,37 @@ async function openBuildFolder(planId){
   const plan = S.buildPlan.plans.find(p => p.id === planId);
   if(!plan) return;
   S.buildPlan.activePlanId = planId; S.buildPlan.plan = plan; S.buildPlan.panel = null; S.buildPlan.steps = [];
-  S.buildPlan.composing = false; S.buildPlan.draft = null; S.buildPlan.draftGaps = null; S.buildPlan.sel = {}; S.buildPlan.del = null; S.buildPlan.dep = null; S.buildPlan.tab = "plan";   // open on the Build Plan tab
+  S.buildPlan.composing = false; S.buildPlan.draft = null; S.buildPlan.draftGaps = null; S.buildPlan.sel = {}; S.buildPlan.del = null; S.buildPlan.dep = null; S.buildPlan.setupAssert = null; S.buildPlan.runs = []; S.buildPlan.tab = "plan";   // open on the Build Plan tab
   try{
     const { data: steps, error } = await sb.from("build_steps").select("*")
       .eq("build_plan_id", planId).order("position");
     if(error) throw new Error(error.message);
     S.buildPlan.steps = steps || [];
   }catch(e){ setBuildPlanMsg("Load failed: " + e.message); }
+  S.buildPlan.runs = await loadPlanSetupRuns(planId);
   renderAutomation();
+}
+
+/* The plan's Setup Agent runs — the evidence source for Order 15.92 (setup-run → step
+   evidence). PLAN-scoped, unlike the client-scoped deployed ledger: a run's log is only
+   evidence for the manifest it ran, so it belongs to the folder that owns that manifest.
+
+   ALL runs, not the latest: the execution loop is FAIL-STOP, so a manifest can legitimately
+   be split across a failed run that created 8 of 12 items and a later run that finished the
+   rest. A failed run's partial log is still true — the fail-stop halts the loop, it never
+   undoes a create. Ascending by created_at so the FIRST success for an item is the one kept
+   (see setupEvidenceMap), which is genuinely when that item came to exist.
+
+   CHAT runs are excluded by construction, not by a filter here: they are stamped
+   build_plan_id null, so an .eq on this plan can never reach one.
+
+   Degrades to [] on error, following loadDeployedSystems: missing evidence must hide a chip,
+   never break the plan view. */
+async function loadPlanSetupRuns(planId){
+  const { data, error } = await sb.from("setup_runs").select("*")
+    .eq("build_plan_id", planId).order("created_at", { ascending: true });
+  if(error){ console.warn("setup-run evidence unavailable:", error.message); return []; }
+  return data || [];
 }
 
 // Back to the folder grid (clears the open plan; the grid re-renders from S.buildPlan.plans).
@@ -4210,7 +4251,7 @@ function closeBuildFolder(){
   // Leave the build workspace back to the folder grid. An unsaved draft is discarded here
   // (nothing was written to the DB); a saved folder just closes.
   S.buildPlan.activePlanId = null; S.buildPlan.plan = null; S.buildPlan.steps = []; S.buildPlan.panel = null;
-  S.buildPlan.draft = null; S.buildPlan.draftGaps = null; S.buildPlan.composing = false; S.buildPlan.sel = {}; S.buildPlan.del = null; S.buildPlan.dep = null; S.buildPlan.tab = "plan";
+  S.buildPlan.draft = null; S.buildPlan.draftGaps = null; S.buildPlan.composing = false; S.buildPlan.sel = {}; S.buildPlan.del = null; S.buildPlan.dep = null; S.buildPlan.setupAssert = null; S.buildPlan.runs = []; S.buildPlan.tab = "plan";
   renderAutomation();
 }
 
@@ -5185,12 +5226,179 @@ function renderPlanSection(track, allSteps){
     </div>`;
 }
 
+/* ============================================================
+   SETUP-RUN EVIDENCE (Order 15.92) — what the Setup Agent can PROVE about a setup step.
+
+   A manifest setup step's checklist is exactly the tag/field items the Setup Agent
+   creates, and setup_runs.log records each one by name. So the console can DERIVE which
+   items of that step already exist in the client's GHL sub-account — and it does only
+   that. It never writes checklist[].done and never advances status on its own, because a
+   run genuinely cannot prove the step's trailing human item ("Verify each item exists on
+   a test contact"). Same doctrine as deployed_systems: the console gathers, the operator
+   asserts. Evidence is re-derived on every render and never persisted, so it can never
+   go stale against the DB.
+   ============================================================ */
+
+// A setup step is EVIDENCE-BEARING iff it carries a real manifest — NOT iff agent === "setup".
+// The four foundational setup steps (sub-account, A2P, email domain, GBP) carry manifest null:
+// the Setup Agent creates exactly five kinds and none of that work is among them, so no run
+// can ever be evidence for them. {tbd:true} is the historical thin-engine placeholder.
+function isEvidenceBearingSetupStep(s){
+  return !!s && s.agent === "setup" && !!s.manifest && !s.manifest.tbd;
+}
+
+// log entry → the same key space manifestItemKeys() produces. LOWER-CASED because the union
+// and the create loop both dedupe case-insensitively, so "Review Credit Eligible" declared
+// and "review credit eligible" logged are the same item and must match.
+function evidenceKey(kind, name, object){
+  if(kind === "tag") return "tag:" + String(name || "").toLowerCase();
+  if(kind === "field") return "field:" + (object || "contact") + ":" + String(name || "").toLowerCase();
+  return null;   // custom_value / calendar / pipeline: not expressible as a checklist item yet
+}
+
+/* All of the plan's run logs collapsed to key → {action, ts}. `created` and `found` both mean
+   THE ITEM EXISTS NOW, which is the only question a checklist item asks; `error` means it does
+   not and is never recorded as evidence. First success wins: runs arrive chronologically, so an
+   item created in run 1 keeps run 1's timestamp even if a later run re-reports it as `found`. */
+function setupEvidenceMap(runs){
+  const m = new Map();
+  (runs || []).forEach(r => (r.log || []).forEach(e => {
+    if(e.action !== "created" && e.action !== "found") return;
+    const k = evidenceKey(e.kind, e.name, e.object);
+    if(k && !m.has(k)) m.set(k, { action: e.action, ts: e.ts });
+  }));
+  return m;
+}
+
+/* checklist LABEL → manifest key, regenerated from the step's own manifest with the exact
+   two builders injectManifestSetupSteps used ("Create tag: " + t / "Create field: " + fieldLabel).
+
+   Matching is by LABEL LOOKUP, never by index: `owner` dedupe means a second engine's setup step
+   only lists the items no earlier step already claimed, so its checklist is a SUBSET of the
+   manifest stored on it. Index-aligning the two would silently attribute the wrong key — and a
+   field name containing parentheses ("Review Credits Earned (Lifetime)") is exactly why the
+   labels are regenerated rather than parsed back out of the text. */
+function manifestLabelKeys(step){
+  const m = (step && step.manifest) || {};
+  const map = new Map();
+  [...new Set([...(m.creates_tags || []), ...(m.requires_tags || [])])]
+    .forEach(t => map.set("Create tag: " + t, "tag:" + String(t).toLowerCase()));
+  (m.requires_fields || []).forEach(f =>
+    map.set("Create field: " + fieldLabel(f), "field:" + fieldObject(f) + ":" + String(f.name || "").toLowerCase()));
+  return map;
+}
+
+/* One row per checklist item, parallel to step.checklist:
+     key   — its manifest key, or null for an item the manifest never generated (the trailing
+             "Verify each item exists on a test contact", or any hand-added item)
+     param — a [...] placeholder: setupManifestUnion routes these to paramItems and the run
+             NEVER creates them, so no log entry can exist. Rendered as hand-work, never as
+             missing, and never counted toward what the run proved.
+     ev    — the evidence entry, or null */
+function setupStepEvidence(step, evMap){
+  const labels = manifestLabelKeys(step);
+  return (step.checklist || []).map(c => {
+    const key = labels.get(ckText(c)) || null;
+    if(!key) return { key: null, param: false, ev: null };
+    const name = key.startsWith("tag:") ? key.slice(4) : key.slice(key.indexOf(":", 6) + 1);
+    if(name.startsWith("[")) return { key, param: true, ev: null };
+    return { key, param: false, ev: evMap.get(key) || null };
+  });
+}
+
+// The step's provable surface: only keyed, non-param items — the ones a run can actually
+// create. `ready` is the gate on offering the assert control; total 0 can never be ready,
+// so a step whose every item is a placeholder never gets a one-click done.
+function setupStepProven(rows){
+  const provable = rows.filter(r => r.key && !r.param);
+  const n = provable.filter(r => r.ev).length;
+  return { n, total: provable.length, ready: provable.length > 0 && n === provable.length };
+}
+
+// Items the run CANNOT speak to — the operator's own claim when they assert the step done.
+// Surfaced verbatim in the confirm panel so the assertion is made against a named list.
+function setupStepUnproven(step, rows){
+  return (step.checklist || []).map((c, i) => rows[i].key && !rows[i].param ? null
+    : ckText(c) + (rows[i].param ? " (hand-named scheme)" : "")).filter(Boolean);
+}
+
+/* The read-only chip beside a checklist item. Three distinguishable states, deliberately —
+   "already existed" is NOT the same claim as "we created it", and a [...] placeholder is not
+   a missing item but work that is hand-named by design and must never read as a gap. An item
+   the manifest never generated gets NO chip at all rather than a "missing" one: the run was
+   never asked about it, so saying anything would be an invented claim. */
+function evidenceChip(r){
+  if(!r || !r.key) return "";
+  if(r.param) return `<span class="bp-ev bp-ev-hand">— by hand (named per client)</span>`;
+  if(!r.ev) return `<span class="bp-ev bp-ev-none">no setup run has created this</span>`;
+  const when = r.ev.ts ? " · " + fmtCompletedAt(r.ev.ts) : "";
+  return r.ev.action === "created"
+    ? `<span class="bp-ev bp-ev-ok">✓ created by setup run${esc(when)}</span>`
+    : `<span class="bp-ev bp-ev-ok">✓ already existed${esc(when)}</span>`;
+}
+
+/* The assert control + its confirm panel. The console has gathered every item the runs prove;
+   the OPERATOR states the step is done. Offered only when every provable item is accounted for,
+   and the panel names what the runs could NOT speak to, so the assertion is made against an
+   explicit list rather than against a green tally. State-driven (S.buildPlan.setupAssert) —
+   there is no native confirm() anywhere in this file. */
+function renderSetupAssert(s, rows, pr){
+  if(s.status === "done" || !pr.ready) return "";
+  const a = S.buildPlan.setupAssert;
+  if(!a || a.stepId !== s.id)
+    return `<div class="bp-ev-act"><button class="btn-ghost bp-ev-btn" onclick="askAssertSetupStep('${s.id}')">Mark done — ${pr.n} of ${pr.total} items verified in GHL</button></div>`;
+  const unproven = setupStepUnproven(s, rows);
+  return `<div class="bp-ev-panel">
+      <div class="bp-ev-p-h">Mark this step done?</div>
+      <div class="msg">The plan's setup runs confirm all ${pr.total} tag/field item${pr.total === 1 ? "" : "s"} exist in this sub-account.</div>
+      ${unproven.length ? `<div class="msg" style="margin-top:6px">No run can confirm ${unproven.length === 1 ? "this item" : "these items"} — marking done is your assertion that ${unproven.length === 1 ? "it is" : "they are"} handled:<br>${unproven.map(t => "· " + esc(t)).join("<br>")}</div>` : ""}
+      ${a.msg ? `<div class="msg" style="margin-top:6px">${esc(a.msg)}</div>` : ""}
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="btn-primary" style="width:auto" onclick="confirmAssertSetupStep()" ${a.busy ? "disabled" : ""}>${a.busy ? "Saving…" : "Confirm — mark done"}</button>
+        <button class="btn-ghost" onclick="cancelAssertSetupStep()" ${a.busy ? "disabled" : ""}>Cancel</button>
+      </div>
+    </div>`;
+}
+
+function askAssertSetupStep(stepId){ S.buildPlan.setupAssert = { stepId, busy:false, msg:"" }; renderAutomation(); }
+function cancelAssertSetupStep(){ S.buildPlan.setupAssert = null; renderAutomation(); }
+
+/* Re-checks eligibility ITSELF rather than trusting the render that offered the button —
+   same discipline as markDeployed. No other row renders this control, but the function
+   rejects a bad call instead of depending on that being true forever. Writes through the
+   existing setStepStatus(), which stays the single status write path in the file. */
+async function confirmAssertSetupStep(){
+  const a = S.buildPlan.setupAssert; if(!a || a.busy) return;
+  const s = S.buildPlan.steps.find(x => x.id === a.stepId);
+  if(!isEvidenceBearingSetupStep(s)){ S.buildPlan.setupAssert = null; renderAutomation(); return; }
+  const pr = setupStepProven(setupStepEvidence(s, setupEvidenceMap(S.buildPlan.runs)));
+  if(!pr.ready){ a.msg = "The evidence no longer covers every item — reopen the step and re-check."; renderAutomation(); return; }
+  a.busy = true; renderAutomation();
+  await setStepStatus(s.id, "done");   // owns its own error message + rerender
+  S.buildPlan.setupAssert = null;
+  renderAutomation();
+}
+
 // Setup steps are not engine rows; this compact editable list (revealed by the
 // Setup badge) is the only place their status is advanced, so Setup ✓ can be reached.
+// An evidence-bearing step additionally expands to its checklist — which renders NOWHERE
+// else — annotated with what the plan's setup runs prove.
 function renderSetupMini(setupSteps){
-  return `<div class="bp-setup-list">` + setupSteps.map(s =>
-    `<div class="bp-setup-item"><span>${esc(s.title)}</span><select class="bp-status-sel" onchange="setStepStatus('${s.id}', this.value)">${statusOptions(s.status)}</select></div>`
-  ).join("") + `</div>`;
+  const evMap = setupEvidenceMap(S.buildPlan.runs);
+  return `<div class="bp-setup-list">` + setupSteps.map(s => {
+    if(!isEvidenceBearingSetupStep(s))
+      return `<div class="bp-setup-item"><span>${esc(s.title)}</span><select class="bp-status-sel" onchange="setStepStatus('${s.id}', this.value)">${statusOptions(s.status)}</select></div>`;
+    const rows = setupStepEvidence(s, evMap), pr = setupStepProven(rows);
+    const rowKey = "setup:" + s.id, open = !!S.buildPlan.expanded[rowKey];
+    const tally = pr.total
+      ? `<span class="bp-ev-tally${pr.ready ? " ev-all" : ""}">${pr.n}/${pr.total} verified in GHL</span>` : "";
+    return `<div class="bp-setup-item">
+        <button class="disc-toggle bp-setup-name" onclick="toggleStepDepth('${escAttr(rowKey)}')">${open ? "▾" : "▸"} ${esc(s.title)}</button>
+        ${tally}
+        <select class="bp-status-sel" onchange="setStepStatus('${s.id}', this.value)">${statusOptions(s.status)}</select>
+      </div>`
+      + (open ? `<div class="bp-setup-ck">${renderChecklistItems(s, rows)}${renderSetupAssert(s, rows, pr)}</div>` : "");
+  }).join("") + `</div>`;
 }
 
 function renderEngineRow(s, gatesByParent){
@@ -5235,10 +5443,16 @@ function renderEngineSubRows(s, gatesByParent){
 // nested test-gate's test matrix render through this ONE function, so they stay
 // identical: dual-shape items ({text,how} or string), checkbox owns done, caret owns
 // the how disclosure (no-how items keep the <label> so a text click still toggles done).
-function renderChecklistItems(step){
+//
+// `ev` (Order 15.92) is OPTIONAL and ADDITIVE: omitted — which is how the detail view and
+// the test-gate call it — the output is exactly what it has always been. Passed, each item
+// gains a READ-ONLY evidence chip beside its label. The chip never touches the checkbox:
+// checklist[].done stays the operator's, evidence stays derived, and the two are shown
+// side by side rather than one silently standing in for the other.
+function renderChecklistItems(step, ev){
   return (step.checklist || []).map((c, i) => {
     const how = ckHow(c), txt = ckText(c);
-    const label = c.done ? `<s>${esc(txt)}</s>` : esc(txt);
+    const label = (c.done ? `<s>${esc(txt)}</s>` : esc(txt)) + (ev ? evidenceChip(ev[i]) : "");
     const cb = `<input type="checkbox" ${c.done?"checked":""} onchange="toggleStepChecklist('${step.id}',${i})">`;
     const eKey = `${step.id}:ck${i}`, open = !!S.buildPlan.expanded[eKey];
     const row = how

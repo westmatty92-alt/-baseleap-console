@@ -1,0 +1,149 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1300" height="940" viewBox="0 0 1300 940" font-family="Segoe UI, system-ui, sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#5B6B73"/>
+    </marker>
+    <marker id="av" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#00A878"/>
+    </marker>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#E24B4A"/>
+    </marker>
+  </defs>
+
+  <rect width="1300" height="940" fill="#F4F5F0"/>
+  <text x="40" y="46" font-size="21" font-weight="700" fill="#0D1F2D">Order 15.92 — Setup run → build step evidence</text>
+  <text x="40" y="70" font-size="13" fill="#5B6B73">Solid = exists today · Dashed green = built this cycle · Dotted red = deliberately NOT built · No schema change, no new AI</text>
+
+  <!-- ============================ COLUMN 1 — evidence source ============================ -->
+  <text x="40" y="108" font-size="11" font-weight="700" fill="#5B6B73" letter-spacing="1">EVIDENCE SOURCE (exists)</text>
+
+  <rect x="40" y="120" width="300" height="128" rx="8" fill="#FFFFFF" stroke="#E2E6E3"/>
+  <text x="56" y="142" font-size="13" font-weight="600" fill="#0D1F2D">setup_runs — ALL runs for this plan</text>
+  <text x="56" y="162" font-size="11" fill="#5B6B73">build_plan_id = plan.id  (NOT NULL only)</text>
+  <text x="56" y="179" font-size="11" fill="#5B6B73">status complete OR failed — both carry</text>
+  <text x="56" y="196" font-size="11" fill="#5B6B73">durable truth in their partial log</text>
+  <text x="56" y="216" font-size="11" font-style="italic" fill="#E24B4A">NOT latest-only: fail-stop splits a</text>
+  <text x="56" y="232" font-size="11" font-style="italic" fill="#E24B4A">manifest across two runs</text>
+
+  <rect x="40" y="272" width="300" height="118" rx="8" fill="#FFFFFF" stroke="#E2E6E3"/>
+  <text x="56" y="294" font-size="13" font-weight="600" fill="#0D1F2D">log[] entry</text>
+  <text x="56" y="314" font-size="11" fill="#5B6B73">{ kind, name, object, action, ghl_id }</text>
+  <text x="56" y="333" font-size="11" fill="#00A878">action created → item exists now</text>
+  <text x="56" y="350" font-size="11" fill="#00A878">action found → item exists now</text>
+  <text x="56" y="367" font-size="11" fill="#E24B4A">action error → NOT satisfied</text>
+  <text x="56" y="384" font-size="11" font-style="italic" fill="#5B6B73">proven on run 13909aeb (12 entries)</text>
+
+  <!-- chat runs excluded -->
+  <rect x="40" y="418" width="300" height="72" rx="8" fill="#FFFFFF" stroke="#E24B4A" stroke-dasharray="3 3"/>
+  <text x="56" y="440" font-size="13" font-weight="600" fill="#E24B4A">CHAT runs — never evidence</text>
+  <text x="56" y="460" font-size="11" fill="#5B6B73">build_plan_id IS NULL by construction,</text>
+  <text x="56" y="477" font-size="11" fill="#5B6B73">so the plan filter excludes them already</text>
+
+  <!-- ============================ COLUMN 2 — the join ============================ -->
+  <text x="392" y="108" font-size="11" font-weight="700" fill="#00A878" letter-spacing="1">THE JOIN (built this cycle)</text>
+
+  <rect x="392" y="120" width="316" height="146" rx="8" fill="#FFFFFF" stroke="#00A878" stroke-dasharray="5 3"/>
+  <text x="408" y="142" font-size="13" font-weight="600" fill="#0D1F2D">label → key, from the MANIFEST side</text>
+  <text x="408" y="162" font-size="11" fill="#5B6B73">manifestItemKeys(step.manifest) +</text>
+  <text x="408" y="179" font-size="11" fill="#5B6B73">fieldLabel() regenerate the injector's</text>
+  <text x="408" y="196" font-size="11" fill="#5B6B73">EXACT checklist label strings</text>
+  <text x="408" y="216" font-size="11" font-style="italic" fill="#00A878">Look each checklist item's text up in</text>
+  <text x="408" y="232" font-size="11" font-style="italic" fill="#00A878">that map — never index-align: `owner`</text>
+  <text x="408" y="248" font-size="11" font-style="italic" fill="#00A878">dedupe makes checklist ⊂ manifest</text>
+
+  <rect x="392" y="290" width="316" height="112" rx="8" fill="#FFFFFF" stroke="#00A878" stroke-dasharray="5 3"/>
+  <text x="408" y="312" font-size="13" font-weight="600" fill="#0D1F2D">log → key</text>
+  <text x="408" y="332" font-size="11" fill="#5B6B73">tag   → "tag:" + name</text>
+  <text x="408" y="349" font-size="11" fill="#5B6B73">field → "field:" + (object||contact) + ":" + name</text>
+  <text x="408" y="369" font-size="11" font-style="italic" fill="#00A878">CASE-INSENSITIVE — matches the</text>
+  <text x="408" y="385" font-size="11" font-style="italic" fill="#00A878">case-insensitive union/create rule</text>
+
+  <rect x="392" y="426" width="316" height="100" rx="8" fill="#FFFFFF" stroke="#E24B4A" stroke-dasharray="3 3"/>
+  <text x="408" y="448" font-size="13" font-weight="600" fill="#E24B4A">[…] param items — never satisfiable</text>
+  <text x="408" y="468" font-size="11" fill="#5B6B73">In the checklist, but setupManifestUnion</text>
+  <text x="408" y="485" font-size="11" fill="#5B6B73">routes them to paramItems and the run</text>
+  <text x="408" y="502" font-size="11" fill="#5B6B73">NEVER creates them → no log entry ever</text>
+  <text x="408" y="519" font-size="11" font-style="italic" fill="#E24B4A">must render as hand-work, not missing</text>
+
+  <!-- ============================ COLUMN 3 — the surface ============================ -->
+  <text x="760" y="108" font-size="11" font-weight="700" fill="#00A878" letter-spacing="1">THE SURFACE (built this cycle)</text>
+
+  <rect x="760" y="120" width="316" height="128" rx="8" fill="#FFFFFF" stroke="#00A878" stroke-dasharray="5 3"/>
+  <text x="776" y="142" font-size="13" font-weight="600" fill="#0D1F2D">renderSetupMini — expandable row</text>
+  <text x="776" y="162" font-size="11" fill="#5B6B73">Today: title + status select ONLY, so a</text>
+  <text x="776" y="179" font-size="11" fill="#5B6B73">setup step's checklist renders NOWHERE</text>
+  <text x="776" y="199" font-size="11" font-style="italic" fill="#00A878">Add a caret reusing renderChecklistItems</text>
+  <text x="776" y="215" font-size="11" font-style="italic" fill="#00A878">(the SAME shared renderer the test-gate</text>
+  <text x="776" y="231" font-size="11" font-style="italic" fill="#00A878">uses) + a per-item evidence chip</text>
+
+  <rect x="760" y="272" width="316" height="118" rx="8" fill="#FFFFFF" stroke="#00A878" stroke-dasharray="5 3"/>
+  <text x="776" y="294" font-size="13" font-weight="600" fill="#0D1F2D">Evidence chip (read-only)</text>
+  <text x="776" y="314" font-size="11" fill="#00A878">✓ created by setup run · &lt;date&gt;</text>
+  <text x="776" y="331" font-size="11" fill="#00A878">✓ already existed · &lt;date&gt;</text>
+  <text x="776" y="348" font-size="11" fill="#5B6B73">— by hand (param scheme)</text>
+  <text x="776" y="368" font-size="11" font-style="italic" fill="#E24B4A">checklist[].done is NOT written —</text>
+  <text x="776" y="384" font-size="11" font-style="italic" fill="#E24B4A">the chip sits BESIDE the checkbox</text>
+
+  <rect x="760" y="414" width="316" height="140" rx="8" fill="#FFFFFF" stroke="#00A878" stroke-dasharray="5 3"/>
+  <text x="776" y="436" font-size="13" font-weight="600" fill="#0D1F2D">Confirm-gated assertion</text>
+  <text x="776" y="456" font-size="11" fill="#5B6B73">Shown ONLY when every non-param item</text>
+  <text x="776" y="473" font-size="11" fill="#5B6B73">on the step has evidence</text>
+  <text x="776" y="493" font-size="11" fill="#5B6B73">"12 of 12 items verified in GHL —</text>
+  <text x="776" y="510" font-size="11" fill="#5B6B73">mark this step done?"</text>
+  <text x="776" y="530" font-size="11" font-style="italic" fill="#00A878">state-driven panel, never confirm();</text>
+  <text x="776" y="546" font-size="11" font-style="italic" fill="#00A878">calls setStepStatus() UNCHANGED</text>
+
+  <!-- ============================ arrows across columns ============================ -->
+  <line x1="340" y1="184" x2="386" y2="184" stroke="#5B6B73" stroke-width="1.4" marker-end="url(#a)"/>
+  <line x1="340" y1="330" x2="386" y2="330" stroke="#5B6B73" stroke-width="1.4" marker-end="url(#a)"/>
+  <line x1="708" y1="200" x2="754" y2="180" stroke="#00A878" stroke-width="1.4" marker-end="url(#av)"/>
+  <line x1="708" y1="340" x2="754" y2="320" stroke="#00A878" stroke-width="1.4" marker-end="url(#av)"/>
+  <line x1="708" y1="476" x2="754" y2="340" stroke="#E24B4A" stroke-width="1.2" stroke-dasharray="3 3" marker-end="url(#ar)"/>
+
+  <!-- ============================ BOTTOM — the consequence ============================ -->
+  <text x="40" y="596" font-size="11" font-weight="700" fill="#5B6B73" letter-spacing="1">WHY IT MATTERS — THE BLOCKED-TRACKER CASCADE (exists; nothing here changes)</text>
+
+  <rect x="40" y="610" width="268" height="108" rx="8" fill="#FFFFFF" stroke="#E2E6E3"/>
+  <text x="56" y="632" font-size="13" font-weight="600" fill="#0D1F2D">injectManifestSetupSteps</text>
+  <text x="56" y="652" font-size="11" fill="#5B6B73">Every engine step gains depends_on</text>
+  <text x="56" y="669" font-size="11" fill="#5B6B73">→ the ref of its manifest setup step</text>
+  <text x="56" y="689" font-size="11" font-style="italic" fill="#5B6B73">the dependency is real and correct</text>
+  <text x="56" y="706" font-size="11" font-style="italic" fill="#5B6B73">— only the status was stale</text>
+
+  <rect x="352" y="610" width="268" height="108" rx="8" fill="#FFFFFF" stroke="#E2E6E3"/>
+  <text x="368" y="632" font-size="13" font-weight="600" fill="#0D1F2D">stepBlockers(s)</text>
+  <text x="368" y="652" font-size="11" fill="#5B6B73">filter(t =&gt; t.status !== "done")</text>
+  <text x="368" y="672" font-size="11" font-style="italic" fill="#E24B4A">"done" is the ONLY status that</text>
+  <text x="368" y="688" font-size="11" font-style="italic" fill="#E24B4A">unblocks — there is no honest</text>
+  <text x="368" y="704" font-size="11" font-style="italic" fill="#E24B4A">intermediate to advance to</text>
+
+  <rect x="664" y="610" width="268" height="108" rx="8" fill="#FFFFFF" stroke="#E2E6E3"/>
+  <text x="680" y="632" font-size="13" font-weight="600" fill="#0D1F2D">trackerBuckets → Ready</text>
+  <text x="680" y="652" font-size="11" fill="#5B6B73">queued + no blockers = "do next"</text>
+  <text x="680" y="672" font-size="11" fill="#E24B4A">Today: run succeeds, every engine</text>
+  <text x="680" y="689" font-size="11" fill="#E24B4A">still reads BLOCKED — the Tracker's</text>
+  <text x="680" y="706" font-size="11" fill="#E24B4A">central claim is wrong</text>
+
+  <line x1="308" y1="664" x2="346" y2="664" stroke="#5B6B73" stroke-width="1.4" marker-end="url(#a)"/>
+  <line x1="620" y1="664" x2="658" y2="664" stroke="#5B6B73" stroke-width="1.4" marker-end="url(#a)"/>
+
+  <!-- ============================ NOT TOUCHED ============================ -->
+  <rect x="964" y="596" width="296" height="122" rx="8" fill="#FFFFFF" stroke="#E24B4A" stroke-dasharray="3 3"/>
+  <text x="980" y="618" font-size="13" font-weight="600" fill="#E24B4A">NEVER TOUCHED BY THIS ORDER</text>
+  <text x="980" y="638" font-size="11" fill="#5B6B73">The 4 manifest-NULL foundational steps</text>
+  <text x="980" y="655" font-size="11" fill="#5B6B73">(sub-account · A2P · email domain · GBP)</text>
+  <text x="980" y="675" font-size="11" font-style="italic" fill="#5B6B73">The Setup Agent can create exactly five</text>
+  <text x="980" y="691" font-size="11" font-style="italic" fill="#5B6B73">kinds; none of these is among them, so</text>
+  <text x="980" y="707" font-size="11" font-style="italic" fill="#5B6B73">no run can ever be evidence for them</text>
+
+  <!-- ============================ INVARIANTS ============================ -->
+  <rect x="40" y="748" width="1220" height="156" rx="8" fill="#FFFFFF" stroke="#E2E6E3"/>
+  <text x="56" y="772" font-size="12" font-weight="700" fill="#0D1F2D">INVARIANTS THIS ORDER MUST PRESERVE</text>
+  <text x="56" y="796" font-size="11" fill="#5B6B73">1. NO schema change and NO new write path — build_steps keeps exactly 3 update sites; the only status write stays setStepStatus().</text>
+  <text x="56" y="815" font-size="11" fill="#5B6B73">2. Evidence is DERIVED and never persisted — nothing writes checklist[].done, so re-deriving from the logs is always the truth.</text>
+  <text x="56" y="834" font-size="11" fill="#5B6B73">3. Eligibility is `manifest &amp;&amp; !manifest.tbd`, NOT `agent === "setup"` — a manifest-less setup step can never show evidence or the assert control.</text>
+  <text x="56" y="853" font-size="11" fill="#5B6B73">4. The operator asserts; the console only gathers. Same doctrine as deployed_systems — the run cannot prove the human "verify on a test contact" item.</text>
+  <text x="56" y="872" font-size="11" fill="#5B6B73">5. A `failed` run's partial log is still valid evidence for the items it DID create — the fail-stop halts the loop, it does not undo prior creates.</text>
+  <text x="56" y="891" font-size="11" fill="#5B6B73">6. No AI anywhere in this path — the join is deterministic string/key matching over data both sides already store.</text>
+</svg>
