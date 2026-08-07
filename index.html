@@ -502,6 +502,11 @@
   .trk-meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:4px}
   .trk-unblocks{font-size:11px;color:var(--run);background:rgba(0,168,120,.1);border-radius:8px;padding:3px 9px;line-height:1.4}
   .trk-when,.trk-hrs{font-size:11px;color:var(--muted);white-space:nowrap}
+  /* Order 16.1 — why a setup step moved. `auto` is a provenance mark (machine-completed), the
+     tally is progress; both are read-only annotations, styled as metadata not as controls. */
+  .trk-auto{font-size:11px;font-weight:600;color:var(--run);background:rgba(0,168,120,.1);border-radius:8px;padding:3px 9px;line-height:1.4;white-space:nowrap}
+  .trk-ev{font-size:11px;font-weight:600;color:var(--muted);white-space:nowrap}
+  .trk-ev.ev-all{color:var(--run)}
   .trk-done .trk-title{color:var(--muted)}
   @media(max-width:720px){ .trk-row{grid-template-columns:1fr auto} .trk-row .bp-c-prog{display:none} }
   /* deployed-system ledger (Order 16) — lives in the Done row's meta line and its own card */
@@ -4221,6 +4226,7 @@ async function openBuildFolder(planId){
     S.buildPlan.steps = steps || [];
   }catch(e){ setBuildPlanMsg("Load failed: " + e.message); }
   S.buildPlan.runs = await loadPlanSetupRuns(planId);
+  await reconcileSetupStepCompletion(planId);   // self-healing: a plan whose run predates Order 16.1 corrects itself here
   renderAutomation();
 }
 
@@ -5315,6 +5321,23 @@ function setupStepProven(rows){
   return { n, total: provable.length, ready: provable.length > 0 && n === provable.length };
 }
 
+/* The STRICTER question, and deliberately not the same one setupStepProven asks (Order 16.1).
+
+   setupStepProven().ready gates the MANUAL button and excludes [...] placeholders, because a
+   human can name the campaign tag and then legitimately call the step done. Auto-completion
+   cannot make that judgement, so it asks: has EVERY declared item actually been created?
+
+   A placeholder is keyed but can never carry evidence — the run never creates it — so a
+   placeholder-bearing step is false here BY CONSTRUCTION. That is the whole edge case, falling
+   out of the definition rather than needing a special case: the console must never flip a step
+   to done while a tag it declares does not exist in the account. Unkeyed rows (the trailing
+   "Verify each item exists on a test contact") are ignored — that line is appended by
+   injectManifestSetupSteps, it is not what a "Create tags & fields" step is FOR. */
+function setupStepFullyCreated(rows){
+  const keyed = rows.filter(r => r.key);
+  return keyed.length > 0 && keyed.every(r => r.ev);
+}
+
 // Items the run CANNOT speak to — the operator's own claim when they assert the step done.
 // Surfaced verbatim in the confirm panel so the assertion is made against a named list.
 function setupStepUnproven(step, rows){
@@ -5697,32 +5720,58 @@ function renderTracker(){
       </div>
       <div class="trk-dist">${esc(dist)}</div>
     </div>`;
+  // Built ONCE here and threaded down, not rebuilt per row — the derivation is the same one
+  // the Build Plan surface uses, and a per-row rebuild would walk every run log N times.
+  const evMap = setupEvidenceMap(S.buildPlan.runs);
   const sections = [
     ["ready",    "Ready",     b.ready,    "Unblocked and not started — top of this list is next."],
     ["blocked",  "Blocked",   b.blocked,  "Waiting on an upstream step that isn't done."],
     ["inflight", "In flight", b.inFlight, "Building or testing right now."],
     ["done",     "Done",      b.done,     "Completed."],
-  ].map(([key, label, list, hint]) => renderTrackerSection(key, label, list, hint, impact, dmap)).join("");
+  ].map(([key, label, list, hint]) => renderTrackerSection(key, label, list, hint, impact, dmap, evMap)).join("");
   // The ledger card is appended AFTER the four buckets — it adds a surface, and changes
   // no bucket arithmetic. The four buckets still re-sum to steps.length.
   return head + sections + renderDeployedCard();
 }
 
-function renderTrackerSection(key, label, list, hint, impact, dmap){
+function renderTrackerSection(key, label, list, hint, impact, dmap, evMap){
   return `
     <div class="card trk-sec trk-${key}">
       <div class="trk-sec-h"><span class="trk-dot"></span>${esc(label)}<span class="trk-n">${list.length}</span></div>
-      ${list.length ? `<div class="trk-hint">${esc(hint)}</div>` + list.map(s => renderTrackerRow(s, impact, dmap)).join("")
+      ${list.length ? `<div class="trk-hint">${esc(hint)}</div>` + list.map(s => renderTrackerRow(s, impact, dmap, evMap)).join("")
                     : `<div class="msg">Nothing here.</div>`}
     </div>`;
 }
 
-function renderTrackerRow(s, impact, dmap){
+/* The Tracker's two Order 16.1 annotations, in one place so the row stays readable.
+
+   The `auto` chip marks MACHINE completion only. 'operator' and NULL both render nothing — the
+   question an operator actually asks of a done step is "did the machine do this, or did I?", and
+   a chip on every human-completed row would be noise. The COLUMN still distinguishes the two
+   (NULL = done before Order 16.1 existed, honestly unknown), so nothing is lost to anyone
+   querying; only the UI collapses them.
+
+   The tally shows on evidence-bearing setup steps that have NOT auto-completed — once a step is
+   done by the agent the chip says so and the count is redundant. A step holding a [...] placeholder
+   is exactly the case this keeps visible: it will sit at 8/8 created and never auto-complete. */
+function trackerEvidenceMeta(s, evMap){
+  if(s.completed_by === "setup_agent") return `<span class="trk-auto">✓ auto — Setup Agent</span>`;
+  if(!evMap || !isEvidenceBearingSetupStep(s)) return "";
+  const rows = setupStepEvidence(s, evMap), pr = setupStepProven(rows);
+  if(!pr.total) return "";
+  const held = pr.ready && !setupStepFullyCreated(rows);   // everything creatable is created, but a placeholder remains
+  return `<span class="trk-ev${pr.ready ? " ev-all" : ""}">${pr.n}/${pr.total} created in GHL${held ? " · 1+ needs hand-naming" : ""}</span>`;
+}
+
+function renderTrackerRow(s, impact, dmap, evMap){
   const stage = STATUS_STAGE[s.status] != null ? STATUS_STAGE[s.status] : 0;
   const pct = [0, 25, 75, 100][stage] || 0;      // same four discrete stages as the plan row
   const blockers = stepBlockers(s);              // unscoped: a gate blocked by its own engine IS blocked
   const n = impact.get(s.id) || 0;
   const meta = [
+    // Order 16.1 — why this step moved, on the surface the operator actually watches.
+    // Reuses THE evidence derivation; the Tracker never grows a second copy of it.
+    trackerEvidenceMeta(s, evMap),
     // A DONE step is never "blocked" — it already shipped. Real plans genuinely contain
     // done steps whose upstream deps are still queued (an operator completing work out of
     // dependency order), and without this guard every one of them renders a blocked-by
@@ -5896,15 +5945,57 @@ function renderDeploymentCard(dep, key, workflow){
     ${rows || `<div class="msg">No deployment details.</div>`}</div>`;
 }
 
+// THE HUMAN status writer — the dropdown and the Mark-done confirm both land here, so every
+// status change an operator makes is stamped completed_by 'operator' (Order 16.1). The machine
+// writer is reconcileSetupStepCompletion; those are the only two.
 async function setStepStatus(stepId, status){
   const s = S.buildPlan.steps.find(x => x.id === stepId); if(!s) return;
-  // completed_at is the Phase D hinge (SOP-gen + ledger): stamped on done, cleared on any move away
-  const patch = { status, completed_at: status === "done" ? new Date().toISOString() : null };
+  // completed_at is the Phase D hinge (SOP-gen + ledger): stamped on done, cleared on any move away.
+  // completed_by moves in LOCKSTEP with it — set together, nulled together — so a done row can
+  // never carry a timestamp without a source, or a source without a timestamp.
+  const done = status === "done";
+  const patch = { status, completed_at: done ? new Date().toISOString() : null,
+                  completed_by: done ? "operator" : null };
   const { data, error } = await sb.from("build_steps").update(patch).eq("id", stepId).select().single();
   if(error){ setBuildPlanMsg("Status update failed: " + error.message); renderAutomation(); return; }
   Object.assign(s, data);
   setBuildPlanMsg(`Step ${s.position + 1} → ${data.status} ✓`);
   renderAutomation();
+}
+
+/* THE MACHINE status writer (Order 16.1) — the single definition of "a fully-created setup step
+   is done". Called from BOTH openBuildFolder (after the runs load) and runSetupItems (after the
+   post-run refresh), so the rule is enforced in one place and the state is self-healing: a plan
+   whose run predates this feature corrects itself the next time its folder is opened, with no
+   one-off backfill.
+
+   Reverses Order 15.92's operator-asserts stance FOR SETUP STEPS ONLY, on purpose. That doctrine
+   holds where nothing can derive the claim (deployed_systems: a workflow being live in GHL). Tag
+   and field creation IS derivable, from a per-item log we already store — so deriving it is the
+   honest thing, and making the operator restate it was friction with no safety return.
+
+   ONLY FROM 'queued'. Any other status means an operator deliberately moved the step, and
+   silently overriding an explicit human state is precisely the surprise this codebase avoids.
+   In practice these steps are always queued; the guard is for the case where they are not. */
+async function reconcileSetupStepCompletion(planId){
+  if(!planId || S.buildPlan.activePlanId !== planId) return;      // same open-plan guard as refreshPlanSetupRuns
+  const evMap = setupEvidenceMap(S.buildPlan.runs);
+  const due = S.buildPlan.steps.filter(s =>
+    isEvidenceBearingSetupStep(s) && s.status === "queued"
+    && setupStepFullyCreated(setupStepEvidence(s, evMap)));
+  if(!due.length) return;                                          // no query when nothing qualifies
+  const { data, error } = await sb.from("build_steps")
+    .update({ status: "done", completed_at: new Date().toISOString(), completed_by: "setup_agent" })
+    .in("id", due.map(s => s.id)).select();                        // .select() — a bare update reports false success on a 0-row write
+  if(error){ console.warn("setup step auto-complete failed:", error.message); return; }
+  (data || []).forEach(row => {
+    const s = S.buildPlan.steps.find(x => x.id === row.id);
+    if(s) Object.assign(s, row);                                   // re-render from the RETURNED row, not the optimistic patch
+  });
+  if(data && data.length){
+    setBuildPlanMsg(`${data.length} setup step${data.length === 1 ? "" : "s"} completed by the Setup Agent ✓`);
+    renderAutomation();
+  }
 }
 
 async function toggleStepChecklist(stepId, idx){
@@ -6662,6 +6753,7 @@ async function runSetupItems(cfg){
 async function refreshPlanSetupRuns(planId){
   if(!planId || S.buildPlan.activePlanId !== planId) return;
   S.buildPlan.runs = await loadPlanSetupRuns(planId);
+  await reconcileSetupStepCompletion(planId);   // the run may have just completed a step's last item
   if(S.module === "automation") renderAutomation();   // normally unreachable (a run is started from the setup module); kept so the state and the view can't disagree
 }
 

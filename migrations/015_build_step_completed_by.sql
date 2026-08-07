@@ -1,0 +1,32 @@
+-- 015: Order 16.1 — who completed a build step.
+-- Run manually in the Supabase SQL editor (GitHub is not wired to Supabase).
+--
+-- Order 16.1 lets the Setup Agent auto-complete a manifest setup step once it has
+-- created every tag and field that step declares. That means `status = 'done'` can
+-- now arrive two ways — derived from setup_runs.log, or asserted by a human — and
+-- without this column the two are indistinguishable after the fact. They are NOT the
+-- same claim: a derived completion is backed by a per-item log, an asserted one is a
+-- person's judgement (and on a step holding a [...] placeholder, that judgement is
+-- exactly what is being exercised).
+--
+-- It cannot be recovered later by inference: an operator can mark a fully-created step
+-- done from the dropdown, which at render time looks identical to the machine doing it.
+-- So it is recorded at write time or not at all — which is also why this ships WITH the
+-- auto-complete rather than after it. Any completion that happens before this column
+-- exists is permanently unattributable.
+
+ALTER TABLE build_steps ADD COLUMN IF NOT EXISTS completed_by TEXT;
+-- 'setup_agent' — reconcileSetupStepCompletion derived it from the run log
+-- 'operator'    — a human, via the status dropdown or the Mark-done confirm
+-- NULL          — not done, OR done before this column existed. Deliberately NOT
+--                 backfilled: guessing at provenance is the exact failure this
+--                 column exists to prevent, so historical rows stay honestly unknown.
+--
+-- No CHECK constraint, matching build_steps.phase's precedent (011). A future third
+-- writer should surface in the data as an unrecognised value rather than throw at the
+-- INSERT and lose the row's completion entirely.
+--
+-- Written and cleared in lockstep with completed_at by BOTH writers, so the pair can
+-- never disagree: set together on a move to 'done', both nulled on any move away.
+-- RLS needs no change — this is a new column on an already-protected table, and the
+-- existing build_steps policy covers it.

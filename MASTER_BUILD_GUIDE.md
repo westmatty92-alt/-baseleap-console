@@ -206,8 +206,8 @@ future change from re-implementing it.
   was never weakened to fix a display problem. NOTE: `renderEngineRow` still has this
   cosmetic issue and was deliberately left alone (out of scope) — candidate cleanup.
 - **No new write path, no schema change.** Tracker rows drive the existing `setStepStatus()`;
-  `build_steps` has exactly 3 update sites (status, checklist, notes) and only one writes
-  status. The plan-level rollup is DERIVED and displayed only — `build_plans.status` is free
+  `build_steps` had exactly 3 update sites (status, checklist, notes) and only one wrote
+  status. **Superseded by Order 16.1: there are now 4 sites and 2 status writers.** The plan-level rollup is DERIVED and displayed only — `build_plans.status` is free
   text with NO CHECK constraint and is not written here.
 - **Deferred, not dropped:** the `done`-click side effects from the original Order 15 text
   (3-audience SOP generation + deployed-system ledger write). Neither has a substrate today —
@@ -302,8 +302,8 @@ that run's log legible on the step it belongs to. Map:
 - **`confirmAssertSetupStep` re-checks eligibility itself** rather than trusting the render that
   offered the button — same discipline as `markDeployed`. State-driven (`S.buildPlan.setupAssert`);
   no native `confirm()` anywhere in the file.
-- **Out of scope, deliberately:** evidence on the Tracker's own setup rows (**now a named
-  follow-up — Order 15.94 below**; v1 keeps the control in `renderSetupMini`, already the place
+- **Out of scope at the time:** evidence on the Tracker's own setup rows (**built by Order 16.1;
+  15.94 is ABSORBED, not open**; v1 keeps the control in `renderSetupMini`, already the place
   setup status is advanced), and auto-writing `checklist[].done`.
 - **FIX, same day — the evidence was load-time-only (`refreshPlanSetupRuns`).** Found the moment
   it met a real run: Matthew ran the Setup Agent against plan `de43a1b1` (run `549e7c6a`, 32 items
@@ -330,7 +330,7 @@ that run's log legible on the step it belongs to. Map:
   offline render (real rows, shipped CSS) was inspected visually instead. With the fix's 27
   above, the suite totals **108/108** — matching commit `2443a7d`'s message.
 
-## Order 15.94 — setup-run evidence on the Tracker rows (SCOPED, NOT BUILT)
+## Order 15.94 — setup-run evidence on the Tracker rows (ABSORBED INTO ORDER 16.1)
 
 Split out of Order 15.92 rather than folded into its fix. **The Tracker contains zero evidence
 symbols** — `renderTrackerRow` shows title, status, blockers and `completed_at`, and nothing
@@ -351,8 +351,11 @@ row that a completed run has already satisfied.
 - **Open question for the operator:** whether the assert control belongs on two surfaces at once,
   or whether the Tracker row should link to the Build Plan step instead. Worth deciding before
   building, not after.
-- **Verification:** none — nothing has been built. This section is a scope record, not a
-  contract.
+- **Status: ABSORBED.** Built as part of Order 16.1 below, together with auto-completion — the
+  two were inseparable in practice: a step that moves on its own is only trustworthy if the
+  surface shows why it moved. The open question above was answered by building the tally on the
+  Tracker and leaving the manual assert control on the Build Plan tab, since after 16.1 the
+  manual path is the exception (a placeholder-bearing step) rather than the norm.
 
 ## Gap Report — client-facing Preview / print view (branded; on `fix/condition-empty-branch-autorepair`, not yet merged)
 A separate presentational view (`.cr-*` classes, `renderClientReport()`/`openClientReport()`/
@@ -570,3 +573,51 @@ The Gap Report Builder reads ONLY validated gaps. An unvalidated gap cannot reac
 - Pulse = client-facing product, deployed into client sub-accounts, resold. Separate repo.
 - Console = internal, agency-level, one operator. This repo. No multi-tenant brand switching,
   no rebilling — but the client-switcher still needs the state-reset discipline above.
+
+## Order 16.1 — setup steps auto-complete, with recorded provenance (Aug 6 2026)
+
+Matthew opened the PM Tracker after a successful Setup Agent run and the setup steps still read
+`queued`. His position, and it is correct: a step titled **"Create tags & fields — X"** exists to
+create tags and custom fields; once the agent has created them, it is done. Absorbs Order 15.94.
+
+- **The reversal, and why it is not a contradiction.** Order 15.92 made completion an operator
+  ASSERTION because a run cannot prove the step's trailing `Verify each item exists on a test
+  contact` line. That was the wrong call: the line is appended by `injectManifestSetupSteps`, it
+  is not what the step is FOR. Tag and field creation **is** derivable from `setup_runs.log`, so
+  it is now derived. **The assertion doctrine still stands where nothing can derive the claim —
+  `deployed_systems` is the case it was written for, and is untouched.**
+- **A second, stricter predicate — not a change to the first.** `setupStepFullyCreated` = every
+  KEYED row has evidence. `setupStepProven().ready` is unchanged and still gates the MANUAL
+  button, deliberately excluding `[…]` placeholders (a human can name the campaign tag and then
+  legitimately call the step done). Auto-completion cannot make that judgement, so a
+  placeholder-bearing step is false **by construction** and HOLDS — the console must never flip a
+  step to done while a tag it declares does not exist in the account.
+- **On real data:** plan `de43a1b1` auto-completes exactly positions 1, 2, 3 (6/6, 8/8, 10/10) and
+  position 0 HOLDS at "8/8 created · 1+ needs hand-naming". Plan `c0b5b431` auto-completes its one
+  manifest step (12/12). The 5 manifest-null foundational steps are never touched.
+- **One rule, two entry points.** `reconcileSetupStepCompletion` is called from `openBuildFolder`
+  AND `refreshPlanSetupRuns`, so the state is SELF-HEALING — a plan whose run predates this
+  corrects itself the next time its folder opens, with no SQL backfill. **Only from `queued`:** any
+  other status means an operator deliberately moved the step, and silently overriding an explicit
+  human state is the surprise this codebase avoids. One batched `.update().in().select()`,
+  re-rendered from the RETURNED rows; no query at all when nothing qualifies.
+- **`build_steps.completed_by` (migration 015)** — TEXT, nullable, no CHECK (matching `phase`'s
+  precedent). `done` can now arrive two ways, and without this the two are indistinguishable
+  afterwards. It **cannot be recovered by inference** — an operator marking a fully-created step
+  done from the dropdown looks identical at render time — so it is recorded at write time or not
+  at all, which is why it shipped WITH the auto-complete rather than after: any completion
+  predating the column is permanently unattributable. NULL on a done row = completed before 16.1,
+  honestly unknown, **never backfilled by guessing**. Moves in lockstep with `completed_at`.
+- **Tracker annotations.** `auto — Setup Agent` chip marks MACHINE completion only; `'operator'`
+  and NULL render nothing, because the question an operator asks is "did the machine do this?" —
+  the COLUMN still distinguishes them for anyone querying. The tally reuses THE evidence
+  derivation, built once in `renderTrackerBody` and threaded down, never a second copy.
+- **Verification:** 31 assertions for this order (predicate, real-data selection, reconcile guards,
+  provenance lockstep, Tracker annotations) plus the 110-assertion existing suite — **141/141**.
+  The prior suite grew from 108 to 110 because wiring reconcile into `refreshPlanSetupRuns` broke
+  that harness's sandbox; fixing it added two assertions that the hand-off passes the same planId.
+  One bogus assertion was found and replaced during the run: it asserted only that an async call
+  returns a Promise, which is trivially true. **Live browser check not performed** (no local
+  server; localhost carries no Supabase session).
+- **Migration 015 must be run manually BEFORE this code is live** — the reconcile write targets a
+  column that does not exist until then. Confirmed absent at build time.
