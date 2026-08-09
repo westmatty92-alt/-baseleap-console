@@ -4,6 +4,16 @@ Numbered incidents and the lesson each one bought. Numbering continues the bug
 history in the Notion Console spec; entries land here when the lesson should sit
 next to the code. Newest first.
 
+## Bug #21 — Setup Agent evidence display was load-time-only: a completed run never updated the screen without a reload (August 6 2026)
+
+**Symptom:** the operator ran the Setup Agent (a real, successful 32-item run against a live client's GHL account) with the build plan folder already open, expecting the plan's setup steps and evidence display to update. Nothing changed on screen.
+
+**Root cause:** `S.buildPlan.runs` — the in-memory snapshot the evidence display reads — is written in exactly one place, `openBuildFolder()`, and nothing ever refreshed it afterward. `runSetupItems()` already called `invalidateSetupPreviews()` on completion, but that function's responsibility had only ever been extended to cover the Setup Agent's own preview caches, not this separate piece of build-plan state. Since `confirmRunSetup` requires an open plan to run at all, the folder was necessarily already open before the run started — meaning for a plan's first-ever run, `S.buildPlan.runs` was loaded as `[]` and had no way to become anything else without a full page reload re-running `openBuildFolder`.
+
+**Fix:** `runSetupItems()` now ends with `await refreshPlanSetupRuns(cfg.buildPlanId)`, guarded on `S.buildPlan.activePlanId === planId` (not merely `planId` being truthy) — a run can take tens of seconds, and the operator may have navigated to a different folder before it finishes; an unconditional refresh would stamp one plan's run data onto whatever folder happened to be open, showing evidence for work done elsewhere, which is worse than showing none. The guard is keyed on the plan id the query itself filters on, not on the run's origin label (`tab`/`chat`) — so it can never disagree with the query it protects, and stays correct automatically if the chat-run contract ever changes.
+
+**The lesson:** when a piece of state is written in exactly one place and never revisited, a bug like this is invisible during development — the developer's own first click always happens to be a fresh page load, which is precisely the one path that already worked. It surfaced only from real, first-time user behavior (opening a folder, then running a fresh Setup Agent action against it) that development testing never happened to reproduce. When extending an existing "invalidate on completion" function to cover new behavior, explicitly check whether OTHER pieces of state read the same underlying data and would go stale by the same mechanism — don't assume the existing invalidation call already covers everything downstream of a completed action.
+
 ## Bug #20 — Gap Report print white-frame: a print-CSS page margin is outside the box model, no element background reaches it (August 1 2026)
 
 **Symptom:** fixing an unrelated Gap Report print bug (body pages starting flush against the sheet edge instead of having consistent top/bottom breathing room) introduced a new one: every body page printed with a solid white band across the top ~52px and bottom ~52px, even though `html{background:var(--midnight)}` and `body{background:var(--midnight)}` were both already set. Caught in verification before it ever committed or shipped — never reached production.
