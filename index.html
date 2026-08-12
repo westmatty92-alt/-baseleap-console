@@ -527,6 +527,22 @@
   .dep-when{font-size:11px;color:var(--muted);white-space:nowrap}
   .dep-mode{font-size:11px;color:var(--muted);background:var(--canvas);border:1px solid var(--line);border-radius:8px;padding:2px 8px}
   .dep-grad{font-size:11px;color:var(--run);background:rgba(0,168,120,.1);border-radius:8px;padding:2px 8px}
+  .dep-deepen{font-size:11px;color:var(--muted);background:var(--canvas);border:1px dashed var(--line);border-radius:8px;padding:2px 8px}
+  .dep-graduated{font-size:11px;color:var(--midnight);background:rgba(0,212,160,.16);border-radius:8px;padding:2px 8px;font-weight:600}
+  .dep-grad-btn{font-size:11px;color:var(--run);background:#FFFFFF;border:1px solid var(--run);border-radius:8px;padding:3px 10px;cursor:pointer;flex:none}
+  .dep-grad-btn:hover{background:rgba(0,168,120,.08)}
+  .grad-form{margin-top:10px;padding:12px;background:var(--canvas);border:1px solid var(--line);border-radius:10px}
+  .grad-q{font-size:12.5px;font-weight:600;color:var(--depth);margin-bottom:8px}
+  .grad-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
+  .grad-f{display:flex;flex-direction:column;gap:3px;min-width:0}
+  .grad-f label{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+  .grad-f input,.grad-f select,.grad-f textarea{font:inherit;font-size:12.5px;padding:6px 8px;border:1px solid var(--line);border-radius:7px;background:#FFFFFF;color:var(--depth);min-width:0}
+  .grad-f textarea{resize:vertical;min-height:66px;line-height:1.45}
+  .grad-model{font-size:11px;color:var(--muted);margin-top:6px;line-height:1.5;padding:8px 10px;background:#FFFFFF;border:1px solid var(--line);border-radius:8px}
+  .grad-model b{color:var(--depth)}
+  .grad-wide{grid-column:1/-1}
+  .grad-note{font-size:11px;color:var(--muted);margin-top:8px;line-height:1.45}
+  .grad-actions{display:flex;gap:6px;margin-top:10px}
   .dep-rm{font-size:11px;color:var(--muted);background:#FFFFFF;border:1px solid var(--line);border-radius:8px;padding:3px 10px;cursor:pointer;flex:none}
   .dep-rm:hover{color:#E24B4A;border-color:#E24B4A}
   .dep-actions{display:flex;gap:6px;flex:none}
@@ -790,7 +806,7 @@ function freshAudit(){ return { tab:"guide", guideNotes:{}, captureText:"", summ
 function freshAutomation(){ return { tab:"gaps", loaded:false, msg:"", gaps:[], drafts:{}, assessing:{}, errors:{}, assessingAll:false, validatingAll:false, progress:"", copyBusy:{}, copyAll:false }; }
 // sel = the active compose session's folder-scoped gap-selection map ({gapId: 'accepted'|'declined'};
 // undecided = absent). Committed to build_plan_gaps on Save; never the dormant client gaps.selection.
-function freshBuildPlan(){ return { loaded:false, msg:"", plans:[], activePlanId:null, planCounts:{}, plan:null, steps:[], draft:null, draftGaps:null, generating:false, saving:false, expanded:{}, panel:null, zoom:1, pan:{x:0,y:0}, tab:"plan", composing:false, sel:{}, scope:null, scopePlanId:null, scopeErr:"", del:null, showArchived:false, deployed:[], dep:null, runs:[], setupAssert:null }; }
+function freshBuildPlan(){ return { loaded:false, msg:"", plans:[], activePlanId:null, planCounts:{}, plan:null, steps:[], draft:null, draftGaps:null, generating:false, saving:false, expanded:{}, panel:null, zoom:1, pan:{x:0,y:0}, tab:"plan", composing:false, sel:{}, scope:null, scopePlanId:null, scopeErr:"", del:null, showArchived:false, deployed:[], dep:null, runs:[], setupAssert:null, grad:null, graduated:new Map() }; }
 // NAMESPACE THE PREVIEW, LOCK THE EXECUTION. `tab` and `chat` each own their
 // preflight/diff because SHARING them is a silent wrong-write: a chat preview
 // overwriting the tab's diff would make the tab's Confirm button create the
@@ -2504,7 +2520,7 @@ function renderBuildsTabBar(){
       ${tabs.map(([id,lbl]) => `<button class="subtab ${S.buildPlan.tab===id?"active":""}" onclick="buildsTab('${id}')">${lbl}</button>`).join("")}
     </div>`;
 }
-function buildsTab(t){ S.buildPlan.del = null; S.buildPlan.dep = null; S.buildPlan.tab = t; renderAutomation(); }
+function buildsTab(t){ S.buildPlan.del = null; S.buildPlan.dep = null; S.buildPlan.grad = null; S.buildPlan.tab = t; renderAutomation(); }
 
 // Route the active in-folder tab to its body (each writes into #automation-body).
 function renderBuildsTabBody(){
@@ -4173,6 +4189,7 @@ async function loadBuildPlanData(clientId){
     S.buildPlan.plans = plans || [];
     S.buildPlan.planCounts = await loadBuildFolderCounts(S.buildPlan.plans);
     S.buildPlan.deployed = await loadDeployedSystems(clientId);
+    S.buildPlan.graduated = await loadGraduatedFrom();
     S.buildPlan.activePlanId = null; S.buildPlan.plan = null; S.buildPlan.steps = [];   // grid view
   }catch(e){ setBuildPlanMsg("Load failed: " + e.message); }
   S.buildPlan.loaded = true;
@@ -4212,13 +4229,37 @@ async function loadDeployedSystems(clientId){
   return data || [];
 }
 
+// deployed_system_id -> engine_key, for ledger entries that have ALREADY graduated.
+// DERIVED from the catalog's own provenance stamp (spec.graduated_from), never a new
+// column: the catalog row IS the record that graduation happened, so asking it is the
+// only answer that cannot drift. Without this the ledger keeps offering "Graduate" on
+// an entry already in the catalog, and a second run under a DIFFERENT key would mint a
+// duplicate engine for one deployed system — silently, because the UNIQUE constraint is
+// on engine_key and the two keys differ.
+// LOADED, not just written: confirmGraduate updates the Map in place, but a Map that is
+// only ever written is empty again after a reload — the load-time-only staleness of
+// Bug #21. Every pre-16.7 row simply has no graduated_from and the src guard skips it;
+// a malformed stamp skips too (property access on a string or number yields undefined
+// rather than throwing, and null/undefined is what `src &&` catches), so no catalog row
+// shape can fault this loop.
+async function loadGraduatedFrom(){
+  const m = new Map();
+  const { data, error } = await sb.from("engine_catalog").select("engine_key, spec");
+  if(error){ console.error("graduated-from load failed:", error.message); return m; }
+  (data || []).forEach(r => {
+    const src = r.spec && r.spec.graduated_from;
+    if(src && src.deployed_system_id) m.set(src.deployed_system_id, r.engine_key);
+  });
+  return m;
+}
+
 // Open one build folder — load its steps, reset the engine-detail panel so a stale
 // popup from another folder can't bleed through.
 async function openBuildFolder(planId){
   const plan = S.buildPlan.plans.find(p => p.id === planId);
   if(!plan) return;
   S.buildPlan.activePlanId = planId; S.buildPlan.plan = plan; S.buildPlan.panel = null; S.buildPlan.steps = [];
-  S.buildPlan.composing = false; S.buildPlan.draft = null; S.buildPlan.draftGaps = null; S.buildPlan.sel = {}; S.buildPlan.del = null; S.buildPlan.dep = null; S.buildPlan.setupAssert = null; S.buildPlan.runs = []; S.buildPlan.tab = "plan";   // open on the Build Plan tab
+  S.buildPlan.composing = false; S.buildPlan.draft = null; S.buildPlan.draftGaps = null; S.buildPlan.sel = {}; S.buildPlan.del = null; S.buildPlan.dep = null; S.buildPlan.grad = null; S.buildPlan.setupAssert = null; S.buildPlan.runs = []; S.buildPlan.tab = "plan";   // open on the Build Plan tab
   try{
     const { data: steps, error } = await sb.from("build_steps").select("*")
       .eq("build_plan_id", planId).order("position");
@@ -4257,7 +4298,7 @@ function closeBuildFolder(){
   // Leave the build workspace back to the folder grid. An unsaved draft is discarded here
   // (nothing was written to the DB); a saved folder just closes.
   S.buildPlan.activePlanId = null; S.buildPlan.plan = null; S.buildPlan.steps = []; S.buildPlan.panel = null;
-  S.buildPlan.draft = null; S.buildPlan.draftGaps = null; S.buildPlan.composing = false; S.buildPlan.sel = {}; S.buildPlan.del = null; S.buildPlan.dep = null; S.buildPlan.setupAssert = null; S.buildPlan.runs = []; S.buildPlan.tab = "plan";
+  S.buildPlan.draft = null; S.buildPlan.draftGaps = null; S.buildPlan.composing = false; S.buildPlan.sel = {}; S.buildPlan.del = null; S.buildPlan.dep = null; S.buildPlan.grad = null; S.buildPlan.setupAssert = null; S.buildPlan.runs = []; S.buildPlan.tab = "plan";
   renderAutomation();
 }
 
@@ -5647,6 +5688,181 @@ async function removeDeployedSystem(id){
   renderAutomation();
 }
 
+/* ===== GRADUATION (Order 16.7) ==============================================
+   Turns a proven, formulated, DEPLOYED engine into a catalog row. Never automatic:
+   "the Agent proposes; the operator confirms what graduates. Never auto-write — the
+   catalog is also the price sheet." v1 is INSERT-ONLY and requires engine_key null. */
+
+// Lower snake, matching every existing engine_key. A display name persisting into a
+// key silently formulates at sweep time (Bug #18), so this shape check is what stops
+// a typo becoming a catalog row nothing can ever match.
+const ENGINE_KEY_RE = /^[a-z][a-z0-9_]{2,39}$/;
+const ENGINE_BANDS = ["simple", "standard", "complex"];
+
+// The step's deployment bucket is PER-CLIENT: parameter_values holds this client's
+// concrete values, changes_note/overrides describe this one build, and
+// route/seeded_from/needs_review are that build's routing metadata. A catalog spec is
+// a TEMPLATE, so ONLY client-neutral keys cross over — one client's values must never
+// be shipped to the next. A whitelist, not a blacklist: a key added to deployment
+// later is excluded by default instead of leaking until someone notices.
+const GRAD_DEPLOY_KEYS = ["tiers", "spec_extras"];
+function graduationDeployment(dep){
+  if(!dep || typeof dep !== "object" || Array.isArray(dep)) return null;
+  const out = {};
+  GRAD_DEPLOY_KEYS.forEach(k => { if(dep[k] != null) out[k] = dep[k]; });
+  return Object.keys(out).length ? out : null;
+}
+
+// Which graduation case a ledger entry is in — the ONE definition, re-checked by
+// confirmGraduate rather than trusted from the render that offered the button.
+// ORDER MATTERS. "graduated" is tested first because it is a FACT about the past and
+// stays true after the plan is deleted; the build_step_id test comes next because
+// deployed_systems' FKs are ON DELETE SET NULL — deleting a plan cascades its
+// build_steps away and leaves a title/engine_key/mode SNAPSHOT with no step behind it,
+// and graduation reads manifest + workflow off that step. A formulate-mode entry that
+// DOES carry an engine_key was seeded from a thin catalog engine (the depth-guard
+// path); graduating it would mutate a curated row and flip its route for every future
+// plan, so it is the deepen case — deliberately out of v1, shown as manual work.
+function graduationCase(d, gmap){
+  if(!d) return null;
+  if(gmap && gmap.get(d.id)) return "graduated";
+  if(!d.build_step_id) return null;
+  if(d.mode !== "formulate") return null;
+  return d.engine_key ? "deepen" : "new";
+}
+
+// spec built from the STEP's real data. isDeepEngine wants manifest + a non-empty
+// automations array whose entries carry nodes, and build_steps.workflow satisfies that
+// as stored — so a graduated engine is deep on arrival and routes retrieve, not
+// formulate-seeded. band/first_build_hours are OPERATOR values, never copied from the
+// step: the step records what one build cost, the catalog prices future work.
+function graduationSpec(step, entry, form){
+  const spec = {
+    manifest: step.manifest,
+    automations: step.workflow,
+    // gapSolutionSource tier 1 reads `spec.purpose || engine.summary`. Without this every
+    // graduated engine falls through to the summary column for its client-facing solution
+    // copy — one field carrying two jobs. Same operator text, written to both.
+    purpose: String(form.summary || "").trim(),
+    band: form.band,
+    first_build_hours: Number(form.hours),
+    // Provenance. deployed_system_id is the field loadGraduatedFrom reads back to
+    // recognise an already-graduated entry, which is what stops one deployed system
+    // minting two catalog engines under different keys.
+    graduated_from: {
+      build_step_id: step.id,
+      build_plan_id: entry.build_plan_id,
+      client_id: entry.client_id,
+      deployed_system_id: entry.id,
+      deployed_at: entry.deployed_at,
+      graduated_at: new Date().toISOString(),
+    },
+  };
+  const dep = graduationDeployment(step.deployment);
+  if(dep) spec.deployment = dep;
+  return spec;
+}
+
+// The step's own purpose line is the closest thing to a scope summary the build already
+// produced, so it beats the ledger title as a starting point. It is a PREFILL ONLY: it is
+// written for ONE client — the real position-9 line names the client's staff — so it must
+// be edited before it describes a reusable engine. Nothing writes it on open;
+// confirmGraduate reads whatever the operator leaves in the field, and now rejects a blank.
+// Falls back to the title when absent or unusable.
+function graduationSummarySeed(entry, step){
+  const p = step && step.deployment && step.deployment.spec_extras
+            && step.deployment.spec_extras.purpose;
+  return (typeof p === "string" && p.trim()) ? p.trim() : (entry ? entry.title : "");
+}
+
+function askGraduate(id){
+  const entry = (S.buildPlan.deployed || []).find(d => d.id === id);
+  const step = entry && (S.buildPlan.steps || []).find(x => x.id === entry.build_step_id);
+  S.buildPlan.grad = { id, msg:"",
+    form: { engine_key:"", name:"", summary: graduationSummarySeed(entry, step), band:"standard", hours:"" } };
+  renderAutomation();
+}
+function cancelGraduate(){ S.buildPlan.grad = null; renderAutomation(); }
+// Writes state WITHOUT re-rendering on purpose: renderAutomation() rebuilds the card,
+// which would destroy the focused input and drop the caret on every keystroke.
+function gradField(k, v){ const g = S.buildPlan.grad; if(g && g.form) g.form[k] = v; }
+
+async function confirmGraduate(id){
+  const g = S.buildPlan.grad;
+  if(!g || g.busy || g.id !== id) return;
+  const fail = (msg) => { const cur = S.buildPlan.grad; if(cur) S.buildPlan.grad = { ...cur, busy:false, msg }; renderAutomation(); };
+
+  // EVERY condition re-checked here, independently of graduationCase and of the render
+  // that offered the button — the function rejects a bad call, the render is never what
+  // prevents a bad write (same rule as markDeployed).
+  const entry = (S.buildPlan.deployed || []).find(d => d.id === id);
+  if(!entry) return fail("That ledger entry is no longer loaded.");
+  const already = S.buildPlan.graduated && S.buildPlan.graduated.get(entry.id);
+  if(already) return fail(`Already graduated as "${already}".`);
+  if(!entry.build_step_id) return fail("This entry's build plan was deleted — the step data graduation reads from is gone.");
+  if(entry.mode !== "formulate") return fail("Only a formulated engine can graduate — a retrieved one is already in the catalog.");
+  if(entry.engine_key) return fail(`This engine was seeded from "${entry.engine_key}" — deepening an existing catalog row isn't automated yet.`);
+  const step = (S.buildPlan.steps || []).find(x => x.id === entry.build_step_id);
+  if(!step) return fail("That build step is no longer loaded.");
+  if(!step.manifest) return fail("That step has no manifest — there is nothing for the catalog to declare.");
+  if(!Array.isArray(step.workflow) || !step.workflow.length) return fail("That step has no workflow — a catalog engine needs its automations.");
+
+  const form = g.form || {};
+  const key = String(form.engine_key || "").trim().toLowerCase();
+  const name = String(form.name || "").trim();
+  const hours = Number(form.hours);
+  if(!ENGINE_KEY_RE.test(key)) return fail("Engine key must be lower_snake_case — a letter first, then letters, digits or underscores, 3–40 characters.");
+  if(!name) return fail("Give the engine a name.");
+  // Blank scope is rejected, not defaulted: this text is load-bearing in THREE consumers
+  // (catalogSeedBlock's formulate constraints, adaptEngineToClient's parameterize prompt,
+  // gapSolutionSource's client-facing copy) and is written to spec.purpose as well. An
+  // engine with no declared boundary is one nothing can safely apply.
+  if(!String(form.summary || "").trim())
+    return fail("Write the scope line — what the engine does and what it is NOT for. It grounds the parameterize prompt and the client-facing copy.");
+  if(!ENGINE_BANDS.includes(form.band)) return fail("Pick a band.");
+  if(!Number.isFinite(hours) || hours <= 0) return fail("First-build hours must be a positive number.");
+
+  // BUSY BEFORE THE FIRST AWAIT, never after. The re-entry guard at the top of this
+  // function reads g.busy, so any await that runs while busy is still false leaves a
+  // window in which a second click starts a second concurrent run. Production proved
+  // this on 2026-08-11: three clicks inside 50ms produced three concurrent POSTs
+  // (one 201, two 409s) and only UNIQUE(engine_key) stopped a duplicate engine being
+  // written. Every path out of here goes through fail(), which clears busy.
+  S.buildPlan.grad = { ...g, busy:true, msg:"" }; renderAutomation();
+
+  // Uniqueness TWICE: this read produces the readable message, the UNIQUE constraint on
+  // the insert is the actual guarantee — the pre-check can still race another TAB, which
+  // no client-side flag can cover.
+  const { data: clash, error: exErr } = await sb.from("engine_catalog")
+    .select("engine_key").eq("engine_key", key).maybeSingle();
+  if(exErr) return fail(`Couldn't check the catalog: ${exErr.message} — nothing was written.`);
+  if(clash) return fail(`"${key}" is already a catalog engine — pick another key.`);
+  const { data, error } = await sb.from("engine_catalog").insert({
+    operator_id: S.user.id,
+    engine_key: key,
+    name,
+    status: "formulated",     // explicit — never rely on the column default
+    category: "automation",   // isDeployableEngine already guarantees agent === "automation"
+    summary: String(form.summary || "").trim() || null,
+    spec: graduationSpec(step, entry, { ...form, hours }),
+  }).select().single();
+  if(error || !data){
+    const dupe = error && /duplicate key|unique/i.test(error.message || "");
+    return fail(dupe
+      ? `"${key}" is already a catalog engine — pick another key.`
+      : `Couldn't graduate it: ${error ? error.message : "no row returned"} — nothing was written.`);
+  }
+
+  // S.catalog is a session-cached Map; without clearing it the new engine stays
+  // invisible to this session's sweep even though the row exists.
+  S.catalog = null;
+  if(!S.buildPlan.graduated) S.buildPlan.graduated = new Map();
+  S.buildPlan.graduated.set(entry.id, data.engine_key);   // from the RETURNED row, never the optimistic object
+  S.buildPlan.grad = null;
+  setBuildPlanMsg(`Graduated → ${data.engine_key} ✓ It cannot be MATCHED until it is added to KNOWN_ENGINE_KEYS and the assessment roster by hand.`);
+  renderAutomation();
+}
+
 function fmtDeployedAt(iso){
   if(!iso) return "";
   const t = new Date(iso);
@@ -5656,26 +5872,72 @@ function fmtDeployedAt(iso){
 // The ledger card. Plan-scoped list; a formulate-mode entry carries a READ-ONLY
 // graduation-eligible label — v1 never writes engine_catalog. Graduation stays the
 // operator's call ("never auto-write — the catalog is also the price sheet").
+// The chip states the row's ACTUAL relationship to the catalog. It previously read
+// "graduation-eligible" for every formulate-mode entry, which over-promised on the
+// deepen case the v1 action cannot serve and on rows already graduated.
+function renderGradChip(gcase, key){
+  if(gcase === "graduated") return `<span class="dep-graduated">in catalog · ${esc(key)}</span>`;
+  if(gcase === "new")       return `<span class="dep-grad">graduation-eligible</span>`;
+  if(gcase === "deepen")    return `<span class="dep-deepen">deepen by hand</span>`;
+  return "";
+}
+
+// Inputs write through gradField (which does NOT re-render) so the caret survives
+// typing; the form is rebuilt only on submit, cancel or error.
+function renderGradForm(g){
+  const f = g.form || {}, b = !!g.busy;
+  const opts = ENGINE_BANDS.map(x => `<option value="${x}"${f.band === x ? " selected" : ""}>${x}</option>`).join("");
+  return `<div class="grad-form">
+    <div class="grad-q">Add this engine to the catalog</div>
+    <div class="grad-grid">
+      <div class="grad-f"><label>Engine key</label>
+        <input value="${esc(f.engine_key)}" placeholder="invoice_chaser" oninput="gradField('engine_key',this.value)" ${b?"disabled":""}></div>
+      <div class="grad-f"><label>Name</label>
+        <input value="${esc(f.name)}" placeholder="Invoice Chaser" oninput="gradField('name',this.value)" ${b?"disabled":""}></div>
+      <div class="grad-f"><label>Band</label>
+        <select onchange="gradField('band',this.value)" ${b?"disabled":""}>${opts}</select></div>
+      <div class="grad-f"><label>First-build hours</label>
+        <input type="number" min="0" step="0.5" value="${esc(f.hours)}" oninput="gradField('hours',this.value)" ${b?"disabled":""}></div>
+      <div class="grad-f grad-wide"><label>Scope — what it DOES, and what it is NOT for</label>
+        <textarea rows="3" oninput="gradField('summary',this.value)" ${b?"disabled":""}>${esc(f.summary)}</textarea></div>
+    </div>
+    <div class="grad-model"><b>This field is the engine's boundary, not a description.</b> It grounds the parameterize prompt and the client-facing Gap Report copy, and it is the text you will reuse in the assessment roster's DOES / NOT&nbsp;FOR line. State the negative case explicitly. Model — <b>lead_response</b>: "Meta (FB/IG) lead-form capture → campaign tracking → ONE open lead opportunity → timeline-based follow-up drip that stops the moment the lead books. Lead logic only: never applies Paid, never marks Won, no service tags before a real booking."</div>
+    <div class="grad-note">Prefilled from this build's purpose line — <b>rewrite it</b>: it was written for one client and may name their staff or tools.</div>
+    <div class="grad-note">Band and hours price FUTURE builds — deliberately not copied from this step, which records what this one build cost. After graduating, add the key to <b>KNOWN_ENGINE_KEYS</b> and the assessment roster by hand, or the matcher can never reach it.</div>
+    ${g.msg ? `<div class="dep-err" style="margin-top:8px">${esc(g.msg)}</div>` : ""}
+    <div class="grad-actions">
+      <button class="dep-yes" onclick="confirmGraduate('${g.id}')" ${b?"disabled":""}>${b?"Graduating…":"Graduate"}</button>
+      <button class="dep-no" onclick="cancelGraduate()" ${b?"disabled":""}>Cancel</button>
+    </div>
+  </div>`;
+}
+
 function renderDeployedCard(){
-  const list = planDeployed(), dep = S.buildPlan.dep;
+  const list = planDeployed(), dep = S.buildPlan.dep, grad = S.buildPlan.grad;
+  const gmap = S.buildPlan.graduated;
   const rows = list.map(d => {
     const asking = dep && dep.kind === "remove" && dep.id === d.id;
+    const gcase = graduationCase(d, gmap), gopen = grad && grad.id === d.id;
     return `<div class="dep-row">
       <div class="dep-main">
         <div class="dep-title">${esc(d.title)}</div>
         <div class="dep-meta">
           <span class="dep-when">${esc(fmtDeployedAt(d.deployed_at))}</span>
           ${d.mode ? `<span class="dep-mode">${esc(d.mode)}</span>` : ""}
-          ${d.mode === "formulate" ? `<span class="dep-grad">graduation-eligible</span>` : ""}
+          ${renderGradChip(gcase, gmap && gmap.get(d.id))}
         </div>
         ${asking && dep.msg ? `<div class="dep-err">${esc(dep.msg)}</div>` : ""}
+        ${gopen ? renderGradForm(grad) : ""}
       </div>
       ${asking
         ? `<div class="dep-actions">
              <button class="dep-yes" onclick="removeDeployedSystem('${d.id}')" ${dep.busy?"disabled":""}>${dep.busy?"Removing…":"Confirm remove"}</button>
              <button class="dep-no" onclick="cancelDeployed()" ${dep.busy?"disabled":""}>Cancel</button>
            </div>`
-        : `<button class="dep-rm" onclick="askRemoveDeployed('${d.id}')">Remove</button>`}
+        : `<div class="dep-actions">
+             ${gcase === "new" && !gopen ? `<button class="dep-grad-btn" onclick="askGraduate('${d.id}')">Graduate</button>` : ""}
+             <button class="dep-rm" onclick="askRemoveDeployed('${d.id}')">Remove</button>
+           </div>`}
     </div>`;
   }).join("");
   return `
