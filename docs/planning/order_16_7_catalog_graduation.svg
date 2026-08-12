@@ -1,0 +1,171 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1320" height="1010" viewBox="0 0 1320 1010" font-family="Segoe UI, system-ui, sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#5B6B73"/>
+    </marker>
+    <marker id="av" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#00A878"/>
+    </marker>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#E24B4A"/>
+    </marker>
+  </defs>
+
+  <rect width="1320" height="1010" fill="#F4F5F0"/>
+  <text x="40" y="46" font-size="21" font-weight="700" fill="#0D1F2D">Order 16.7 — catalog graduation (v1, shape (a) only)</text>
+  <text x="40" y="70" font-size="13" fill="#5B6B73">Solid = exists today · Dashed green = built this cycle · Dotted grey = deliberately deferred · Red = the gap that stays open · index.html, no migration</text>
+
+  <!-- ================= COLUMN 1 — source ================= -->
+  <text x="40" y="112" font-size="11" font-weight="700" fill="#5B6B73" letter-spacing="1">WHAT GRADUATION READS</text>
+
+  <rect x="40" y="126" width="300" height="124" rx="8" fill="#FFFFFF" stroke="#E2E6E3"/>
+  <text x="56" y="148" font-size="13" font-weight="600" fill="#0D1F2D">build_steps — the engine step</text>
+  <text x="56" y="169" font-size="11" fill="#5B6B73">manifest      → spec.manifest</text>
+  <text x="56" y="186" font-size="11" fill="#5B6B73">workflow[]    → spec.automations</text>
+  <text x="56" y="203" font-size="11" fill="#5B6B73">deployment    → WHITELIST ONLY</text>
+  <text x="56" y="224" font-size="11" font-style="italic" fill="#00A878">elements carry nodes[] → deep on arrival</text>
+  <text x="56" y="241" font-size="11" font-style="italic" fill="#5B6B73">the as-built spec already lives here</text>
+
+  <rect x="40" y="272" width="300" height="112" rx="8" fill="#FFFFFF" stroke="#E2E6E3"/>
+  <text x="56" y="294" font-size="13" font-weight="600" fill="#0D1F2D">deployed_systems — the ledger row</text>
+  <text x="56" y="315" font-size="11" fill="#5B6B73">mode = formulate · engine_key = NULL</text>
+  <text x="56" y="332" font-size="11" fill="#5B6B73">build_step_id → ON DELETE SET NULL</text>
+  <text x="56" y="353" font-size="11" font-style="italic" fill="#5B6B73">Order 16 proved the engine is LIVE.</text>
+  <text x="56" y="370" font-size="11" font-style="italic" fill="#5B6B73">16.7 is what that evidence unlocks.</text>
+
+  <!-- whitelist detail -->
+  <rect x="40" y="406" width="300" height="150" rx="8" fill="#FFFFFF" stroke="#E24B4A" stroke-dasharray="4 3"/>
+  <text x="56" y="428" font-size="12" font-weight="700" fill="#E24B4A">deployment IS PER-CLIENT — whitelist</text>
+  <text x="56" y="449" font-size="11" fill="#00A878">KEEP  tiers · spec_extras</text>
+  <text x="56" y="468" font-size="11" fill="#E24B4A">DROP  parameter_values (this client's values)</text>
+  <text x="56" y="485" font-size="11" fill="#E24B4A">DROP  changes_note · overrides (one build)</text>
+  <text x="56" y="502" font-size="11" fill="#E24B4A">DROP  route · seeded_from · needs_review</text>
+  <text x="56" y="524" font-size="11" font-style="italic" fill="#5B6B73">Whitelist, not blacklist: a key added to</text>
+  <text x="56" y="541" font-size="11" font-style="italic" fill="#5B6B73">deployment later is excluded by default.</text>
+
+  <!-- ================= COLUMN 2 — the gate ================= -->
+  <text x="390" y="112" font-size="11" font-weight="700" fill="#5B6B73" letter-spacing="1">graduationCase(d, gmap) — ORDER IS LOAD-BEARING</text>
+
+  <rect x="390" y="126" width="330" height="212" rx="8" fill="#FFFFFF" stroke="#00A878" stroke-dasharray="5 3"/>
+  <text x="406" y="149" font-size="12" font-weight="700" fill="#0D1F2D">1 · in graduated map → "graduated"</text>
+  <text x="406" y="167" font-size="10.5" fill="#5B6B73">a FACT about the past — true even after the</text>
+  <text x="406" y="182" font-size="10.5" fill="#5B6B73">plan is deleted, so it is tested first</text>
+
+  <text x="406" y="207" font-size="12" font-weight="700" fill="#0D1F2D">2 · build_step_id NULL → null</text>
+  <text x="406" y="225" font-size="10.5" fill="#5B6B73">SET NULL leaves a snapshot with no step;</text>
+  <text x="406" y="240" font-size="10.5" fill="#5B6B73">manifest+workflow have nowhere to come from</text>
+
+  <text x="406" y="265" font-size="12" font-weight="700" fill="#0D1F2D">3 · mode is not "formulate" → null</text>
+  <text x="406" y="290" font-size="12" font-weight="700" fill="#0D1F2D">4 · engine_key set → "deepen"</text>
+  <text x="406" y="308" font-size="10.5" fill="#5B6B73">seeded from a thin engine (seeded_from)</text>
+  <text x="406" y="326" font-size="12" font-weight="700" fill="#00A878">else → "new"  · the only actionable case</text>
+
+  <rect x="390" y="360" width="330" height="92" rx="8" fill="#FFFFFF" stroke="#E2E6E3"/>
+  <text x="406" y="382" font-size="12" font-weight="600" fill="#0D1F2D">confirmGraduate re-checks ALL of it</text>
+  <text x="406" y="402" font-size="10.5" fill="#5B6B73">independently of graduationCase and of the</text>
+  <text x="406" y="418" font-size="10.5" fill="#5B6B73">render that offered the button —</text>
+  <text x="406" y="437" font-size="10.5" font-style="italic" fill="#00A878">the render offers, the function decides</text>
+
+  <!-- concurrency fix -->
+  <rect x="390" y="474" width="330" height="132" rx="8" fill="#FFFFFF" stroke="#00A878" stroke-dasharray="5 3"/>
+  <text x="406" y="496" font-size="12" font-weight="700" fill="#0D1F2D">busy:true BEFORE the first await</text>
+  <text x="406" y="516" font-size="10.5" fill="#E24B4A">production: 3 POSTs in 50ms — 201 + two 409s</text>
+  <text x="406" y="532" font-size="10.5" fill="#5B6B73">the flag sat AFTER the pre-check await, so the</text>
+  <text x="406" y="548" font-size="10.5" fill="#5B6B73">re-entry guard was unarmed for that round-trip</text>
+  <text x="406" y="566" font-size="10.5" fill="#5B6B73">UNIQUE(engine_key) is what saved it</text>
+  <text x="406" y="586" font-size="10.5" font-style="italic" fill="#00A878">retry after fix: one POST, one 201, zero 409s</text>
+
+  <!-- ================= COLUMN 3 — the write ================= -->
+  <text x="770" y="112" font-size="11" font-weight="700" fill="#5B6B73" letter-spacing="1">THE WRITE — engine_catalog INSERT</text>
+
+  <rect x="770" y="126" width="330" height="238" rx="8" fill="#FFFFFF" stroke="#00A878" stroke-dasharray="5 3"/>
+  <text x="786" y="148" font-size="13" font-weight="600" fill="#0D1F2D">status = 'formulated'</text>
+  <text x="786" y="166" font-size="10.5" fill="#5B6B73">explicit — never relies on the column default</text>
+  <text x="786" y="188" font-size="12" fill="#0D1F2D">engine_key   operator-typed, ENGINE_KEY_RE</text>
+  <text x="786" y="206" font-size="12" fill="#0D1F2D">summary      the SCOPE line (blank rejected)</text>
+  <text x="786" y="224" font-size="12" fill="#0D1F2D">spec.purpose  same text — tier 1 reads it first</text>
+  <text x="786" y="242" font-size="12" fill="#0D1F2D">spec.band / first_build_hours</text>
+  <text x="786" y="260" font-size="10.5" fill="#5B6B73">operator-entered: the step records ONE build's</text>
+  <text x="786" y="275" font-size="10.5" fill="#5B6B73">cost, the catalog PRICES FUTURE WORK</text>
+  <text x="786" y="297" font-size="12" fill="#0D1F2D">spec.graduated_from { … }</text>
+  <text x="786" y="315" font-size="10.5" fill="#5B6B73">build_step_id · build_plan_id · client_id</text>
+  <text x="786" y="330" font-size="10.5" fill="#5B6B73">deployed_system_id · deployed_at · graduated_at</text>
+  <text x="786" y="352" font-size="10.5" font-style="italic" fill="#00A878">this stamp IS the duplicate guard</text>
+
+  <rect x="770" y="386" width="330" height="106" rx="8" fill="#FFFFFF" stroke="#00A878" stroke-dasharray="5 3"/>
+  <text x="786" y="408" font-size="12" font-weight="700" fill="#0D1F2D">loadGraduatedFrom() — derived, not stored</text>
+  <text x="786" y="428" font-size="10.5" fill="#5B6B73">reads spec.graduated_from.deployed_system_id</text>
+  <text x="786" y="444" font-size="10.5" fill="#5B6B73">into a Map at folder open. No new column:</text>
+  <text x="786" y="460" font-size="10.5" fill="#5B6B73">the catalog row IS the record.</text>
+  <text x="786" y="480" font-size="10.5" font-style="italic" fill="#E24B4A">LOADED, not merely written — Bug #21 shape</text>
+
+  <rect x="770" y="512" width="330" height="94" rx="8" fill="#FFFFFF" stroke="#E2E6E3"/>
+  <text x="786" y="534" font-size="12" font-weight="600" fill="#0D1F2D">Uniqueness TWICE</text>
+  <text x="786" y="554" font-size="10.5" fill="#5B6B73">pre-check GET → the readable message</text>
+  <text x="786" y="570" font-size="10.5" fill="#5B6B73">UNIQUE(engine_key) → the actual guarantee</text>
+  <text x="786" y="590" font-size="10.5" font-style="italic" fill="#5B6B73">no client flag can close a cross-TAB race</text>
+
+  <!-- ================= COLUMN 4 — the open gap ================= -->
+  <text x="1130" y="112" font-size="11" font-weight="700" fill="#5B6B73" letter-spacing="1">STILL MANUAL</text>
+
+  <rect x="1130" y="126" width="152" height="238" rx="8" fill="#FFFFFF" stroke="#E24B4A"/>
+  <text x="1144" y="148" font-size="12" font-weight="700" fill="#E24B4A">UNREACHABLE</text>
+  <text x="1144" y="164" font-size="12" font-weight="700" fill="#E24B4A">BY THE MATCHER</text>
+  <text x="1144" y="188" font-size="10.5" fill="#5B6B73">KNOWN_ENGINE_KEYS</text>
+  <text x="1144" y="203" font-size="10.5" fill="#5B6B73">is a hardcoded array</text>
+  <text x="1144" y="218" font-size="10.5" fill="#5B6B73">(index.html:1432)</text>
+  <text x="1144" y="240" font-size="10.5" fill="#5B6B73">parseAssessResponse</text>
+  <text x="1144" y="255" font-size="10.5" fill="#5B6B73">THROWS on any key</text>
+  <text x="1144" y="270" font-size="10.5" fill="#5B6B73">outside it</text>
+  <text x="1144" y="292" font-size="10.5" fill="#5B6B73">roster DOES/NOT-FOR</text>
+  <text x="1144" y="307" font-size="10.5" fill="#5B6B73">is hand-curated prose</text>
+  <text x="1144" y="329" font-size="10.5" font-style="italic" fill="#5B6B73">deriving it from the</text>
+  <text x="1144" y="344" font-size="10.5" font-style="italic" fill="#5B6B73">DB was rejected</text>
+
+  <!-- arrows -->
+  <path d="M340 200 L386 200" stroke="#5B6B73" stroke-width="1.6" fill="none" marker-end="url(#a)"/>
+  <path d="M340 320 L386 250" stroke="#5B6B73" stroke-width="1.6" fill="none" marker-end="url(#a)"/>
+  <path d="M340 470 L386 330" stroke="#E24B4A" stroke-width="1.6" fill="none" stroke-dasharray="4 3" marker-end="url(#ar)"/>
+  <path d="M720 240 L766 240" stroke="#00A878" stroke-width="1.8" fill="none" marker-end="url(#av)"/>
+  <path d="M720 540 L766 560" stroke="#5B6B73" stroke-width="1.6" fill="none" marker-end="url(#a)"/>
+  <path d="M1100 240 L1126 240" stroke="#E24B4A" stroke-width="1.8" fill="none" marker-end="url(#ar)"/>
+
+  <!-- ================= summary is load-bearing ================= -->
+  <text x="40" y="652" font-size="11" font-weight="700" fill="#5B6B73" letter-spacing="1">WHY `summary` IS THE ENGINE'S BOUNDARY, NOT A DESCRIPTION</text>
+  <rect x="40" y="666" width="1242" height="118" rx="8" fill="#FFFFFF" stroke="#E2E6E3"/>
+  <text x="58" y="690" font-size="12" fill="#0D1F2D">Three AI consumers read it — <tspan font-weight="600">catalogSeedBlock</tspan> (formulate constraints) · <tspan font-weight="600">adaptEngineToClient</tspan> (parameterize prompt — does NOT receive spec.automations) · <tspan font-weight="600">gapSolutionSource</tspan> (client-facing copy)</text>
+  <text x="58" y="712" font-size="12" fill="#5B6B73">It is <tspan font-weight="700" fill="#0D1F2D">NOT</tspan> used for matching — the roster that decides matches is hardcoded prose. Every existing catalog summary encodes a negative:</text>
+  <text x="58" y="734" font-size="11" fill="#00A878">lead_response — "never applies Paid, never marks Won"  ·  payments_stripe — "Service-agnostic (never identifies the service)"  ·  membership — "never Payment Received"</text>
+  <text x="58" y="758" font-size="11.5" fill="#0D1F2D">Graduated <tspan font-weight="600">pipeline_followup</tspan>: "Follow-up sequencing only: never touches invoice or payment status, never assigns booking-confirmation tags, never advances a stage on its own."</text>
+  <text x="58" y="776" font-size="11" font-style="italic" fill="#5B6B73">Blank is rejected outright — an engine with no declared boundary is one nothing can safely apply.</text>
+
+  <!-- ================= live test ================= -->
+  <text x="40" y="822" font-size="11" font-weight="700" fill="#5B6B73" letter-spacing="1">LIVE TEST — THREE ATTEMPTS, TWO REAL MISTAKES, BOTH FOUND BY CHECKING THE DB AND NOT THE UI</text>
+
+  <rect x="40" y="836" width="404" height="144" rx="8" fill="#FFFFFF" stroke="#E24B4A"/>
+  <text x="56" y="858" font-size="12" font-weight="700" fill="#E24B4A">Attempt 1 — NO WRITE AT ALL</text>
+  <text x="56" y="878" font-size="10.5" fill="#5B6B73">UI appeared to succeed. API logs showed no POST and</text>
+  <text x="56" y="894" font-size="10.5" fill="#5B6B73">no filtered pre-check GET → bailed in a synchronous</text>
+  <text x="56" y="910" font-size="10.5" fill="#5B6B73">guard before any network call. RLS ruled out by a 201</text>
+  <text x="56" y="926" font-size="10.5" fill="#5B6B73">on the same session two minutes earlier.</text>
+  <text x="56" y="950" font-size="11" font-weight="600" fill="#0D1F2D">Lesson: the screen is not evidence.</text>
+  <text x="56" y="968" font-size="10.5" font-style="italic" fill="#5B6B73">Reported as unverified rather than recorded as done.</text>
+
+  <rect x="460" y="836" width="404" height="144" rx="8" fill="#FFFFFF" stroke="#E24B4A"/>
+  <text x="476" y="858" font-size="12" font-weight="700" fill="#E24B4A">Attempt 2 — WRONG IDENTITY + a real race</text>
+  <text x="476" y="878" font-size="10.5" fill="#5B6B73">Position 7 graduated as invoice_chase / "Invoice Chase"</text>
+  <text x="476" y="894" font-size="10.5" fill="#5B6B73">— a different engine's identity — and the scope line was</text>
+  <text x="476" y="910" font-size="10.5" fill="#5B6B73">the UNEDITED prefill: client anecdote intact, no NOT-FOR.</text>
+  <text x="476" y="928" font-size="10.5" fill="#5B6B73">No code fault. The human review step did not happen.</text>
+  <text x="476" y="950" font-size="10.5" fill="#E24B4A">Same run: 3 POSTs / 50ms → the concurrency defect.</text>
+  <text x="476" y="968" font-size="10.5" font-style="italic" fill="#5B6B73">Row deleted (no FK references engine_catalog), re-run.</text>
+
+  <rect x="880" y="836" width="402" height="144" rx="8" fill="#FFFFFF" stroke="#00A878" stroke-dasharray="5 3"/>
+  <text x="896" y="858" font-size="12" font-weight="700" fill="#00A878">Attempt 3 — verified clean</text>
+  <text x="896" y="878" font-size="10.5" fill="#5B6B73">catalog 9→10 · formulated 0→1 · deployment = {tiers,</text>
+  <text x="896" y="894" font-size="10.5" fill="#5B6B73">spec_extras} · graduated_from matches the ledger row</text>
+  <text x="896" y="910" font-size="10.5" fill="#5B6B73">isDeepEngine true via the extracted function + 3 controls</text>
+  <text x="896" y="928" font-size="10.5" fill="#5B6B73">scope rewritten: three "never" clauses, no anecdote</text>
+  <text x="896" y="950" font-size="11" font-weight="600" fill="#00A878">one POST · one 201 · zero 409s — fix confirmed</text>
+  <text x="896" y="968" font-size="10.5" font-style="italic" fill="#5B6B73">key typo fixed by scoped UPDATE, not a third re-run.</text>
+</svg>

@@ -621,3 +621,106 @@ create tags and custom fields; once the agent has created them, it is done. Abso
   server; localhost carries no Supabase session).
 - **Migration 015 must be run manually BEFORE this code is live** — the reconcile write targets a
   column that does not exist until then. Confirmed absent at build time.
+
+## Order 16.7 — catalog graduation v1 (Aug 11 2026)
+
+An operator-triggered action on the **Deployed** card that turns a proven, formulated,
+deployed engine into an `engine_catalog` row. **No migration, no schema change.**
+`graduationCase`/`graduationDeployment`/`graduationSpec`/`graduationSummarySeed`/
+`confirmGraduate`/`loadGraduatedFrom`, `.grad-*`/`.dep-grad*`, index.html.
+Map: `docs/planning/order_16_7_catalog_graduation.svg`/`.png`.
+
+- **This closes Order 16's one deliberate omission.** v1 of the ledger rendered a read-only
+  "graduation-eligible" chip and never wrote the catalog. Nothing triggered on that chip; the
+  information existed nowhere else, and `deployed_systems` was empty, so the chip had never
+  rendered at all. 16.7 makes the chip an action.
+- **Never automatic.** "The Agent proposes; the operator confirms what graduates. Never
+  auto-write — the catalog is also the price sheet." Confirm-gated, state-driven
+  (`S.buildPlan.grad`), no native `confirm()`.
+- **Shape (a) only — INSERT, `engine_key` must be null.** There are TWO graduation shapes and
+  the ledger's `mode` alone cannot tell them apart: a `formulate` entry that *carries* an
+  `engine_key` was seeded from a thin catalog engine via the depth guard (position 12 on
+  `de43a1b1`, `seeded_from: booking`). Graduating that would MUTATE a curated row and flip its
+  route from formulate-seeded to retrieve for **every future plan**. That is the *deepen* case,
+  deferred; it renders as `deepen by hand`, not as a missing button.
+- **`graduationCase(d, gmap)` is THE definition, and its ORDER is load-bearing.** `graduated`
+  first (a fact about the past — still true after the plan is deleted), then `build_step_id`
+  (ON DELETE SET NULL leaves a snapshot with no step, and graduation reads manifest+workflow
+  off that step), then `mode`, then `engine_key`. `confirmGraduate` re-checks **every** one
+  independently — the render offers, the function decides.
+- **The deployment bucket is WHITELISTED, not copied.** `build_steps.deployment` is per-client:
+  `parameter_values` holds this client's concrete values, `changes_note`/`overrides` describe
+  one build, `route`/`seeded_from`/`needs_review` are that build's routing metadata. Only
+  `tiers` + `spec_extras` cross over. A whitelist so a key added later is excluded by default
+  rather than leaking until someone notices.
+- **`band` and `first_build_hours` are OPERATOR-entered, never copied from the step** — the step
+  records what one build cost, the catalog prices future work. They live in `spec` because
+  `engine_catalog` has no such columns and no existing row carried them; band's real consumer
+  today is the hardcoded assessment roster, which the operator edits by hand anyway.
+- **A graduated engine is DEEP ON ARRIVAL.** `build_steps.workflow` elements carry `nodes`, so
+  `spec.manifest` + `spec.automations` satisfies `isDeepEngine` — it routes `retrieve`, not
+  formulate-seeded. Verified against the live row via the extracted function, with three
+  controls returning false.
+- **`spec.purpose` is written alongside `summary`.** `gapSolutionSource` tier 1 reads
+  `spec.purpose || engine.summary`; without this every graduated engine falls through to the
+  summary column for its client-facing copy — one field doing two jobs.
+- **`summary` is the engine's BOUNDARY, not a description**, and it is genuinely load-bearing:
+  read by `catalogSeedBlock` (formulate constraints), `adaptEngineToClient` (the parameterize
+  prompt, which does NOT receive `spec.automations`), and `gapSolutionSource`. Every existing
+  catalog summary encodes a negative — "never applies Paid", "never Payment Received",
+  "Service-agnostic". It is NOT used for MATCHING; the roster that decides matches is hardcoded
+  prose. Blank is rejected outright.
+- **Duplicate graduation is blocked by DERIVED state.** `loadGraduatedFrom` reads the catalog's
+  own `spec.graduated_from.deployed_system_id` stamp into a Map at folder open — the catalog row
+  IS the record that graduation happened, so no new column. Loaded, not merely written: a Map
+  only ever written is empty again after reload, which is the Bug #21 shape.
+- **THE MANUAL FOLLOW-UP IS REQUIRED AND DOCUMENTED, NOT AUTOMATED.** A graduated engine is
+  **unreachable by the matcher** until `KNOWN_ENGINE_KEYS` (index.html:1432) and the assessment
+  roster (1445+) are hand-edited. `parseAssessResponse` throws on any `matched_engine` outside
+  that hardcoded array, so no gap can name the new engine. Deriving the roster from the DB was
+  considered and rejected: the DOES / NOT-FOR scope lines are hand-curated judgement that cannot
+  be generated from a build step. The success message states this on screen.
+
+### Live-test evidence — two real mistakes, both caught by verifying the DB rather than the UI
+
+- **Attempt 1 produced NO write at all**, despite the UI appearing to succeed. API logs showed
+  no POST to `/rest/v1/engine_catalog` and no filtered pre-check GET, proving execution bailed in
+  a synchronous guard before any network call. RLS was ruled out (the `deployed_systems` POST
+  returned 201 on the same session two minutes earlier). **The lesson is the method: the screen
+  is not evidence.**
+- **Attempt 2 wrote a row with the WRONG KEY AND NAME.** Position 7 ("Pipeline follow-up
+  reminders") was graduated as `invoice_chase` / "Invoice Chase" — the identity of a different
+  engine — and the scope line was the **unedited prefill**, byte-identical to the step's
+  `spec_extras.purpose`, complete with a client anecdote ("four-month-old 'new' leads … in the
+  spreadsheet") and no NOT-FOR clause. No code fault: prefill → edit → write behaved exactly as
+  designed. **The human review step the design depends on simply did not happen.** Row deleted
+  (nothing FK-references `engine_catalog`; verified before deleting) and re-graduated.
+- **The same run exposed a REAL CONCURRENCY DEFECT, found only in the logs.** Three POSTs landed
+  inside 50ms — one 201, two 409s. `busy:true` was set *after* the uniqueness pre-check's
+  `await`, so the re-entry guard at the top of `confirmGraduate` was unarmed during that
+  round-trip and a triple-click started three concurrent runs. **Only `UNIQUE(engine_key)`
+  prevented a duplicate engine.** Fixed by moving the flag before the first `await`; the
+  invariant is asserted as "no await precedes busy:true", not as a line position.
+- **Attempt 3 verified clean**, and confirmed the fix under real use: one pre-check GET, one
+  POST, **one 201, zero 409s**. Catalog 9→10, `formulated` 0→1, `spec.deployment` = `{tiers,
+  spec_extras}`, `graduated_from.deployed_system_id` matching the position-7 ledger row,
+  `isDeepEngine` true, scope text rewritten with three `never` clauses and no anecdote.
+- A typo in the entered key (`pipline_follow_up`) was corrected by a scoped UPDATE rather than a
+  third re-graduation — the row was otherwise right, and re-running risked losing good copy.
+  `ENGINE_KEY_RE` validates shape, and shape cannot catch spelling.
+- **80/80 harness assertions**, functions extracted from shipped source by brace-matching so the
+  suite breaks rather than silently passing against a stale copy. Three harness bugs were found
+  and fixed during the run (eval scoping, a truncated "real data" fixture, and a false positive
+  from the word "await" appearing in a comment) — each failed loudly rather than passing wrongly.
+
+### Follow-up captured, not built
+
+- **The prefill warning is insufficient.** Attempt 2 proves an editable field with a
+  rewrite-warning above it is not enough to guarantee the rewrite. Candidate responses, none
+  chosen: reject a summary byte-identical to the prefill; start the field empty with the prefill
+  offered behind an explicit "use build's purpose line" button; or require the operator to
+  confirm the text differs. Deliberately NOT decided here — the failure has been seen exactly
+  once, and the cheap mitigation (verifying the row afterwards) already caught it.
+- Deepening an existing thin engine (shape b); an edit/un-graduate action (there is no undo —
+  a wrong row needs manual SQL); deriving `KNOWN_ENGINE_KEYS` from the DB; cross-tab races,
+  which no client-side flag can close and `UNIQUE(engine_key)` already handles.
