@@ -543,6 +543,36 @@
   .grad-wide{grid-column:1/-1}
   .grad-note{font-size:11px;color:var(--muted);margin-top:8px;line-height:1.45}
   .grad-actions{display:flex;gap:6px;margin-top:10px}
+  /* Correction chat (Order 16.6) — sits inside .bp-card-graph, under the Tests block.
+     Dark decision-surface tokens to match the detail panel, not the light plan rows. */
+  .corr{margin-top:14px;border-top:1px solid rgba(255,255,255,.10);padding-top:12px}
+  .corr-open{font-size:11.5px;color:var(--volt);background:transparent;border:1px solid rgba(0,212,160,.45);border-radius:8px;padding:4px 12px;cursor:pointer}
+  .corr-open:hover{background:rgba(0,212,160,.10)}
+  .corr-h{font-size:12.5px;font-weight:600;color:#F4F5F0;margin-bottom:8px}
+  .corr-sub{font-size:11px;color:rgba(244,245,240,.62);line-height:1.5;margin-bottom:8px}
+  .corr textarea{width:100%;box-sizing:border-box;font:inherit;font-size:12.5px;line-height:1.5;min-height:74px;resize:vertical;
+    background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);border-radius:8px;color:#F4F5F0;padding:8px 10px}
+  .corr-actions{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
+  .corr-go{font-size:11.5px;font-weight:600;color:#0D1F2D;background:var(--volt);border:none;border-radius:8px;padding:5px 14px;cursor:pointer}
+  .corr-sec{font-size:11.5px;color:rgba(244,245,240,.8);background:transparent;border:1px solid rgba(255,255,255,.2);border-radius:8px;padding:5px 12px;cursor:pointer}
+  .corr-go:disabled,.corr-sec:disabled{opacity:.55;cursor:default}
+  .corr-err{font-size:11px;color:#FF8A88;margin-top:8px;line-height:1.5}
+  .corr-reply{font-size:12px;color:#F4F5F0;background:rgba(255,255,255,.05);border-left:2px solid rgba(255,255,255,.28);border-radius:0 8px 8px 0;padding:9px 12px;line-height:1.55}
+  .corr-box{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.12);border-radius:9px;padding:10px 12px;margin-top:9px}
+  .corr-box h5{margin:0 0 6px;font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:rgba(244,245,240,.55);font-weight:700}
+  .corr-reason{font-size:12px;color:rgba(244,245,240,.92);line-height:1.6;white-space:pre-wrap}
+  .corr-diff{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;line-height:1.55}
+  .corr-d-add{color:#7EE8C4}
+  .corr-d-del{color:#FF9B99;text-decoration:line-through;opacity:.8}
+  .corr-d-same{color:rgba(244,245,240,.45)}
+  .corr-rip{font-size:11.5px;color:rgba(244,245,240,.9);line-height:1.55;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.07)}
+  .corr-rip:last-child{border-bottom:none}
+  .corr-sev{display:inline-block;font-size:9.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;border-radius:6px;padding:1px 6px;margin-right:6px;vertical-align:1px}
+  .corr-sev-high{background:rgba(226,75,74,.22);color:#FF9B99}
+  .corr-sev-medium{background:rgba(239,159,39,.20);color:#FFC880}
+  .corr-sev-low{background:rgba(255,255,255,.10);color:rgba(244,245,240,.7)}
+  .corr-heur{font-size:10.5px;color:rgba(244,245,240,.5);font-style:italic;margin-top:6px;line-height:1.5}
+  .dep-stale{font-size:11px;color:#EF9F27;background:rgba(239,159,39,.12);border-radius:8px;padding:2px 8px}
   .dep-rm{font-size:11px;color:var(--muted);background:#FFFFFF;border:1px solid var(--line);border-radius:8px;padding:3px 10px;cursor:pointer;flex:none}
   .dep-rm:hover{color:#E24B4A;border-color:#E24B4A}
   .dep-actions{display:flex;gap:6px;flex:none}
@@ -806,7 +836,7 @@ function freshAudit(){ return { tab:"guide", guideNotes:{}, captureText:"", summ
 function freshAutomation(){ return { tab:"gaps", loaded:false, msg:"", gaps:[], drafts:{}, assessing:{}, errors:{}, assessingAll:false, validatingAll:false, progress:"", copyBusy:{}, copyAll:false }; }
 // sel = the active compose session's folder-scoped gap-selection map ({gapId: 'accepted'|'declined'};
 // undecided = absent). Committed to build_plan_gaps on Save; never the dormant client gaps.selection.
-function freshBuildPlan(){ return { loaded:false, msg:"", plans:[], activePlanId:null, planCounts:{}, plan:null, steps:[], draft:null, draftGaps:null, generating:false, saving:false, expanded:{}, panel:null, zoom:1, pan:{x:0,y:0}, tab:"plan", composing:false, sel:{}, scope:null, scopePlanId:null, scopeErr:"", del:null, showArchived:false, deployed:[], dep:null, runs:[], setupAssert:null, grad:null, graduated:new Map() }; }
+function freshBuildPlan(){ return { loaded:false, msg:"", plans:[], activePlanId:null, planCounts:{}, plan:null, steps:[], draft:null, draftGaps:null, generating:false, saving:false, expanded:{}, panel:null, zoom:1, pan:{x:0,y:0}, tab:"plan", composing:false, sel:{}, scope:null, scopePlanId:null, scopeErr:"", del:null, showArchived:false, deployed:[], dep:null, runs:[], setupAssert:null, grad:null, graduated:new Map(), correct:null }; }
 // NAMESPACE THE PREVIEW, LOCK THE EXECUTION. `tab` and `chat` each own their
 // preflight/diff because SHARING them is a silent wrong-write: a chat preview
 // overwriting the tab's diff would make the tab's Confirm button create the
@@ -2521,7 +2551,7 @@ function renderBuildsTabBar(){
       ${tabs.map(([id,lbl]) => `<button class="subtab ${S.buildPlan.tab===id?"active":""}" onclick="buildsTab('${id}')">${lbl}</button>`).join("")}
     </div>`;
 }
-function buildsTab(t){ S.buildPlan.del = null; S.buildPlan.dep = null; S.buildPlan.grad = null; S.buildPlan.tab = t; renderAutomation(); }
+function buildsTab(t){ S.buildPlan.del = null; S.buildPlan.dep = null; S.buildPlan.grad = null; S.buildPlan.correct = null; S.buildPlan.tab = t; renderAutomation(); }
 
 // Route the active in-folder tab to its body (each writes into #automation-body).
 function renderBuildsTabBody(){
@@ -4260,7 +4290,7 @@ async function openBuildFolder(planId){
   const plan = S.buildPlan.plans.find(p => p.id === planId);
   if(!plan) return;
   S.buildPlan.activePlanId = planId; S.buildPlan.plan = plan; S.buildPlan.panel = null; S.buildPlan.steps = [];
-  S.buildPlan.composing = false; S.buildPlan.draft = null; S.buildPlan.draftGaps = null; S.buildPlan.sel = {}; S.buildPlan.del = null; S.buildPlan.dep = null; S.buildPlan.grad = null; S.buildPlan.setupAssert = null; S.buildPlan.runs = []; S.buildPlan.tab = "plan";   // open on the Build Plan tab
+  S.buildPlan.composing = false; S.buildPlan.draft = null; S.buildPlan.draftGaps = null; S.buildPlan.sel = {}; S.buildPlan.del = null; S.buildPlan.dep = null; S.buildPlan.grad = null; S.buildPlan.correct = null; S.buildPlan.setupAssert = null; S.buildPlan.runs = []; S.buildPlan.tab = "plan";   // open on the Build Plan tab
   try{
     const { data: steps, error } = await sb.from("build_steps").select("*")
       .eq("build_plan_id", planId).order("position");
@@ -4299,7 +4329,7 @@ function closeBuildFolder(){
   // Leave the build workspace back to the folder grid. An unsaved draft is discarded here
   // (nothing was written to the DB); a saved folder just closes.
   S.buildPlan.activePlanId = null; S.buildPlan.plan = null; S.buildPlan.steps = []; S.buildPlan.panel = null;
-  S.buildPlan.draft = null; S.buildPlan.draftGaps = null; S.buildPlan.composing = false; S.buildPlan.sel = {}; S.buildPlan.del = null; S.buildPlan.dep = null; S.buildPlan.grad = null; S.buildPlan.setupAssert = null; S.buildPlan.runs = []; S.buildPlan.tab = "plan";
+  S.buildPlan.draft = null; S.buildPlan.draftGaps = null; S.buildPlan.composing = false; S.buildPlan.sel = {}; S.buildPlan.del = null; S.buildPlan.dep = null; S.buildPlan.grad = null; S.buildPlan.correct = null; S.buildPlan.setupAssert = null; S.buildPlan.runs = []; S.buildPlan.tab = "plan";
   renderAutomation();
 }
 
@@ -5864,6 +5894,428 @@ async function confirmGraduate(id){
   renderAutomation();
 }
 
+/* ===== CORRECTION CHAT (Order 16.6) ======================================
+   The operator describes a problem in plain language; the AI reasons about it
+   against the FULL stored engine and proposes an edit to ONE automation.
+   REASONS ACROSS ALL AUTOMATIONS, WRITES TO EXACTLY ONE — cross-automation
+   ripple is detected and REPORTED, never auto-applied. This is the first path
+   that edits a formulated spec after generation; `workflow` was write-once at
+   plan generation until now, and that is a deliberate, governed capability. */
+
+// The mechanical half: recover the tag-flow graph the data already implies.
+// Node configs are free prose and NOTHING in the codebase parses them, but the
+// manifest supplies a CLOSED VOCABULARY to search for, which makes this tractable
+// rather than open-ended NLP. Write vs read is inferred from the node type and the
+// verb the config opens with.
+// APPROXIMATE BY CONSTRUCTION — see CORRECTION_CONTRACT_PROMPT, which tells the AI
+// exactly how this can be wrong (templated tag variants like
+// 'chase-active-{{invoice_id}}' substring-match a manifest tag while arguably being
+// a different tag). It is a HINT, never a source of truth.
+function deriveTagFlow(step){
+  const m = step && step.manifest;
+  const vocab = [...new Set([...(m && m.requires_tags || []), ...(m && m.creates_tags || [])])]
+    .filter(t => typeof t === "string" && t.trim());
+  const flow = {};
+  vocab.forEach(t => { flow[t] = { writers: [], readers: [] }; });
+  if(!vocab.length || !Array.isArray(step.workflow)) return flow;
+  step.workflow.forEach((a, ai) => {
+    if(!a || typeof a !== "object") return;
+    const walk = (nodes) => (nodes || []).forEach(n => {
+      if(!n || typeof n !== "object") return;
+      const cfg = String(n.config || "");
+      const isWrite = n.type === "update" || /^\s*(add|remove|set|clear)\b/i.test(cfg);
+      vocab.forEach(t => {
+        if(!cfg.includes(t)) return;
+        flow[t][isWrite ? "writers" : "readers"].push({ automation: ai, name: a.name || `automation ${ai+1}`, node: n.id || n.type });
+      });
+      if(n.type === "condition"){ walk(n.yes); walk(n.no); }
+      (n.branches || []).forEach(b => walk(b && b.to));
+    });
+    walk(a.nodes);
+  });
+  return flow;
+}
+
+// Renders the hint for the prompt. Only tags that are actually referenced appear —
+// a declared-but-unused tag is itself signal, so it is listed separately.
+function tagFlowBlock(step){
+  const flow = deriveTagFlow(step);
+  const keys = Object.keys(flow);
+  if(!keys.length) return "TAG-FLOW HINT: this engine's manifest declares no tags.";
+  const loc = e => `${e.name}#${e.node}`;
+  const used = keys.filter(t => flow[t].writers.length || flow[t].readers.length);
+  const unused = keys.filter(t => !flow[t].writers.length && !flow[t].readers.length);
+  const lines = used.map(t => {
+    const spans = new Set([...flow[t].writers, ...flow[t].readers].map(e => e.automation));
+    return `- '${t}' — written by: ${flow[t].writers.map(loc).join(", ") || "(nothing)"} | read by: ${flow[t].readers.map(loc).join(", ") || "(nothing)"}${spans.size > 1 ? "   [CROSSES AUTOMATIONS]" : ""}`;
+  });
+  if(unused.length) lines.push(`- declared but referenced by no node: ${unused.map(t => `'${t}'`).join(", ")}`);
+  return "TAG-FLOW HINT (DERIVED MECHANICALLY — APPROXIMATE, NOT TRUTH):\n" + lines.join("\n");
+}
+
+// Ledger staleness, DERIVED not stored. build_steps has NO updated_at, so the
+// correction log's own timestamps are the only clock — which is why corrections are
+// logged with `at`. A correction that postdates the deploy means the live system no
+// longer matches the spec it was built from.
+function correctionsSinceDeploy(entry, step){
+  if(!entry || !entry.deployed_at || !step) return [];
+  const log = (step.deployment && step.deployment.corrections) || [];
+  if(!Array.isArray(log)) return [];
+  const t = Date.parse(entry.deployed_at);
+  if(isNaN(t)) return [];
+  return log.filter(c => c && c.at && Date.parse(c.at) > t);
+}
+
+// DISCRIMINATED UNION, same doctrine as proposeChatManifest: refusing is a
+// first-class response, never a degenerate proposal. A "reply" STOPS BEFORE the diff
+// is computed, which is what makes an automation attached to a hedging reply
+// unreachable by construction.
+function validateCorrectionProposal(o){
+  if(!o || typeof o !== "object" || Array.isArray(o)) throw new Error("not an object");
+  if(o.action === "reply"){
+    if(typeof o.message !== "string" || !o.message.trim()) throw new Error("reply needs a non-empty message");
+    return o;
+  }
+  if(o.action !== "propose") throw new Error(`action must be "propose" or "reply"`);
+  if(typeof o.summary !== "string" || !o.summary.trim()) throw new Error("propose needs a non-empty summary");
+  if(typeof o.reasoning !== "string" || !o.reasoning.trim()) throw new Error("propose needs non-empty reasoning");
+  if(!o.automation || typeof o.automation !== "object" || Array.isArray(o.automation))
+    throw new Error("propose needs the corrected automation OBJECT (one automation, not the workflow array)");
+  if(o.ripples != null){
+    if(!Array.isArray(o.ripples)) throw new Error("ripples must be an array");
+    o.ripples.forEach((r, i) => {
+      if(!r || typeof r !== "object") throw new Error(`ripples[${i}]: not an object`);
+      if(typeof r.concern !== "string" || !r.concern.trim()) throw new Error(`ripples[${i}].concern must be a non-empty string`);
+    });
+  }
+  // The SAME validators that gate formulate, UNMODIFIED — not forked, not relaxed.
+  validateNodes(o.automation.nodes, "corrected automation", false);
+  validateAutomationTests(o.automation, "corrected automation");
+  return o;
+}
+
+// Correction-only and ADDITIVE ON PURPOSE — folding these into validateNodes would
+// change formulate's behavior. Closes what the shared validators genuinely do not
+// cover, because they were never written to compare a proposal against an ORIGINAL.
+function hardenCorrection(proposal, step, autoIdx){
+  const orig = (step.workflow || [])[autoIdx];
+  const next = proposal.automation;
+  if(!orig || typeof orig !== "object") throw new Error("the automation being corrected is not a structured object");
+
+  // CONTAINMENT — v1 writes exactly one automation. A proposal carrying a workflow
+  // array, or extra automations, is rejected outright: cross-automation consequences
+  // belong in ripples[], where a human reads them, never in the write.
+  if(Array.isArray(proposal.automation)) throw new Error("proposal must correct ONE automation, not the workflow array");
+  if(proposal.workflow != null || proposal.automations != null)
+    throw new Error("proposal may not carry a workflow/automations array — sibling changes belong in ripples[]");
+
+  // IDENTITY — rewriting the name or the trigger makes it a DIFFERENT automation,
+  // not a correction, and would silently orphan the tests and the deploy ledger.
+  if(String(next.name || "") !== String(orig.name || ""))
+    throw new Error(`a correction may not rename the automation ("${orig.name}" → "${next.name}")`);
+  const ot = (orig.trigger && orig.trigger.type) || "", nt = (next.trigger && next.trigger.type) || "";
+  if(nt !== ot) throw new Error(`a correction may not change the trigger type ("${ot}" → "${nt}")`);
+
+  // TAG DRIFT — SURFACED, NEVER BLOCKED. The manifest may legitimately need to grow,
+  // but v1 does not write it (setup steps may already have run against the old
+  // manifest), so the operator sees it and decides.
+  //
+  // TWO DIFFERENT QUESTIONS, DELIBERATELY TWO TECHNIQUES:
+  //  (a) "did this correction start using a tag nobody declared?" — deriveTagFlow
+  //      CANNOT answer it: that function iterates the manifest's KNOWN vocabulary, so
+  //      a newly-invented tag is invisible to it by construction. Needs open
+  //      extraction of tag-shaped strings. HEURISTIC — see the note below.
+  //  (b) "did this correction break a declared tag's flow?" — that IS vocabulary
+  //      matching, so it reuses deriveTagFlow rather than reimplementing it. Running
+  //      it before and after and diffing keeps the drift check and the AI's hint
+  //      provably consistent (same traversal, same classifier) and preserves the
+  //      write/read distinction, which a flat text diff loses: losing the last WRITER
+  //      while readers remain is a broken dependency; losing a reader usually is not.
+  const m = step.manifest || {};
+  const vocab = new Set([...(m.requires_tags || []), ...(m.creates_tags || [])].filter(Boolean));
+  const cfgText = (nodes, acc = []) => {
+    (nodes || []).forEach(n => {
+      if(!n || typeof n !== "object") return;
+      acc.push(String(n.config || ""));
+      if(n.type === "condition"){ cfgText(n.yes, acc); cfgText(n.no, acc); }
+      (n.branches || []).forEach(b => cfgText(b && b.to, acc));
+    });
+    return acc;
+  };
+  // (a) OPEN EXTRACTION — quoted, hyphenated, not declared. Crude on purpose and
+  // labelled as such in the panel: requiring a hyphen fits 'chase-active' but misses
+  // 'appt_booked', and the catalog demonstrably uses both conventions. False
+  // negatives and occasional false positives are acceptable ONLY because this is
+  // surfaced for a human, never gating.
+  const quoted = [...cfgText(next.nodes).join("\n").matchAll(/'([a-z0-9][a-z0-9 _-]{2,60})'/gi)].map(x => x[1]);
+  const unknown_tags = [...new Set(quoted.filter(t => /-/.test(t) && !vocab.has(t)))];
+
+  // (b) BEFORE/AFTER over the SAME derivation the AI's hint uses.
+  const nextWorkflow = (step.workflow || []).slice();
+  nextWorkflow[autoIdx] = next;
+  const before = deriveTagFlow(step);
+  const after  = deriveTagFlow({ manifest: step.manifest, workflow: nextWorkflow });
+  const flow_changes = [];
+  Object.keys(before).forEach(t => {
+    const b = before[t], a = after[t] || { writers: [], readers: [] };
+    if(b.writers.length && !a.writers.length)
+      flow_changes.push({ tag: t, kind: "lost_last_writer", severity: a.readers.length ? "high" : "low",
+        detail: a.readers.length
+          ? `nothing writes '${t}' any more, but it is still read by ${a.readers.map(e => `${e.name}#${e.node}`).join(", ")}`
+          : `nothing writes or reads '${t}' any more` });
+    if(b.readers.length && !a.readers.length && a.writers.length)
+      flow_changes.push({ tag: t, kind: "lost_last_reader", severity: "low",
+        detail: `'${t}' is still written by ${a.writers.map(e => `${e.name}#${e.node}`).join(", ")} but nothing reads it now` });
+    const spans = f => new Set([...f.writers, ...f.readers].map(e => e.automation)).size > 1;
+    if(spans(b) && !spans(a))
+      flow_changes.push({ tag: t, kind: "lost_cross_automation_link", severity: "high",
+        detail: `'${t}' no longer connects more than one automation — a cross-automation dependency was removed` });
+    if(!spans(b) && spans(a))
+      flow_changes.push({ tag: t, kind: "gained_cross_automation_link", severity: "medium",
+        detail: `'${t}' now spans more than one automation — a new cross-automation dependency was created` });
+  });
+  return { unknown_tags, flow_changes };
+}
+
+const CORRECTION_CONTRACT_PROMPT = `You are correcting ONE automation inside an engine that is already designed and may already be BUILT IN A CLIENT'S ACCOUNT. You are not redesigning it.
+
+RESPOND WITH ONE OF EXACTLY TWO SHAPES, valid JSON, no markdown:
+{"action":"propose","summary":"one line naming what changes","reasoning":"why this is the right fix, and what you checked across the other automations","automation":{ ...the FULL corrected automation object... },"ripples":[{"automation":"sibling automation name","node":"node id or type","concern":"what breaks or needs a matching change, and why","severity":"high|medium|low"}]}
+{"action":"reply","message":"what you need, or why this cannot be done as asked"}
+
+USE "reply" WHEN: the request is ambiguous, outside this automation, asks for something the GHL grammar cannot express, or would require renaming the automation or changing its trigger. Refusing is a correct answer. Never invent a change to look responsive.
+
+HARD RULES for "propose":
+- Return the COMPLETE corrected automation — every node, not a patch. It replaces the original wholesale.
+- NEVER change "name" or "trigger.type". Those are the automation's identity; changing either makes it a different automation and is rejected.
+- Return ONE automation object. NEVER a workflow array, and never a sibling automation. If a sibling must change, that is a RIPPLE — describe it in ripples[] and let the operator act on it. You cannot edit siblings.
+- Keep "tests" valid: an array of {name, how} objects, at least as many as (guards + conditions) in your corrected nodes, covering the happy path, each branch, and the exit.
+- Preserve every node's existing deploy bucket (input/assets/guardrail/tasks) unless the correction is specifically about it — that content is real builder instructions.
+
+RIPPLE REASONING IS THE POINT. Before proposing, trace what your change touches across the WHOLE engine:
+- a tag you stop writing that another automation's guard reads
+- a tag you start writing that another automation's guard will now catch
+- a contact field you stop setting that a later message merges
+- a wait you change whose duration is asserted in the deployment business rules
+- the goal event, which can exit the contact from ANY wait in the sequence
+State each in ripples[] with its concern spelled out. An empty ripples[] is a CLAIM that nothing else is affected — only make it when you have actually checked.
+
+THE TAG-FLOW HINT IS APPROXIMATE AND YOU MUST NOT TRUST IT BLINDLY. It is derived by substring-matching the manifest's declared tag names against node config prose. Known ways it is wrong: a TEMPLATED variant (a guard reading 'chase-active-{{invoice_id}}' matches the tag 'chase-active' while arguably being a different per-invoice tag); it cannot see wait durations, the goal event, merge fields, or who a notification is sent to. Read the actual node configs. The hint tells you where to look, not what is true.`;
+
+// The ONLY AI in the correction path. Receives the full engine — target automation,
+// every sibling, manifest, deployment tiers — plus the mechanical hint. Deliberately
+// NOT given the live GHL workflow: v1 reasons about the stored spec, which is the
+// document the builder works from (see the DoD's deferred list).
+async function proposeCorrection(step, autoIdx, request){
+  const target = (step.workflow || [])[autoIdx];
+  const siblings = (step.workflow || [])
+    .map((a, i) => i === autoIdx ? null : a)
+    .filter(a => a && typeof a === "object");
+  const system = "You correct existing GHL automation designs. Precision over ambition — the smallest change that fixes the stated problem.\n\n"
+    + DESIGN_DOCTRINE_PROMPT + "\n\n" + GHL_GRAMMAR_PROMPT + "\n\n" + CORRECTION_CONTRACT_PROMPT;
+  const userMsg = `ENGINE: ${step.title}\n\n`
+    + `THE OPERATOR'S PROBLEM:\n${request}\n\n`
+    + `AUTOMATION YOU MAY CORRECT (index ${autoIdx}) — return this one, corrected:\n${JSON.stringify(target, null, 1)}\n\n`
+    + (siblings.length
+        ? `SIBLING AUTOMATIONS IN THE SAME ENGINE — read them, reason about them, but you may NOT edit them (ripples only):\n${JSON.stringify(siblings, null, 1)}\n\n`
+        : `This engine has only one automation.\n\n`)
+    + `ENGINE MANIFEST (the declared tag/field vocabulary):\n${JSON.stringify(step.manifest || {}, null, 1)}\n\n`
+    + (step.deployment && step.deployment.tiers
+        ? `DEPLOYMENT RULES (business_rules numbers and never_touch are architecture — a correction that violates never_touch should be a "reply", not a "propose"):\n${JSON.stringify(step.deployment.tiers, null, 1)}\n\n`
+        : "")
+    + tagFlowBlock(step) + `\n\nCorrect the automation now, or reply.`;
+  return aiJsonWithRetry({ system, userMsg, max_tokens: 32000,
+    validate: validateCorrectionProposal, what: `correction (${step.title} / automation ${autoIdx + 1})`, tag: "correct" });
+}
+
+// LOCKED: one correction open at a time across the whole plan. A second open closes
+// the first BY CONSTRUCTION (single slot) — a proposal left standing against a
+// different automation is a wrong-write risk, not a UI annoyance.
+function askCorrect(stepId, autoIdx){
+  S.buildPlan.correct = { stepId, autoIdx: Number(autoIdx), phase: "input", input: "", proposal: null, drift: null, msg: "" };
+  renderAutomation();
+}
+function cancelCorrect(){ S.buildPlan.correct = null; renderAutomation(); }
+// No re-render: renderAutomation() rebuilds the textarea and would drop the caret.
+function corrField(v){ const c = S.buildPlan.correct; if(c) c.input = v; }
+function corrBack(){ const c = S.buildPlan.correct; if(!c || c.busy) return; c.phase = "input"; c.proposal = null; c.drift = null; c.msg = ""; renderAutomation(); }
+
+async function submitCorrection(){
+  const c = S.buildPlan.correct;
+  if(!c || c.busy) return;
+  // Identity-checked: a correction opened on ANOTHER automation while this one was
+  // in flight owns the slot now. Without this, a late failure stamps its error and
+  // clears busy on a request the operator never made.
+  const owns = () => { const cur = S.buildPlan.correct; return (cur && cur.stepId === c.stepId && cur.autoIdx === c.autoIdx) ? cur : null; };
+  const fail = (msg) => { const cur = owns(); if(cur){ cur.busy = false; cur.msg = msg; } renderAutomation(); };
+  const request = String(c.input || "").trim();
+  if(!request) return fail("Describe what's wrong with this automation first.");
+  const step = byIdStep(c.stepId);
+  if(!step) return fail("That build step is no longer loaded.");
+  const target = (step.workflow || [])[c.autoIdx];
+  if(!target || typeof target !== "object") return fail("That automation has no structured nodes to correct.");
+
+  // busy BEFORE the first await — the re-entry guard reads c.busy, and an await with
+  // the flag still false is the exact window that produced three concurrent writes in
+  // Order 16.7. Every path out of here clears it.
+  c.busy = true; c.msg = ""; renderAutomation();
+  let proposal;
+  try{
+    proposal = await proposeCorrection(step, c.autoIdx, request);
+  }catch(e){
+    return fail("The correction couldn't be produced: " + e.message);
+  }
+  const cur = owns();
+  if(!cur) return;   // operator moved on mid-call — discard this result
+  if(proposal.action === "reply"){
+    cur.busy = false; cur.msg = ""; cur.proposal = { action: "reply", message: proposal.message };
+    cur.phase = "review"; renderAutomation(); return;
+  }
+  let drift;
+  try{
+    drift = hardenCorrection(proposal, step, c.autoIdx);
+  }catch(e){
+    return fail("The proposed correction was rejected: " + e.message);
+  }
+  cur.busy = false; cur.proposal = proposal; cur.drift = drift; cur.phase = "review"; cur.msg = "";
+  renderAutomation();
+}
+
+// The write. FIRST edit of build_steps.workflow outside plan generation — `workflow`
+// was write-once at generation until Order 16.6. Re-checks every condition
+// independently of the render that offered the button.
+async function confirmCorrection(){
+  const c = S.buildPlan.correct;
+  if(!c || c.busy) return;
+  // Identity-checked: a correction opened on ANOTHER automation while this one was
+  // in flight owns the slot now. Without this, a late failure stamps its error and
+  // clears busy on a request the operator never made.
+  const owns = () => { const cur = S.buildPlan.correct; return (cur && cur.stepId === c.stepId && cur.autoIdx === c.autoIdx) ? cur : null; };
+  const fail = (msg) => { const cur = owns(); if(cur){ cur.busy = false; cur.msg = msg; } renderAutomation(); };
+  const p = c.proposal;
+  if(!p || p.action !== "propose") return fail("There is no proposed correction to apply.");
+  const step = byIdStep(c.stepId);
+  if(!step) return fail("That build step is no longer loaded.");
+  if(!Array.isArray(step.workflow) || !step.workflow[c.autoIdx]) return fail("That automation is no longer in the step.");
+  let drift;
+  try{
+    validateCorrectionProposal(p);            // shared validators again, on the exact object being written
+    drift = hardenCorrection(p, step, c.autoIdx);
+  }catch(e){
+    return fail("Re-check failed, nothing was written: " + e.message);
+  }
+
+  c.busy = true; c.msg = ""; renderAutomation();
+  const workflow = step.workflow.slice();
+  workflow[c.autoIdx] = p.automation;
+  const dep = { ...(step.deployment || {}) };
+  const entry = {
+    at: new Date().toISOString(), operator_id: S.user.id,
+    automation_index: c.autoIdx, automation_name: p.automation.name || null,
+    request: String(c.input || "").trim(), summary: p.summary, reasoning: p.reasoning,
+    ripples: p.ripples || [], drift,
+    nodes_before: step.workflow[c.autoIdx].nodes || null, nodes_after: p.automation.nodes || null,
+  };
+  dep.corrections = [...(Array.isArray(dep.corrections) ? dep.corrections : []), entry];
+  dep.changes_note = [dep.changes_note, `[correction ${entry.at.slice(0,10)}] ${p.summary}`].filter(Boolean).join("\n");
+
+  const { data, error } = await sb.from("build_steps")
+    .update({ workflow, deployment: dep }).eq("id", step.id).select().single();
+  if(error || !data) return fail(`Couldn't save the correction: ${error ? error.message : "no row returned"} — nothing was written.`);
+  Object.assign(step, data);          // re-render from the RETURNED row, never the optimistic object
+  S.buildPlan.correct = null;
+  setBuildPlanMsg(`Correction applied to "${entry.automation_name || "automation"}" ✓`);
+  renderAutomation();
+}
+
+// Node-level before/after, compared by POSITION and rendered as prose lines rather
+// than a structural merge: the AI returns the whole automation, so this diff is a
+// reading aid for the operator, never the thing that gets written.
+function correctionDiff(before, after){
+  const b = Array.isArray(before) ? before : [], a = Array.isArray(after) ? after : [];
+  const rows = [];
+  for(let i = 0; i < Math.max(b.length, a.length); i++){
+    const x = b[i], y = a[i];
+    const lx = x ? `${x.type}: ${x.config || ""}` : null;
+    const ly = y ? `${y.type}: ${y.config || ""}` : null;
+    if(lx === ly){ rows.push({ kind: "same", text: ly }); continue; }
+    if(lx) rows.push({ kind: "del", text: lx });
+    if(ly) rows.push({ kind: "add", text: ly });
+  }
+  return rows;
+}
+
+function renderCorrectionPanel(step, autoIdx){
+  const a = (step.workflow || [])[autoIdx];
+  if(!a || typeof a !== "object" || !Array.isArray(a.nodes)) return "";   // nothing structured to correct
+  const c = S.buildPlan.correct;
+  const mine = c && c.stepId === step.id && c.autoIdx === autoIdx;
+  if(!mine)
+    return `<div class="corr"><button class="corr-open" onclick="askCorrect('${step.id}', ${autoIdx})">Something's wrong with this automation…</button>${
+      c ? `<div class="corr-heur">A correction is open on another automation — starting here closes it.</div>` : ""}</div>`;
+
+  const busy = !!c.busy;
+  if(c.phase === "input"){
+    return `<div class="corr">
+      <div class="corr-h">Describe the problem</div>
+      <div class="corr-sub">Plain language. The agent reads this automation, every sibling in the engine, the manifest and the deployment rules, then proposes a fix — and tells you what else it touches.</div>
+      <textarea placeholder="e.g. the day-3 reminder still fires after the customer has paid" oninput="corrField(this.value)" ${busy?"disabled":""}>${esc(c.input || "")}</textarea>
+      ${c.msg ? `<div class="corr-err">${esc(c.msg)}</div>` : ""}
+      <div class="corr-actions">
+        <button class="corr-go" onclick="submitCorrection()" ${busy?"disabled":""}>${busy ? "Thinking…" : "Ask the agent"}</button>
+        <button class="corr-sec" onclick="cancelCorrect()" ${busy?"disabled":""}>Cancel</button>
+      </div>
+    </div>`;
+  }
+
+  const p = c.proposal;
+  if(p && p.action === "reply"){
+    return `<div class="corr">
+      <div class="corr-h">The agent did not propose a change</div>
+      <div class="corr-reply">${esc(p.message)}</div>
+      <div class="corr-actions">
+        <button class="corr-sec" onclick="corrBack()">Rephrase</button>
+        <button class="corr-sec" onclick="cancelCorrect()">Close</button>
+      </div>
+    </div>`;
+  }
+
+  const rows = correctionDiff(a.nodes, p.automation.nodes);
+  const changed = rows.filter(r => r.kind !== "same").length;
+  const rip = (p.ripples || []);
+  const d = c.drift || {};
+  const fc = d.flow_changes || [], unk = d.unknown_tags || [];
+  return `<div class="corr">
+    <div class="corr-h">Proposed correction — review before applying</div>
+    <div class="corr-sub">${esc(p.summary)}</div>
+
+    <div class="corr-box"><h5>Reasoning</h5><div class="corr-reason">${esc(p.reasoning)}</div></div>
+
+    <div class="corr-box"><h5>Node changes (${changed} line${changed===1?"":"s"} differ)</h5>
+      <div class="corr-diff">${rows.map(r =>
+        `<div class="corr-d-${r.kind === "same" ? "same" : r.kind === "add" ? "add" : "del"}">${
+          r.kind === "add" ? "+ " : r.kind === "del" ? "&minus; " : "&nbsp;&nbsp;"}${esc(r.text)}</div>`).join("")}</div></div>
+
+    ${rip.length ? `<div class="corr-box"><h5>Ripple effects in other automations (${rip.length})</h5>${
+      rip.map(r => `<div class="corr-rip"><span class="corr-sev corr-sev-${esc((r.severity||"low").toLowerCase())}">${esc(r.severity||"low")}</span>${
+        r.automation ? `<b>${esc(r.automation)}</b>${r.node ? " &middot; " + esc(r.node) : ""} &mdash; ` : ""}${esc(r.concern)}</div>`).join("")}
+      <div class="corr-heur">These are NOT applied. v1 corrects one automation; anything above is yours to act on separately.</div></div>`
+      : `<div class="corr-box"><h5>Ripple effects</h5><div class="corr-rip">The agent reports nothing else in this engine is affected. That is a claim, not a proof — check it against the diff.</div></div>`}
+
+    ${(fc.length || unk.length) ? `<div class="corr-box"><h5>Tag drift</h5>${
+      fc.map(f => `<div class="corr-rip"><span class="corr-sev corr-sev-${esc(f.severity)}">${esc(f.severity)}</span>${esc(f.detail)}</div>`).join("")}${
+      unk.length ? `<div class="corr-rip">Tag-like strings not in the manifest: ${esc(unk.join(", "))}</div>
+        <div class="corr-heur">Heuristic &mdash; this looks for quoted hyphenated strings, so it misses other naming styles (e.g. appt_booked) and can flag non-tags. Treat it as a prompt to look, not a finding. The manifest is NOT updated by a correction.</div>` : ""}</div>` : ""}
+
+    ${c.msg ? `<div class="corr-err">${esc(c.msg)}</div>` : ""}
+    <div class="corr-actions">
+      <button class="corr-go" onclick="confirmCorrection()" ${busy?"disabled":""}>${busy ? "Applying…" : "Apply correction"}</button>
+      <button class="corr-sec" onclick="corrBack()" ${busy?"disabled":""}>Rephrase</button>
+      <button class="corr-sec" onclick="cancelCorrect()" ${busy?"disabled":""}>Discard</button>
+    </div>
+  </div>`;
+}
+
 function fmtDeployedAt(iso){
   if(!iso) return "";
   const t = new Date(iso);
@@ -5926,6 +6378,9 @@ function renderDeployedCard(){
           <span class="dep-when">${esc(fmtDeployedAt(d.deployed_at))}</span>
           ${d.mode ? `<span class="dep-mode">${esc(d.mode)}</span>` : ""}
           ${renderGradChip(gcase, gmap && gmap.get(d.id))}
+          ${(function(){ const st = d.build_step_id ? byIdStep(d.build_step_id) : null;
+              const n = st ? correctionsSinceDeploy(d, st).length : 0;
+              return n ? `<span class="dep-stale">corrected since deploy (${n}) &middot; re-review</span>` : ""; })()}
         </div>
         ${asking && dep.msg ? `<div class="dep-err">${esc(dep.msg)}</div>` : ""}
         ${gopen ? renderGradForm(grad) : ""}
@@ -6143,7 +6598,7 @@ function renderEngineDetail(){
       </div>
       <div class="bp-detail-grid">
         <div class="bp-main">
-          <div class="bp-card bp-card-graph"><h4>Workflow</h4>${lead}${nodes}${tests ? `<div class="bp-tests">${tests}</div>` : ""}</div>
+          <div class="bp-card bp-card-graph"><h4>Workflow</h4>${lead}${nodes}${tests ? `<div class="bp-tests">${tests}</div>` : ""}${renderCorrectionPanel(s, pv.autoIndex)}</div>
         </div>
         <aside class="bp-side">
           ${s.manifest ? `<div class="bp-card"><h4>Manifest</h4>${renderManifestLines(s.manifest)}</div>` : ""}
