@@ -3349,6 +3349,57 @@ function classifyGapRoute(g, catalogByKey){
     : { route: "dropin", engine, seed: null };
 }
 
+// Parse an AI JSON response that may not be JSON alone.
+//
+// THE WHOLE-STRING PARSE IS TRIED FIRST AND IS UNCHANGED — anything that parses today
+// returns identically, including a top-level array or scalar. A currently-succeeding
+// response cannot contain two top-level objects (JSON.parse would already fail), so no
+// passing case can change behavior. The scan below only ever runs where we throw today.
+//
+// LAST WINS. Live 2026-08-19 the correction chat emitted TWO complete objects: the model
+// began a "propose", realised mid-`reasoning` that the request violated the trigger rule,
+// closed that object out with "automation":{}, then emitted the correct
+// {"action":"reply",...} after it. A model that corrects itself arrives at its real answer
+// last. This is a HEURISTIC, not a guarantee — it only picks the candidate; validateNodes,
+// validateAutomationTests and hardenCorrection still decide whether it is allowed.
+//
+// STRING TRACKING IS SCOPED TO INSIDE A CANDIDATE OBJECT, deliberately. Between objects the
+// model writes prose that QUOTES ITS OWN RULES back at itself ("NEVER change 'name' or
+// 'trigger.type'..."). Tracking strings globally would toggle on those prose quotes, and an
+// ODD number of them would make the scanner treat the next object as string content and
+// silently drop it. At depth 0 we are in prose: only "{" matters.
+function parseAiJson(raw){
+  const stripped = String(raw || "").replace(/```json|```/g, "").trim();
+  try{ return JSON.parse(stripped); }catch(_){}
+  const out = [];
+  let depth = 0, start = -1, inStr = false, esc = false;
+  for(let i = 0; i < stripped.length; i++){
+    const c = stripped[i];
+    if(depth === 0){
+      if(c === "{"){ start = i; depth = 1; inStr = false; esc = false; }
+      continue;
+    }
+    if(inStr){
+      if(esc) esc = false;
+      else if(c === "\\") esc = true;
+      else if(c === '"') inStr = false;
+      continue;
+    }
+    if(c === '"'){ inStr = true; continue; }
+    if(c === "{") depth++;
+    else if(c === "}"){
+      depth--;
+      if(depth === 0){
+        try{ const v = JSON.parse(stripped.slice(start, i + 1)); if(v && typeof v === "object") out.push(v); }
+        catch(_){}
+        start = -1;
+      }
+    }
+  }
+  if(!out.length) throw new SyntaxError("no parseable JSON object in output");
+  return out[out.length - 1];
+}
+
 // Shared retry-once wiring for the sweep's per-gap AI calls (same doctrine as
 // generatePlanDraft): only a contract violation earns the retry, with the named
 // violation fed back; transport/proxy errors propagate immediately.
@@ -3371,7 +3422,7 @@ async function aiJsonWithRetry({ system, userMsg, max_tokens, validate, what, hi
     // Capture the raw output on any contract failure — the throw only carries the
     // error string, so without this the actual generation is discarded and the next
     // investigation is blind. Logged with `what` (e.g. "parameterize (lead_response)").
-    try{ out = JSON.parse(raw.replace(/```json|```/g, "").trim()); }
+    try{ out = parseAiJson(raw); }
     catch(e){ console.error(`[${lg}] ${what} — unparseable AI output:\n`, raw); throw new Error("invalid JSON"); }
     try{ validate(out); }
     catch(e){ console.error(`[${lg}] ${what} — validation failed (${e.message}); raw output:\n`, raw); throw e; }
