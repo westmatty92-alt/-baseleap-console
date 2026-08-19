@@ -3357,8 +3357,14 @@ function classifyGapRoute(g, catalogByKey){
 // the fed-back violation stays attached to the turn that caused it. `tag` (default
 // "sweep") only names the console prefix — a chat failure logging under "[sweep]"
 // would send the next investigation to the wrong module.
-async function aiJsonWithRetry({ system, userMsg, max_tokens, validate, what, history, tag }){
+async function aiJsonWithRetry({ system, userMsg, max_tokens, validate, what, history, tag, retryNudge }){
   const lg = tag || "sweep";
+  // The retry instruction is PER-CALLER because it is not shape-neutral. The default
+  // below is the original wording, byte-identical, so formulate / parameterize are
+  // unchanged. A caller whose contract allows REFUSING must pass its own: telling a
+  // model that correctly declined to "respond with the complete corrected JSON only"
+  // pushes it back toward producing the thing it just refused. Proven live 2026-08-19.
+  const nudge = retryNudge || "Respond with the complete corrected JSON only.";
   const attempt = async (msg) => {
     let out;
     const raw = await ai({ system, messages: [...(history || []), { role:"user", content: msg }], max_tokens });
@@ -3376,7 +3382,7 @@ async function aiJsonWithRetry({ system, userMsg, max_tokens, validate, what, hi
     if(/AI request failed/.test(e1.message)) throw e1;                 // transport — retrying blind doubles cost
     if(/output truncated/.test(e1.message))                            // truncation — the SAME call can only truncate again
       throw new Error(`${what}: output exceeded the ${max_tokens}-token budget — not retried. Raise the limit or split the call.`);
-    try{ return await attempt(userMsg + `\n\nYour previous attempt violated the output contract — ${e1.message}. Respond with the complete corrected JSON only.`); }
+    try{ return await attempt(userMsg + `\n\nYour previous attempt violated the output contract — ${e1.message}. ${nudge}`); }
     catch(e2){
       if(/output truncated/.test(e2.message))
         throw new Error(`${what}: retry exceeded the ${max_tokens}-token budget after a contract violation (${e1.message})`);
@@ -6125,7 +6131,13 @@ async function proposeCorrection(step, autoIdx, request){
         : "")
     + tagFlowBlock(step) + `\n\nCorrect the automation now, or reply.`;
   return aiJsonWithRetry({ system, userMsg, max_tokens: 32000,
-    validate: validateCorrectionProposal, what: `correction (${step.title} / automation ${autoIdx + 1})`, tag: "correct" });
+    validate: validateCorrectionProposal, what: `correction (${step.title} / automation ${autoIdx + 1})`, tag: "correct",
+    // Names BOTH shapes and states that refusing is correct. The shared default biases
+    // toward producing a correction, which is wrong here: proven live 2026-08-19, when a
+    // request to change the trigger type produced raw reasoning prose on the first
+    // attempt and, on another run, a complete proposal that reasoned past the rule.
+    retryNudge: `Respond with valid JSON only, matching ONE of the two contract shapes: {"action":"propose",...} or {"action":"reply",...}. `
+      + `If the request cannot or should not be done as asked, "reply" IS the correct answer — do not force a proposal to satisfy the format.` });
 }
 
 // LOCKED: one correction open at a time across the whole plan. A second open closes
@@ -7022,6 +7034,16 @@ async function proposeChatManifest(text){
     validate: validateChatProposal,
     what: "setup chat",
     tag: "setup-chat",
+    // Same discriminated union as the correction chat, so the same defect applies: the
+    // shared default ("respond with the complete corrected JSON only") tells a model that
+    // correctly declined an out-of-scope setup request to produce a manifest anyway. Proven
+    // live on the correction chat 2026-08-19 — raw prose on one attempt, and on another a
+    // complete proposal that reasoned past a rule it had been given. INFERRED here, not
+    // observed: this path has not been seen to fail this way, but it is the same shared
+    // function and the same shape. It WRITES TO A REAL GHL SUB-ACCOUNT, so a forced
+    // proposal is worse here than there.
+    retryNudge: `Respond with valid JSON only, matching ONE of the two contract shapes: {"action":"propose",...} or {"action":"reply",...}. `
+      + `If the request is outside the five item kinds you can create, or cannot be done as asked, "reply" IS the correct answer — do not force a manifest to satisfy the format.`,
   });
 }
 
