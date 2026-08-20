@@ -4,6 +4,28 @@ Numbered incidents and the lesson each one bought. Numbering continues the bug
 history in the Notion Console spec; entries land here when the lesson should sit
 next to the code. Newest first.
 
+## Bug #22 — the correction chat stated a confident falsehood about GHL's capabilities inside its reasoning (August 19 2026)
+
+**Symptom:** asked to change an automation's trigger type, the correction chat correctly refused — and in the `reasoning` the operator reads to judge that refusal, asserted that *GHL has no native QuickBooks connector*. That is false. It was caught by Matthew from his own product knowledge, not by any validator, and not by anything in the response's shape. Every mechanical check passed: the JSON parsed, `validateCorrectionProposal` accepted it, and there was no proposal for `hardenCorrection` to reject.
+
+**Root cause:** two layers, and only the second is really about QuickBooks.
+
+`GHL_GRAMMAR_PROMPT` — which `formulateEngine`, `generatePlanDraft` and `proposeCorrection` all receive — contained *"Stripe, FB/IG leads, GBP reviews = native; QuickBooks and deep external-tool data = n8n."* That is correct **routing** guidance: send QuickBooks work over the n8n bridge. The model converted a rule about where work should go into a claim about what the product lacks. The instruction was right; the restatement of it was not.
+
+The nuance that would have blocked the conversion exists in this repo and never reaches the model. `.claude/skills/ghl-automation/SKILL.md` says plainly: *"GHL's entire native QB integration is one automation: review-request after first invoice paid."* But `grep -c "entire native QB integration" index.html` returns **0**. Skill files are read by Claude in-session while building; the runtime prompts in `index.html` are hand-written summaries of that knowledge. Every prompt is therefore a lossy copy of curated documentation sitting one directory away, and the model only ever knows the summary.
+
+**Fix:** two clauses added to the boundary paragraph in `GHL_GRAMMAR_PROMPT`, committed separately from the rest of the Order 16.6 follow-ups because it changes behaviour for engine *design*, not just corrections, and should be independently revertible. The first is general — routing rules are not capability claims, never restate one as "GHL cannot do X". The second supplies the missing fact, lifted verbatim in substance from the skill. Routing is unchanged: QuickBooks work still goes to the bridge.
+
+Separately, `renderCorrectionPanel`'s reasoning box now carries a standing caution in the same register as the tag-drift heuristic label — that claims about GHL, n8n or third-party tools are the agent's judgement rather than verified fact, and have been wrong before.
+
+**The lesson:** three, and the first is the one that generalises.
+
+1. **A model will restate a routing rule as a capability claim.** "X routes to n8n" becomes "GHL cannot do X" — confidently, in prose, where it reads as fact. When a prompt asserts where work goes, say explicitly that it is a routing decision and not a statement about what the product supports. The same conversion was available for every other external tool in that same sentence.
+
+2. **Curated knowledge in `.claude/skills/` does not reach runtime.** It informs whoever writes the prompt, once, and then the prompt is what the model knows forever. When a prompt line summarises a skill, the summary is the contract — and a summary that drops a caveat teaches the caveat away.
+
+3. **Nothing validates factual claims inside `reasoning`, and reasoning is the field the operator trusts.** `validateNodes`, `validateAutomationTests` and `hardenCorrection` all check structure; a false sentence passes every one. This failure also has a shape worth naming on its own: **right answer, wrong reason.** The refusal was correct and the guard would have held regardless — which is exactly why nothing flagged it, and why an operator skimming for the verdict rather than the argument would have absorbed the falsehood as fact. Where output is unvalidated and trust-bearing, label it as such.
+
 ## Bug #21 — Setup Agent evidence display was load-time-only: a completed run never updated the screen without a reload (August 6 2026)
 
 **Symptom:** the operator ran the Setup Agent (a real, successful 32-item run against a live client's GHL account) with the build plan folder already open, expecting the plan's setup steps and evidence display to update. Nothing changed on screen.

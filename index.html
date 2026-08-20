@@ -3397,6 +3397,11 @@ function parseAiJson(raw){
     }
   }
   if(!out.length) throw new SyntaxError("no parseable JSON object in output");
+  // OBSERVABILITY. Without this line a clean whole-string parse and a recovered
+  // multi-object response are INDISTINGUISHABLE — both return silently — so there is no
+  // way to tell whether this fallback is doing real work or the model simply behaved.
+  // Logged at info, not warn: recovery is a success, not a fault.
+  console.info(`parseAiJson: whole-string parse failed — recovered ${out.length} top-level object(s), using the LAST.`);
   return out[out.length - 1];
 }
 
@@ -6352,7 +6357,8 @@ function renderCorrectionPanel(step, autoIdx){
     <div class="corr-h">Proposed correction — review before applying</div>
     <div class="corr-sub">${esc(p.summary)}</div>
 
-    <div class="corr-box"><h5>Reasoning</h5><div class="corr-reason">${esc(p.reasoning)}</div></div>
+    <div class="corr-box"><h5>Reasoning</h5><div class="corr-reason">${esc(p.reasoning)}</div>
+      <div class="corr-heur">The agent's own reasoning, shown in full. Claims it makes about GHL, n8n or any third-party tool are its judgement, not verified fact &mdash; it has been wrong about product capabilities before. Check anything load-bearing before you approve.</div></div>
 
     <div class="corr-box"><h5>Node changes (${changed} line${changed===1?"":"s"} differ)</h5>
       <div class="corr-diff">${rows.map(r =>
