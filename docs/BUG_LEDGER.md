@@ -4,6 +4,20 @@ Numbered incidents and the lesson each one bought. Numbering continues the bug
 history in the Notion Console spec; entries land here when the lesson should sit
 next to the code. Newest first.
 
+## Bug #23 — a correction inside a condition's branch was invisible in the panel the operator approves from (August 19 2026)
+
+**Symptom:** none observed in production — found by reading the code while scoping Order 16.10. `correctionDiff` walked the top-level `nodes` array only, with no recursion into `yes` / `no` / `branches[].to`. A correction that modified a node inside a condition branch left the parent node comparing equal on `type: config`, so the row rendered **`same`** and the change did not appear at all. The operator would have approved an edit they could not see.
+
+**Root cause:** the diff was written for display against the shape corrections had produced so far — flat sequences — and nothing in the codebase forced the question of nesting. `validateNodes` recurses into branches; `renderNodeGraph` recurses into branches; `correctionDiff` did not, and no test covered it because the fixtures were flat too.
+
+It is live, not theoretical: **6 `condition` nodes carrying `yes`/`no` across the 195 top-level nodes** in the three stored plans. (`branches[]` is unused so far and is handled anyway, since the traversal must cover it.)
+
+**Fix:** `correctionDiff` rewritten — LCS anchoring on `type`+`config`, a second pass pairing same-type nodes between anchors, and recursion into `yes`/`no`/`branches[].to` with path descent (`#7.yes.1`). Rows now carry paired `before_path`/`after_path` rather than a single index, because insertion shifts positions. Shipped as its own commit ahead of the multi-turn work it was scoped for, so the fix is revertible independently of the feature.
+
+**The lesson:** when one function in a family recurses into a nested structure, check the others. `validateNodes` and `renderNodeGraph` both walked branches; `correctionDiff` was written later, against the same data, and silently didn't. Nothing failed — it under-reported, which is the failure mode that doesn't announce itself.
+
+Second: **a display-only function became a correctness surface without being re-examined.** `correctionDiff` was "just for rendering" until the operator started approving production workflow edits from its output. The moment a display function's output is what someone *decides* from, its gaps stop being cosmetic.
+
 ## Bug #22 — the correction chat stated a confident falsehood about GHL's capabilities inside its reasoning (August 19 2026)
 
 **Symptom:** asked to change an automation's trigger type, the correction chat correctly refused — and in the `reasoning` the operator reads to judge that refusal, asserted that *GHL has no native QuickBooks connector*. That is false. It was caught by Matthew from his own product knowledge, not by any validator, and not by anything in the response's shape. Every mechanical check passed: the JSON parsed, `validateCorrectionProposal` accepted it, and there was no proposal for `hardenCorrection` to reject.

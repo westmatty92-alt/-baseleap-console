@@ -565,6 +565,13 @@
   .corr-d-add{color:#7EE8C4}
   .corr-d-del{color:#FF9B99;text-decoration:line-through;opacity:.8}
   .corr-d-same{color:rgba(244,245,240,.45)}
+  /* A MODIFIED node is ONE semantic change, not a delete plus an add. It gets its own
+     grouping so it can never be mistaken for a node being destroyed and another appearing
+     — which is the exact confusion the pass-2 pairing in correctionDiff exists to remove. */
+  .corr-d-mod{border-left:2px solid #EF9F27;padding-left:8px;margin:4px 0}
+  .corr-d-mod-tag{font-size:9.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#FFC880}
+  .corr-d-mod-b{color:rgba(255,155,153,.75);text-decoration:line-through}
+  .corr-d-mod-a{color:#7EE8C4}
   .corr-rip{font-size:11.5px;color:rgba(244,245,240,.9);line-height:1.55;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.07)}
   .corr-rip:last-child{border-bottom:none}
   .corr-sev{display:inline-block;font-size:9.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;border-radius:6px;padding:1px 6px;margin-right:6px;vertical-align:1px}
@@ -6296,20 +6303,100 @@ async function confirmCorrection(){
   renderAutomation();
 }
 
-// Node-level before/after, compared by POSITION and rendered as prose lines rather
-// than a structural merge: the AI returns the whole automation, so this diff is a
-// reading aid for the operator, never the thing that gets written.
-function correctionDiff(before, after){
-  const b = Array.isArray(before) ? before : [], a = Array.isArray(after) ? after : [];
-  const rows = [];
-  for(let i = 0; i < Math.max(b.length, a.length); i++){
-    const x = b[i], y = a[i];
-    const lx = x ? `${x.type}: ${x.config || ""}` : null;
-    const ly = y ? `${y.type}: ${y.config || ""}` : null;
-    if(lx === ly){ rows.push({ kind: "same", text: ly }); continue; }
-    if(lx) rows.push({ kind: "del", text: lx });
-    if(ly) rows.push({ kind: "add", text: ly });
+// Node-level before/after alignment. Consumed by the review panel and (Order 16.10)
+// serialised as model input, so it must carry NODE IDENTITY, not just positions.
+//
+// IDENTITY IS SYNTHESIZED, because none is stored. `id` exists on some engines and not
+// others - measured: plan de43a1b1 position 9 has ids on 30/30 nodes, position 7 on
+// 0/30 - validateNodes never checks it and nothing reads it. The only guaranteed fields
+// are `type` (enum) and `config` (non-empty string). So a node is addressed by PATH,
+// derived not stored: "#3", "#7.yes.1", "#4.branches.0.2". Indices shift when nodes are
+// inserted, which is exactly why every row carries PAIRED before/after paths.
+//
+// The alignment key is JSON.stringify([type, config]) rather than a delimiter join: no
+// separator means no separator collision, at no cost at this scale.
+//
+// TWO PASSES. Pass 1 anchors on an exact type+config match (LCS). Pass 2 pairs what is
+// left BETWEEN anchors by same type, in order. Pass 2 is load-bearing: a node whose
+// config changed misses pass 1 entirely, so without it a modified guard reads as a
+// deletion plus an addition - noise for the operator, and actively misleading to a model
+// that would believe it had removed a guard.
+//
+// Rows emit in BEFORE order within a gap. Ordering by the after-state is a real and
+// separate design question, deliberately not settled here.
+//
+// RECURSES INTO BRANCHES. The previous version walked the top level only, so a change
+// inside a condition's yes/no branch left the parent comparing equal and rendered
+// "unchanged" - the edit was INVISIBLE in the panel the operator approves from. Live on
+// real data: 6 condition nodes carry yes/no across the 195 top-level nodes in the three
+// stored plans. See BUG_LEDGER #23.
+const nodeKey = n => JSON.stringify([n && n.type, (n && n.config) || ""]);
+
+function lcsAnchors(b, a){
+  const n = b.length, m = a.length;
+  const dp = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
+  for(let i = n - 1; i >= 0; i--)
+    for(let j = m - 1; j >= 0; j--)
+      dp[i][j] = nodeKey(b[i]) === nodeKey(a[j]) ? dp[i+1][j+1] + 1 : Math.max(dp[i+1][j], dp[i][j+1]);
+  const out = [];
+  let i = 0, j = 0;
+  while(i < n && j < m){
+    if(nodeKey(b[i]) === nodeKey(a[j])){ out.push([i, j]); i++; j++; }
+    else if(dp[i+1][j] >= dp[i][j+1]) i++;
+    else j++;
   }
+  return out;
+}
+
+function diffChildren(x, y, path, rows){
+  if(!x || !y) return;
+  if(Array.isArray(x.yes) || Array.isArray(y.yes)) rows.push(...correctionDiff(x.yes, y.yes, path + ".yes."));
+  if(Array.isArray(x.no)  || Array.isArray(y.no))  rows.push(...correctionDiff(x.no,  y.no,  path + ".no."));
+  const bx = Array.isArray(x.branches) ? x.branches : [], by = Array.isArray(y.branches) ? y.branches : [];
+  for(let k = 0; k < Math.max(bx.length, by.length); k++)
+    rows.push(...correctionDiff(bx[k] && bx[k].to, by[k] && by[k].to, path + ".branches." + k + "."));
+}
+
+// paired_by_position marks the honest limit: when more than one node of the same type is
+// paired in one gap, order-matching may attribute a change to the wrong node.
+function pairSegment(b, bFrom, bTo, a, aFrom, aTo, path, rows){
+  const bLeft = [], aLeft = [];
+  for(let i = bFrom; i < bTo; i++) bLeft.push(i);
+  for(let i = aFrom; i < aTo; i++) aLeft.push(i);
+  const pairs = [], count = {};
+  for(let k = 0; k < bLeft.length; k++){
+    const bIdx = bLeft[k], t = b[bIdx] && b[bIdx].type;
+    const hit = aLeft.findIndex(ai => a[ai] && a[ai].type === t);
+    if(hit === -1) continue;
+    const aIdx = aLeft[hit];
+    aLeft.splice(hit, 1);
+    bLeft.splice(k, 1); k--;
+    count[t] = (count[t] || 0) + 1;
+    pairs.push([bIdx, aIdx, t]);
+  }
+  pairs.forEach(function(pr){
+    const bIdx = pr[0], aIdx = pr[1], t = pr[2];
+    rows.push({ change: "modified", type: t, before_path: path + bIdx, after_path: path + aIdx,
+      before: b[bIdx].config || "", after: a[aIdx].config || "", paired_by_position: count[t] > 1 });
+    diffChildren(b[bIdx], a[aIdx], path + aIdx, rows);
+  });
+  bLeft.forEach(i => rows.push({ change: "removed", type: b[i] && b[i].type, before_path: path + i, before: (b[i] && b[i].config) || "" }));
+  aLeft.forEach(i => rows.push({ change: "added",   type: a[i] && a[i].type, after_path:  path + i, after:  (a[i] && a[i].config) || "" }));
+}
+
+function correctionDiff(before, after, path){
+  const b = Array.isArray(before) ? before : [], a = Array.isArray(after) ? after : [];
+  const p = path || "#";
+  const rows = [];
+  let bi = 0, ai = 0;
+  lcsAnchors(b, a).forEach(function(an){
+    const bIdx = an[0], aIdx = an[1];
+    if(bIdx > bi || aIdx > ai) pairSegment(b, bi, bIdx, a, ai, aIdx, p, rows);
+    rows.push({ change: "unchanged", type: b[bIdx].type, path: p + aIdx, config: b[bIdx].config || "" });
+    diffChildren(b[bIdx], a[aIdx], p + aIdx, rows);
+    bi = bIdx + 1; ai = aIdx + 1;
+  });
+  if(bi < b.length || ai < a.length) pairSegment(b, bi, b.length, a, ai, a.length, p, rows);
   return rows;
 }
 
@@ -6349,7 +6436,8 @@ function renderCorrectionPanel(step, autoIdx){
   }
 
   const rows = correctionDiff(a.nodes, p.automation.nodes);
-  const changed = rows.filter(r => r.kind !== "same").length;
+  const changed = rows.filter(r => r.change !== "unchanged").length;
+  const ambiguous = rows.some(r => r.paired_by_position);
   const rip = (p.ripples || []);
   const d = c.drift || {};
   const fc = d.flow_changes || [], unk = d.unknown_tags || [];
@@ -6360,10 +6448,20 @@ function renderCorrectionPanel(step, autoIdx){
     <div class="corr-box"><h5>Reasoning</h5><div class="corr-reason">${esc(p.reasoning)}</div>
       <div class="corr-heur">The agent's own reasoning, shown in full. Claims it makes about GHL, n8n or any third-party tool are its judgement, not verified fact &mdash; it has been wrong about product capabilities before. Check anything load-bearing before you approve.</div></div>
 
-    <div class="corr-box"><h5>Node changes (${changed} line${changed===1?"":"s"} differ)</h5>
-      <div class="corr-diff">${rows.map(r =>
-        `<div class="corr-d-${r.kind === "same" ? "same" : r.kind === "add" ? "add" : "del"}">${
-          r.kind === "add" ? "+ " : r.kind === "del" ? "&minus; " : "&nbsp;&nbsp;"}${esc(r.text)}</div>`).join("")}</div></div>
+    <div class="corr-box"><h5>Node changes (${changed} node${changed===1?"":"s"} differ)</h5>
+      <div class="corr-diff">${rows.map(function(r){
+        if(r.change === "unchanged")
+          return `<div class="corr-d-same">&nbsp;&nbsp;${esc(r.path)} ${esc(r.type)}: ${esc(r.config)}</div>`;
+        if(r.change === "added")
+          return `<div class="corr-d-add">+ ${esc(r.after_path)} ${esc(r.type)}: ${esc(r.after)}</div>`;
+        if(r.change === "removed")
+          return `<div class="corr-d-del">&minus; ${esc(r.before_path)} ${esc(r.type)}: ${esc(r.before)}</div>`;
+        const moved = r.before_path !== r.after_path ? ` ${esc(r.before_path)} &rarr; ${esc(r.after_path)}` : ` ${esc(r.before_path)}`;
+        return `<div class="corr-d-mod"><div class="corr-d-mod-tag">changed${moved} &middot; ${esc(r.type)}</div>`
+             + `<div class="corr-d-mod-b">${esc(r.before)}</div>`
+             + `<div class="corr-d-mod-a">${esc(r.after)}</div></div>`;
+      }).join("")}</div>
+      ${ambiguous ? `<div class="corr-heur">Multiple same-type changes between these points are paired by position, which may not reflect which change belongs to which node &mdash; check against the reasoning above.</div>` : ""}</div>
 
     ${rip.length ? `<div class="corr-box"><h5>Ripple effects in other automations (${rip.length})</h5>${
       rip.map(r => `<div class="corr-rip"><span class="corr-sev corr-sev-${esc((r.severity||"low").toLowerCase())}">${esc(r.severity||"low")}</span>${
