@@ -6175,7 +6175,7 @@ THE TAG-FLOW HINT IS APPROXIMATE AND YOU MUST NOT TRUST IT BLINDLY. It is derive
 // every sibling, manifest, deployment tiers — plus the mechanical hint. Deliberately
 // NOT given the live GHL workflow: v1 reasons about the stored spec, which is the
 // document the builder works from (see the DoD's deferred list).
-async function proposeCorrection(step, autoIdx, request){
+async function proposeCorrection(step, autoIdx, request, history){
   const target = (step.workflow || [])[autoIdx];
   const siblings = (step.workflow || [])
     .map((a, i) => i === autoIdx ? null : a)
@@ -6194,6 +6194,7 @@ async function proposeCorrection(step, autoIdx, request){
         : "")
     + tagFlowBlock(step) + `\n\nCorrect the automation now, or reply.`;
   return aiJsonWithRetry({ system, userMsg, max_tokens: 32000,
+    history,
     validate: validateCorrectionProposal, what: `correction (${step.title} / automation ${autoIdx + 1})`, tag: "correct",
     // Names BOTH shapes and states that refusing is correct. The shared default biases
     // toward producing a correction, which is wrong here: proven live 2026-08-19, when a
@@ -6207,13 +6208,36 @@ async function proposeCorrection(step, autoIdx, request){
 // the first BY CONSTRUCTION (single slot) — a proposal left standing against a
 // different automation is a wrong-write risk, not a UI annoyance.
 function askCorrect(stepId, autoIdx){
-  S.buildPlan.correct = { stepId, autoIdx: Number(autoIdx), phase: "input", input: "", proposal: null, drift: null, msg: "" };
+  S.buildPlan.correct = { stepId, autoIdx: Number(autoIdx), phase: "input", input: "", proposal: null, drift: null, msg: "",
+    // The conversation thread (Order 16.10). `text` is the MODEL-FACING content, single
+    // source: for an agent turn that is the summary plus the serialised diff. The panel
+    // renders the summary line with the diff behind a toggle, so what is shown and what
+    // is sent can never drift apart. Session-only — a reload ends the thread.
+    messages: [] };
   renderAutomation();
+}
+
+// Append a turn. `at` is stamped HERE rather than at write time so the logged exchange
+// preserves the real sequence even when a correction is applied minutes after the
+// conversation ended.
+function corrSay(role, text){
+  const c = S.buildPlan.correct;
+  if(c && Array.isArray(c.messages)) c.messages.push({ role, text, at: new Date().toISOString() });
 }
 function cancelCorrect(){ S.buildPlan.correct = null; renderAutomation(); }
 // No re-render: renderAutomation() rebuilds the textarea and would drop the caret.
 function corrField(v){ const c = S.buildPlan.correct; if(c) c.input = v; }
-function corrBack(){ const c = S.buildPlan.correct; if(!c || c.busy) return; c.phase = "input"; c.proposal = null; c.drift = null; c.msg = ""; renderAutomation(); }
+// REFINE, not discard (Order 16.10). Previously this nulled the proposal and returned to
+// an empty composer — the operator lost the agent's work and started over. Now the
+// proposal is KEPT: it stays on screen as the current state of the conversation, the
+// composer reopens beneath it, and the next submit carries the thread as history.
+// `input` is cleared but `messages` is NOT: the thread is the point.
+function corrBack(){
+  const c = S.buildPlan.correct;
+  if(!c || c.busy) return;
+  c.phase = "input"; c.input = ""; c.msg = "";
+  renderAutomation();
+}
 
 async function submitCorrection(){
   const c = S.buildPlan.correct;
@@ -6234,15 +6258,25 @@ async function submitCorrection(){
   // the flag still false is the exact window that produced three concurrent writes in
   // Order 16.7. Every path out of here clears it.
   c.busy = true; c.msg = ""; renderAutomation();
+
+  // The operator's turn goes in BEFORE the call: chatHistoryForAi drops the LAST message
+  // because it is passed separately as userMsg, so the thread must already contain it or
+  // the PREVIOUS turn gets dropped instead — a silent one-message-per-round memory leak
+  // that would read as "the model forgets" rather than as a bug. Same ordering as the
+  // setup chat. A failed call leaves this turn in the thread on purpose: the operator did
+  // say it, and erasing a real turn from the record is worse than a possible duplicate.
+  corrSay("user", request);
+
   let proposal;
   try{
-    proposal = await proposeCorrection(step, c.autoIdx, request);
+    proposal = await proposeCorrection(step, c.autoIdx, request, chatHistoryForAi(c.messages));
   }catch(e){
     return fail("The correction couldn't be produced: " + e.message);
   }
   const cur = owns();
   if(!cur) return;   // operator moved on mid-call — discard this result
   if(proposal.action === "reply"){
+    corrSay("agent", proposal.message);   // a refusal is history too — a follow-up can address it
     cur.busy = false; cur.msg = ""; cur.proposal = { action: "reply", message: proposal.message };
     cur.phase = "review"; renderAutomation(); return;
   }
@@ -6252,6 +6286,13 @@ async function submitCorrection(){
   }catch(e){
     return fail("The proposed correction was rejected: " + e.message);
   }
+  // The agent's turn is the summary PLUS the serialised diff — Option C. The diff is
+  // computed against the STORED automation, so across turns it is always the CUMULATIVE
+  // change, never the last delta. Stored + this diff = the full proposal, which is why
+  // the proposal itself never needs echoing.
+  corrSay("agent", proposal.summary + "\n" + correctionDiffForModel(
+    correctionDiff((step.workflow || [])[c.autoIdx].nodes, proposal.automation.nodes)));
+
   cur.busy = false; cur.proposal = proposal; cur.drift = drift; cur.phase = "review"; cur.msg = "";
   renderAutomation();
 }
@@ -6287,9 +6328,23 @@ async function confirmCorrection(){
   const entry = {
     at: new Date().toISOString(), operator_id: S.user.id,
     automation_index: c.autoIdx, automation_name: p.automation.name || null,
-    request: String(c.input || "").trim(), summary: p.summary, reasoning: p.reasoning,
+    // The ORIGINATING ask — the FIRST user turn, not the last. On a multi-turn correction
+    // the final `input` is a refinement ("also do n13"), which read alone would misdescribe
+    // what the correction was for. Falls back to `input` for a single-turn correction,
+    // where the first user turn IS the only one, so existing behaviour is preserved.
+    request: (Array.isArray(c.messages) && c.messages.find(m => m.role === "user") || {}).text
+             || String(c.input || "").trim(),
+    summary: p.summary, reasoning: p.reasoning,
     ripples: p.ripples || [], drift,
     nodes_before: step.workflow[c.autoIdx].nodes || null, nodes_after: p.automation.nodes || null,
+    // The WHOLE conversation, not just the turn that happened to land (Order 16.10).
+    // Additive: `request` above still holds the originating ask, so anything already
+    // reading it keeps working. Logged because this feature records nodes_before AND
+    // after, the reasoning, the ripples and the drift — the exchange is the one place it
+    // would otherwise stop. BUG_LEDGER #22 is the concrete case: when the operator
+    // corrects the model mid-conversation, that exchange IS the audit trail for a
+    // confident falsehood, and dropping it discards the evidence.
+    exchange: Array.isArray(c.messages) ? c.messages.slice() : [],
   };
   dep.corrections = [...(Array.isArray(dep.corrections) ? dep.corrections : []), entry];
   dep.changes_note = [dep.changes_note, `[correction ${entry.at.slice(0,10)}] ${p.summary}`].filter(Boolean).join("\n");
@@ -6398,6 +6453,33 @@ function correctionDiff(before, after, path){
   });
   if(bi < b.length || ai < a.length) pairSegment(b, bi, b.length, a, ai, a.length, p, rows);
   return rows;
+}
+
+// Serialise a diff as MODEL INPUT (Order 16.10 multi-turn). ONLY non-"unchanged" rows.
+//
+// THE RECONSTRUCTION PROPERTY is why this is cheap and still complete: every turn's
+// userMsg already re-sends the STORED automation in full (~5k tokens, unavoidable under
+// any history strategy), so STORED + THIS DIFF = the full proposal. Echoing unchanged
+// nodes would pay that ~5k a second time, per turn, to repeat what the model already has
+// in front of it. Measured on the real 3-of-23-node correction: ~511 tokens.
+//
+// Paths come through verbatim because they are how the model and the operator refer to
+// the same node — "#8", "#7.yes.1" — and a follow-up turn ("also do that to the day-7
+// one") is only answerable if both sides can name nodes the same way.
+//
+// The paired-by-position caveat is carried INTO the prompt, not just shown in the panel:
+// if the operator can be misled about which node a change belongs to, so can the model.
+function correctionDiffForModel(rows){
+  const lines = (rows || []).filter(r => r && r.change !== "unchanged").map(function(r){
+    if(r.change === "added")   return `ADDED   ${r.after_path} (${r.type}): ${r.after}`;
+    if(r.change === "removed") return `REMOVED ${r.before_path} (${r.type}): ${r.before}`;
+    const moved = r.before_path !== r.after_path ? ` -> ${r.after_path}` : "";
+    return `CHANGED ${r.before_path}${moved} (${r.type})\n  BEFORE: ${r.before}\n  AFTER:  ${r.after}`
+      + (r.paired_by_position ? `\n  (paired by position — this may not be the node you think it is)` : "");
+  });
+  // Empty means empty: an "no changes" scaffold would read to the model as a turn that
+  // proposed something and is worse than saying nothing.
+  return lines.length ? lines.join("\n") : "";
 }
 
 function renderCorrectionPanel(step, autoIdx){
@@ -7110,8 +7192,22 @@ function chatSetupContext(){
    messages (Cancel right after a proposal pushes two agent turns in a row), it
    requires the first message to be user, and unbounded history grows the bill
    every turn. The CURRENT user message is excluded — aiJsonWithRetry appends it. */
-function chatHistoryForAi(){
-  const recent = S.setup.chat.messages.slice(0, -1).slice(-10)
+// Shared by the Setup Agent chat and (Order 16.10) the correction chat. The messages
+// array is a PARAMETER with the setup chat's own as the default, so that caller is
+// byte-identically unchanged — same additive pattern as retryNudge and
+// renderChecklistItems' second argument.
+//
+// Four jobs, all of which corrections need identically: drop the CURRENT turn (it is
+// passed separately as userMsg and would otherwise be duplicated), cap at 10, force a
+// leading `user` turn, and merge consecutive same-role turns — the last two because the
+// API requires a user-first, strictly alternating sequence.
+//
+// Array.isArray, NOT `messages ||`: on the first correction turn the array is EMPTY, and
+// a falsy fallback would feed SETUP-CHAT history into a correction prompt. Silent wrong
+// context, not a crash.
+function chatHistoryForAi(messages){
+  const src = Array.isArray(messages) ? messages : S.setup.chat.messages;
+  const recent = src.slice(0, -1).slice(-10)
     .map(m => ({ role: m.role === "user" ? "user" : "assistant", content: m.text }));
   while(recent.length && recent[0].role !== "user") recent.shift();
   return recent.reduce((acc, m) => {
