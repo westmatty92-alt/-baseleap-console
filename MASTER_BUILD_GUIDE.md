@@ -724,3 +724,257 @@ Map: `docs/planning/order_16_7_catalog_graduation.svg`/`.png`.
 - Deepening an existing thin engine (shape b); an edit/un-graduate action (there is no undo —
   a wrong row needs manual SQL); deriving `KNOWN_ENGINE_KEYS` from the DB; cross-tab races,
   which no client-side flag can close and `UNIQUE(engine_key)` already handles.
+
+## Order 16.6 — correction chat (Aug 19 2026)
+
+A per-automation panel in the engine detail view. The operator describes a problem in
+plain language; the agent reasons about it against the FULL stored engine plus a
+mechanically-derived tag-flow hint, and proposes a confirm-gated edit to ONE automation.
+`deriveTagFlow`/`tagFlowBlock`/`correctionsSinceDeploy`/`validateCorrectionProposal`/
+`hardenCorrection`/`proposeCorrection`/`confirmCorrection`/`renderCorrectionPanel`,
+`.corr-*`, index.html. **No migration.**
+Map: `docs/planning/order_16_6_correction_chat.svg`/`.png`.
+
+- **This makes an AI-designed workflow editable after generation.** `build_steps.workflow`
+  was write-once at plan generation until now. Deliberate and governed, not an exception —
+  confirmed as a permanent capability of the system.
+- **REASONS ACROSS ALL AUTOMATIONS, WRITES TO EXACTLY ONE.** The core v1 decision.
+  Cross-automation consequences are REPORTED in `ripples[]` for a human to act on, never
+  auto-applied; a correction that silently edited a sibling would be the widest blast
+  radius in the app.
+- **Why no dependency model was built first.** Nothing in the codebase models node
+  relationships: `config` is free prose, node `id` is stored but **read by nothing**
+  (verified — every `.id ===` in the file is clients/gaps/plans), connectivity is array
+  order plus branch nesting, the guard fork is synthesized at render from
+  `config.split("→")`, and **no validator cross-checks the manifest against what the nodes
+  actually do**. An explicit dependency schema was considered and REJECTED: it would have
+  to be derived from the same prose, so it inherits the same imprecision with added false
+  confidence, plus a migration and a backfill.
+- **`deriveTagFlow` recovers the graph the data already implies.** The manifest supplies a
+  CLOSED VOCABULARY, which makes matching it against config prose tractable rather than
+  open-ended NLP. On real position 9 it recovers all three cross-automation tag edges.
+  Fed to the AI as an explicitly APPROXIMATE hint whose failure modes the prompt names:
+  templated variants (`'chase-active-{{invoice_id}}'` substring-matches `chase-active`
+  while arguably being a different tag), and blindness to wait durations, the goal event,
+  merge fields, and notification recipients. **Its "readers" are closer to REFERENCES than
+  to reads-in-a-condition** — a purely descriptive prose mention in an `end` node counts.
+  That is a known false-positive class, tolerable only because the hint is labelled and
+  the drift it feeds is surfaced, never gating.
+- **ONE derivation, not two.** Drift runs `deriveTagFlow` before and after and diffs,
+  instead of reimplementing vocabulary matching inline. That preserves the write/read
+  distinction a flat text diff loses — losing a tag's last WRITER while readers remain is
+  a broken dependency; losing a reader usually is not — and keeps the drift check and the
+  AI's hint provably consistent because they are the same traversal. Detecting NEWLY
+  INVENTED tags is a genuinely different question and stays open extraction, because
+  `deriveTagFlow` iterates the KNOWN vocabulary and is blind to an undeclared tag by
+  construction. That extractor is a LABELLED HEURISTIC: it wants quoted hyphenated
+  strings, so it misses other conventions (`appt_booked`) and can flag non-tags.
+- **Validation chain:** `JSON.parse` → `validateCorrectionProposal` (shape, discriminated
+  union) → **`validateNodes` + `validateAutomationTests` UNMODIFIED**, the same validators
+  gating formulate → `hardenCorrection`. The last is correction-only and additive on
+  purpose; folding it in would change formulate's behavior. It closes what the shared
+  validators were never written to check, because they compare nothing against an
+  ORIGINAL: **containment** (a proposal carrying a workflow array is rejected outright),
+  **identity** (no rename, no trigger-type change — that makes it a different automation
+  and would orphan the tests and the ledger), and **tag drift** (surfaced, never blocking;
+  the manifest is NOT updated, because setup steps may already have run against the old one).
+- **Discriminated union** — `propose` or `reply` — so refusing is first-class. A `reply`
+  STOPS BEFORE the diff is computed, making an automation attached to a hedging reply
+  unreachable by construction. Same doctrine as `proposeChatManifest`.
+- **Locked to one open correction**, single-slot by construction. In-flight guards are
+  IDENTITY-CHECKED: a late failure from automation A can no longer stamp its error, or
+  clear `busy`, on automation B after the operator moved on. `busy:true` before the first
+  await, per the Order 16.7 defect.
+- **Ledger staleness is DERIVED.** `build_steps` has no `updated_at`, so the correction
+  log's own timestamps are the clock — `correctionsSinceDeploy` compares `deployed_at`
+  against them and the `deployed_systems` row renders "corrected since deploy · re-review".
+  No column, same doctrine as `loadGraduatedFrom`.
+- **The log lives at `deployment.corrections[]`** — no migration, and Order 16.7's
+  graduation whitelist (`GRAD_DEPLOY_KEYS = tiers, spec_extras`) already excludes it BY
+  DEFAULT, so a per-client correction history can never leak into a catalog template. That
+  whitelist was written for exactly this case.
+- **Placement** is `renderEngineDetail`'s Workflow card, below the node graph and Tests —
+  the spot index.html reserved in a comment for "the future per-automation Refine /
+  discuss chat". NOT `renderAutomationBody`, which renders node ROWS, not a graph.
+
+### Live verification (Aug 19 2026) — what is PROVEN
+
+A real correction on plan `de43a1b1` position 9, automation 0, via the preview deployment.
+Request: *"the day-3 reminder still fires after the customer has paid"*.
+
+- **The write.** `deployment.corrections[]` = 1 entry at `2026-08-19T15:17:48.226Z`,
+  `automation_index: 0`, the operator's request stored verbatim, `nodes_before`/
+  `nodes_after` both 23 (original preserved in full), `drift` empty in both fields,
+  `changes_note` appended with the dated line.
+- **Containment held.** Exactly `n9`, `n13`, `n17` changed to dual-condition guards;
+  **`n2` unchanged** — correctly left alone, being the re-entry guard rather than a payment
+  check. The sibling automation was not touched.
+- **One clean PATCH.** `OPTIONS 200` then `PATCH 200` on
+  `/rest/v1/build_steps?id=eq.ac05cd7f…&select=*`, 274ms apart. No retries, no duplicates,
+  no errors. The busy-before-await guard held.
+- **THE REASONING IS GENUINE, and this is the result that mattered** — the DoD warned that
+  vacuous reasoning passing validation would be the thin-test bug class in a new place.
+  Four specifics, all checkable in the stored log:
+  1. It **cited the sibling's node `p5` by name** as the mechanism that clears
+     `QB Invoice ID Being Chased`, and `p3` as the tag writer — it read the sibling, it did
+     not gesture at it.
+  2. It **diagnosed the actual mechanism rather than restating the symptom**: `n9`'s
+     existing tag check looks sufficient on paper, but the tag is written by a DIFFERENT
+     workflow, so polling/queue lag leaves it absent when `n9` evaluates. It also correctly
+     noted the goal event only interrupts inside a Wait.
+  3. It **extended the fix to `n13` and `n17` unprompted, with an explicit scope
+     justification** — "this is not scope creep, it is the same fix applied to the same
+     pattern" — having spotted the same latent vulnerability in nodes the operator never
+     mentioned.
+  4. Its ripple **named a real coupling its own change created**: CONDITION B depends on
+     `p5` clearing the field to blank, so "if p5 is ever changed to write a placeholder
+     value instead of clearing the field, the secondary guard condition silently stops
+     working." It reported this while correctly concluding the sibling needed no edit.
+- **61/61 harness assertions**, functions extracted from shipped source by brace-matching,
+  against the REAL position-7 (5 automations) and position-9 (2 automations) rows. Two
+  harness bugs found and fixed, both mine rather than the product's: the extractor took a
+  default parameter's object literal as a function body and truncated `countNodeTypes` to
+  its signature; and two assertions asserted the wrong outcome — stripping a tag from one
+  automation does NOT lose its last reader, because the sibling's `end` node mentions it in
+  prose, so the correct detection is `lost_cross_automation_link`.
+- `lost_last_reader` / `lost_last_writer` are covered by a **SYNTHETIC fixture, labelled as
+  such in the output** — neither can be produced from the real engines, where every declared
+  tag is referenced in more than one automation.
+
+**Correction to `6db6e8b`'s commit message.** That commit says `NOT VERIFIED LIVE`, which
+was true when written and is now false. The write path, containment, the single clean
+PATCH and the reasoning quality were all verified live on 2026-08-19, and the refusal path
+was exercised afterwards. The message is left as-is rather than rewritten — history stays
+honest about what was known at the time — and this paragraph is the correction of record.
+
+### The refusal path — exercised, and it failed twice before it worked
+
+Prompt: *"change the trigger so this fires on a schedule instead of the webhook"* on
+position 9 automation 0 — a request `CORRECTION_CONTRACT_PROMPT` explicitly says must be
+answered with `reply`. Three distinct outcomes across runs, each a different finding.
+
+- **Two runs failed with "invalid JSON" on both the attempt and the retry.** The captured
+  output shows why, and it is not a formatting fault: the model began a `propose`,
+  reasoned its way INTO the violation, caught itself mid-`reasoning`, and — already
+  committed to that shape — could not retract. It closed the object out with
+  `"automation":{}`, wrote prose quoting the rule back at itself, then emitted a second,
+  correct `{"action":"reply",...}`. TWO complete top-level objects; `JSON.parse` rejected
+  the concatenation and discarded the correct answer sitting at the end of it. Fixed by
+  `parseAiJson` (468e10b).
+- **One run returned a complete, valid `propose` changing `trigger.type` to Scheduler**,
+  reasoning that `never_touch` was about not regenerating an existing webhook URL rather
+  than prohibiting a trigger change when explicitly asked. **This is the DoD's predicted
+  failure mode — "a plausible correction to a request it should decline" — confirmed
+  real.** `hardenCorrection` rejected it in `submitCorrection`, BEFORE the proposal was
+  stored to state, so no review panel and no Apply button ever rendered. Verified against
+  the database and the API logs: `workflow[0].trigger.type` is still `"Inbound Webhook"`,
+  `corrections[]` is still 1 entry, and exactly one PATCH exists in the window — the
+  earlier, unrelated correction. **Nothing was written.**
+- **After the fixes, prompt 2 succeeded as a clean, well-reasoned refusal.**
+
+**What that sequence proves, and it is the most important line in this section: identity
+is enforced in CODE, not in the prompt.** The contract *told* the model to reply. It
+didn't. The mechanical guard caught what the model's own judgement did not.
+
+**And the successful refusal was still wrong about a fact.** Its reasoning asserted that
+GHL has no native QuickBooks connector — false, and documented as false in this repo's own
+`ghl-automation` skill. Right answer, wrong reason: the shape that passes every mechanical
+check. See BUG_LEDGER #22.
+
+### The in-scope control — passed
+
+*"Make the day-14 escalation notify a different person"* produced a normal proposal with a
+diff and an Apply button. This matters as much as the refusal: it confirms that four
+commits of tightening did not produce over-refusal. A refusal here would have been a
+regression, not a success.
+
+### Still not exercised
+
+- **The ledger staleness chip.** Position 9 is not in `deployed_systems`; position 7 is.
+  Correcting position 7 would exercise it.
+- **Which `parseAiJson` path the successful refusal took.** The function had no logging
+  when that run happened, so a clean whole-string parse and a recovered two-object
+  response were indistinguishable — both return silently. Logging was added afterwards
+  (35f5ae3); the question is answerable on the next run, not retrospectively.
+- **The moved-path indicator** in the rewritten diff. Both visual checks modified nodes in
+  place, so `before_path` always equalled `after_path`. Covered by assertion, not by eye.
+
+### Follow-up fixes — four, all found by using the feature rather than by testing it
+
+Each shipped as its own commit so it can be reverted independently.
+
+**1 · Per-caller retry nudge (`f7ace34`).** `aiJsonWithRetry`'s retry instruction was
+written for the propose contract and is wrong for any caller whose contract permits
+refusing: on a violation it appended *"Respond with the complete corrected JSON only"* —
+telling a model that had just declined to go produce the thing it declined. Fixed with an
+optional `retryNudge` whose **default is the original string byte-identical**, so
+formulate and parameterize are provably unchanged (asserted, not assumed). Correction and
+setup chat pass their own, naming both shapes and stating that refusing is correct.
+
+The setup-chat half is **INFERRED, NOT OBSERVED** — same shared function, same
+`propose|reply` union, so the same defect should apply, but that path has never been seen
+to fail this way. It writes to real GHL sub-accounts, which is why the inference was worth
+acting on. The code comment says so in those words.
+
+**This fix did not solve the reported failure.** The nudge only applies to attempt 2, and
+attempt 1 was already unparseable. It was a real defect found while investigating a
+different one.
+
+**2 · `parseAiJson` (`468e10b`), and its observability (`35f5ae3`).** The actual cause of
+the "invalid JSON" failures — two complete top-level objects in one response, from the
+model self-correcting mid-generation. The whole-string `JSON.parse` is tried first and is
+unchanged, so nothing that parses today can behave differently; only where we throw today
+does the scan run, collecting balanced `{...}` regions and taking **the last that parses**.
+
+Two details are load-bearing and both were caught only because the real capture was pasted
+rather than reconstructed. **String tracking is scoped to inside a candidate object** —
+between objects the model writes prose quoting its own rules back at itself, and a
+globally-tracked string flag toggles on those prose quotes; an odd number of them would
+silently swallow the following object. In the real capture the count happened to be even,
+so the first draft would have worked **by luck**. And braces appear inside JSON string
+values throughout this data (`{{contact.first_name}}`, `{{invoice_id}}`) because a
+correction echoes node configs back verbatim, so a depth counter that ignores string
+literals mis-balances on every one.
+
+`35f5ae3` added the `console.info` on the fallback branch: without it a clean parse and a
+recovered response were indistinguishable, and the question the fix exists to answer was
+unanswerable.
+
+**3 · Routing rules are not capability claims (`bea35f0`, BUG_LEDGER #22).** The refusal
+was correct and its reasoning was factually wrong: it asserted GHL has no native
+QuickBooks connector. `GHL_GRAMMAR_PROMPT` said *"QuickBooks and deep external-tool data =
+n8n"* — correct **routing** guidance, which the model restated as a claim about what the
+product lacks.
+
+The nuance that would have blocked it exists in `.claude/skills/ghl-automation/SKILL.md`
+(*"GHL's entire native QB integration is one automation: review-request after first invoice
+paid"*) and **never reaches the model**: `grep -c "entire native QB integration"
+index.html` returns 0. Skill files are read while BUILDING; runtime prompts are hand-written
+summaries. **Every prompt is a lossy copy of curated documentation sitting one directory
+away** — this repairs one line of that gap, it does not close it.
+
+Two clauses added; the general one matters more than the QuickBooks one, because the same
+conversion was available for every other external tool in that sentence. Routing is
+unchanged. **NOT VERIFIED** — prompt behaviour cannot be regression-tested offline.
+
+Separately, the panel's Reasoning box now carries a standing caution that claims about
+GHL/n8n/third-party tools are the agent's judgement and have been wrong before. **Nothing
+validates factual claims inside `reasoning`, and reasoning is the field the operator
+trusts.**
+
+**4 · `correctionDiff` rewrite (`cd06e4d`, BUG_LEDGER #23).** A correction inside a
+condition's `yes`/`no` branch was **invisible** in the panel — the diff walked the top
+level only, so the parent compared equal and rendered "unchanged". Never observed in
+production; found by reading the code. Live rather than theoretical: 6 condition nodes
+carry `yes`/`no` across the 195 top-level nodes in the three stored plans.
+
+Rewritten with LCS anchors, same-type pairing between anchors, and branch recursion with
+path descent. Scoped for Order 16.10's multi-turn work — the diff has to carry node
+identity to be usable as model input — but shipped ahead of it as a standalone bug fix.
+
+### Deferred, not dropped
+
+Live GHL workflow reads (a read scope exists, but whether the payload carries node
+structure is UNESTABLISHED — so drift against the real canvas is undetectable); sibling
+writes; manifest updates; an undo button (`nodes_before` is logged, a revert is manual SQL);
+correction of catalog engines; test-matrix regeneration.

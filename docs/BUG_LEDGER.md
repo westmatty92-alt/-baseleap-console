@@ -4,6 +4,42 @@ Numbered incidents and the lesson each one bought. Numbering continues the bug
 history in the Notion Console spec; entries land here when the lesson should sit
 next to the code. Newest first.
 
+## Bug #23 — a correction inside a condition's branch was invisible in the panel the operator approves from (August 19 2026)
+
+**Symptom:** none observed in production — found by reading the code while scoping Order 16.10. `correctionDiff` walked the top-level `nodes` array only, with no recursion into `yes` / `no` / `branches[].to`. A correction that modified a node inside a condition branch left the parent node comparing equal on `type: config`, so the row rendered **`same`** and the change did not appear at all. The operator would have approved an edit they could not see.
+
+**Root cause:** the diff was written for display against the shape corrections had produced so far — flat sequences — and nothing in the codebase forced the question of nesting. `validateNodes` recurses into branches; `renderNodeGraph` recurses into branches; `correctionDiff` did not, and no test covered it because the fixtures were flat too.
+
+It is live, not theoretical: **6 `condition` nodes carrying `yes`/`no` across the 195 top-level nodes** in the three stored plans. (`branches[]` is unused so far and is handled anyway, since the traversal must cover it.)
+
+**Fix:** `correctionDiff` rewritten — LCS anchoring on `type`+`config`, a second pass pairing same-type nodes between anchors, and recursion into `yes`/`no`/`branches[].to` with path descent (`#7.yes.1`). Rows now carry paired `before_path`/`after_path` rather than a single index, because insertion shifts positions. Shipped as its own commit ahead of the multi-turn work it was scoped for, so the fix is revertible independently of the feature.
+
+**The lesson:** when one function in a family recurses into a nested structure, check the others. `validateNodes` and `renderNodeGraph` both walked branches; `correctionDiff` was written later, against the same data, and silently didn't. Nothing failed — it under-reported, which is the failure mode that doesn't announce itself.
+
+Second: **a display-only function became a correctness surface without being re-examined.** `correctionDiff` was "just for rendering" until the operator started approving production workflow edits from its output. The moment a display function's output is what someone *decides* from, its gaps stop being cosmetic.
+
+## Bug #22 — the correction chat stated a confident falsehood about GHL's capabilities inside its reasoning (August 19 2026)
+
+**Symptom:** asked to change an automation's trigger type, the correction chat correctly refused — and in the `reasoning` the operator reads to judge that refusal, asserted that *GHL has no native QuickBooks connector*. That is false. It was caught by Matthew from his own product knowledge, not by any validator, and not by anything in the response's shape. Every mechanical check passed: the JSON parsed, `validateCorrectionProposal` accepted it, and there was no proposal for `hardenCorrection` to reject.
+
+**Root cause:** two layers, and only the second is really about QuickBooks.
+
+`GHL_GRAMMAR_PROMPT` — which `formulateEngine`, `generatePlanDraft` and `proposeCorrection` all receive — contained *"Stripe, FB/IG leads, GBP reviews = native; QuickBooks and deep external-tool data = n8n."* That is correct **routing** guidance: send QuickBooks work over the n8n bridge. The model converted a rule about where work should go into a claim about what the product lacks. The instruction was right; the restatement of it was not.
+
+The nuance that would have blocked the conversion exists in this repo and never reaches the model. `.claude/skills/ghl-automation/SKILL.md` says plainly: *"GHL's entire native QB integration is one automation: review-request after first invoice paid."* But `grep -c "entire native QB integration" index.html` returns **0**. Skill files are read by Claude in-session while building; the runtime prompts in `index.html` are hand-written summaries of that knowledge. Every prompt is therefore a lossy copy of curated documentation sitting one directory away, and the model only ever knows the summary.
+
+**Fix:** two clauses added to the boundary paragraph in `GHL_GRAMMAR_PROMPT`, committed separately from the rest of the Order 16.6 follow-ups because it changes behaviour for engine *design*, not just corrections, and should be independently revertible. The first is general — routing rules are not capability claims, never restate one as "GHL cannot do X". The second supplies the missing fact, lifted verbatim in substance from the skill. Routing is unchanged: QuickBooks work still goes to the bridge.
+
+Separately, `renderCorrectionPanel`'s reasoning box now carries a standing caution in the same register as the tag-drift heuristic label — that claims about GHL, n8n or third-party tools are the agent's judgement rather than verified fact, and have been wrong before.
+
+**The lesson:** three, and the first is the one that generalises.
+
+1. **A model will restate a routing rule as a capability claim.** "X routes to n8n" becomes "GHL cannot do X" — confidently, in prose, where it reads as fact. When a prompt asserts where work goes, say explicitly that it is a routing decision and not a statement about what the product supports. The same conversion was available for every other external tool in that same sentence.
+
+2. **Curated knowledge in `.claude/skills/` does not reach runtime.** It informs whoever writes the prompt, once, and then the prompt is what the model knows forever. When a prompt line summarises a skill, the summary is the contract — and a summary that drops a caveat teaches the caveat away.
+
+3. **Nothing validates factual claims inside `reasoning`, and reasoning is the field the operator trusts.** `validateNodes`, `validateAutomationTests` and `hardenCorrection` all check structure; a false sentence passes every one. This failure also has a shape worth naming on its own: **right answer, wrong reason.** The refusal was correct and the guard would have held regardless — which is exactly why nothing flagged it, and why an operator skimming for the verdict rather than the argument would have absorbed the falsehood as fact. Where output is unvalidated and trust-bearing, label it as such.
+
 ## Bug #21 — Setup Agent evidence display was load-time-only: a completed run never updated the screen without a reload (August 6 2026)
 
 **Symptom:** the operator ran the Setup Agent (a real, successful 32-item run against a live client's GHL account) with the build plan folder already open, expecting the plan's setup steps and evidence display to update. Nothing changed on screen.

@@ -1,0 +1,194 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1340" height="1080" viewBox="0 0 1340 1080" font-family="Segoe UI, system-ui, sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#5B6B73"/>
+    </marker>
+    <marker id="av" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#00A878"/>
+    </marker>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#E24B4A"/>
+    </marker>
+  </defs>
+
+  <rect width="1340" height="1080" fill="#F4F5F0"/>
+  <text x="40" y="46" font-size="21" font-weight="700" fill="#0D1F2D">Order 16.6 — correction chat · reasons across all automations, writes to exactly one</text>
+  <text x="40" y="70" font-size="13" fill="#5B6B73">Solid = existed before · Dashed green = built this cycle · Red = the boundary that holds · Dotted = deferred · index.html, no migration</text>
+
+  <!-- ============ COLUMN 1 — what the AI receives ============ -->
+  <text x="40" y="112" font-size="11" font-weight="700" fill="#5B6B73" letter-spacing="1">WHAT THE AGENT RECEIVES</text>
+
+  <rect x="40" y="126" width="300" height="128" rx="8" fill="#FFFFFF" stroke="#E2E6E3"/>
+  <text x="56" y="148" font-size="13" font-weight="600" fill="#0D1F2D">The whole engine, not a fragment</text>
+  <text x="56" y="169" font-size="11" fill="#5B6B73">the target automation, in full</text>
+  <text x="56" y="186" font-size="11" fill="#5B6B73">EVERY sibling automation, in full</text>
+  <text x="56" y="203" font-size="11" fill="#5B6B73">manifest · deployment tiers</text>
+  <text x="56" y="220" font-size="11" fill="#5B6B73">the operator's plain-language problem</text>
+  <text x="56" y="243" font-size="11" font-style="italic" fill="#00A878">siblings are READ-ONLY context</text>
+
+  <rect x="40" y="272" width="300" height="152" rx="8" fill="#FFFFFF" stroke="#00A878" stroke-dasharray="5 3"/>
+  <text x="56" y="294" font-size="13" font-weight="600" fill="#0D1F2D">deriveTagFlow — the mechanical hint</text>
+  <text x="56" y="315" font-size="11" fill="#5B6B73">manifest = a CLOSED VOCABULARY, matched</text>
+  <text x="56" y="332" font-size="11" fill="#5B6B73">against node config prose → who writes,</text>
+  <text x="56" y="349" font-size="11" fill="#5B6B73">who reads, which automations it spans</text>
+  <text x="56" y="371" font-size="11" font-style="italic" fill="#00A878">real pos-9: recovers all 3 cross-auto edges</text>
+  <text x="56" y="393" font-size="11" font-weight="700" fill="#E24B4A">LABELLED APPROXIMATE TO THE AI</text>
+  <text x="56" y="411" font-size="10.5" fill="#5B6B73">the prompt names its own failure modes</text>
+
+  <rect x="40" y="442" width="300" height="150" rx="8" fill="#FFFFFF" stroke="#E24B4A" stroke-dasharray="4 3"/>
+  <text x="56" y="464" font-size="12" font-weight="700" fill="#E24B4A">HOW THE HINT IS WRONG</text>
+  <text x="56" y="485" font-size="10.5" fill="#5B6B73">'chase-active-{{invoice_id}}' substring-</text>
+  <text x="56" y="501" font-size="10.5" fill="#5B6B73">matches 'chase-active' — arguably a</text>
+  <text x="56" y="517" font-size="10.5" fill="#5B6B73">DIFFERENT per-invoice tag</text>
+  <text x="56" y="537" font-size="10.5" fill="#5B6B73">blind to: wait durations · the goal event</text>
+  <text x="56" y="553" font-size="10.5" fill="#5B6B73">merge fields · who a notification reaches</text>
+  <text x="56" y="575" font-size="10.5" font-style="italic" fill="#5B6B73">"readers" = references, not reads-in-a-guard</text>
+
+  <!-- ============ COLUMN 2 — the gate ============ -->
+  <text x="390" y="112" font-size="11" font-weight="700" fill="#5B6B73" letter-spacing="1">VALIDATION CHAIN — ALL FOUR MUST PASS</text>
+
+  <rect x="390" y="126" width="336" height="70" rx="8" fill="#FFFFFF" stroke="#E2E6E3"/>
+  <text x="406" y="148" font-size="12" font-weight="600" fill="#0D1F2D">1 · JSON.parse → validateCorrectionProposal</text>
+  <text x="406" y="168" font-size="10.5" fill="#5B6B73">DISCRIMINATED UNION: propose | reply</text>
+  <text x="406" y="186" font-size="10.5" font-style="italic" fill="#00A878">a reply STOPS BEFORE the diff is computed</text>
+
+  <rect x="390" y="208" width="336" height="74" rx="8" fill="#FFFFFF" stroke="#E2E6E3"/>
+  <text x="406" y="230" font-size="12" font-weight="600" fill="#0D1F2D">2 · validateNodes + validateAutomationTests</text>
+  <text x="406" y="250" font-size="11" font-weight="700" fill="#00A878">UNMODIFIED — the same validators</text>
+  <text x="406" y="266" font-size="10.5" fill="#5B6B73">that gate formulate. Not forked, not relaxed.</text>
+
+  <rect x="390" y="294" width="336" height="186" rx="8" fill="#FFFFFF" stroke="#00A878" stroke-dasharray="5 3"/>
+  <text x="406" y="316" font-size="12" font-weight="600" fill="#0D1F2D">3 · hardenCorrection — correction-only</text>
+  <text x="406" y="334" font-size="10.5" fill="#5B6B73">additive on purpose: folding it into the shared</text>
+  <text x="406" y="350" font-size="10.5" fill="#5B6B73">validators would change formulate's behavior.</text>
+  <text x="406" y="372" font-size="11" font-weight="700" fill="#E24B4A">CONTAINMENT</text>
+  <text x="406" y="389" font-size="10.5" fill="#5B6B73">a workflow/automations array → REJECTED</text>
+  <text x="406" y="410" font-size="11" font-weight="700" fill="#E24B4A">IDENTITY</text>
+  <text x="406" y="427" font-size="10.5" fill="#5B6B73">no rename, no trigger change — that makes it</text>
+  <text x="406" y="443" font-size="10.5" fill="#5B6B73">a DIFFERENT automation</text>
+  <text x="406" y="464" font-size="11" font-weight="700" fill="#EF9F27">TAG DRIFT — surfaced, never blocking</text>
+
+  <rect x="390" y="494" width="336" height="120" rx="8" fill="#FFFFFF" stroke="#00A878" stroke-dasharray="5 3"/>
+  <text x="406" y="516" font-size="12" font-weight="600" fill="#0D1F2D">Drift: ONE derivation, not two</text>
+  <text x="406" y="536" font-size="10.5" fill="#5B6B73">deriveTagFlow BEFORE vs AFTER, diffed —</text>
+  <text x="406" y="552" font-size="10.5" fill="#5B6B73">keeps the drift check and the AI's hint</text>
+  <text x="406" y="568" font-size="10.5" fill="#5B6B73">provably consistent (same traversal)</text>
+  <text x="406" y="589" font-size="10.5" fill="#5B6B73">lost last WRITER (readers remain) = broken</text>
+  <text x="406" y="605" font-size="10.5" fill="#5B6B73">lost a reader = usually benign · a flat diff can't tell</text>
+
+  <!-- ============ COLUMN 3 — review + write ============ -->
+  <text x="776" y="112" font-size="11" font-weight="700" fill="#5B6B73" letter-spacing="1">OPERATOR REVIEW → THE WRITE</text>
+
+  <rect x="776" y="126" width="330" height="128" rx="8" fill="#FFFFFF" stroke="#00A878" stroke-dasharray="5 3"/>
+  <text x="792" y="148" font-size="13" font-weight="600" fill="#0D1F2D">The panel shows all of it</text>
+  <text x="792" y="169" font-size="11" fill="#5B6B73">the agent's reasoning, verbatim</text>
+  <text x="792" y="186" font-size="11" fill="#5B6B73">a node-level before/after diff</text>
+  <text x="792" y="203" font-size="11" fill="#5B6B73">ripples[] — with severity, NOT applied</text>
+  <text x="792" y="220" font-size="11" fill="#5B6B73">tag drift, labelled as heuristic</text>
+  <text x="792" y="243" font-size="11" font-style="italic" fill="#00A878">confirm-gated · no native confirm()</text>
+
+  <rect x="776" y="272" width="330" height="150" rx="8" fill="#FFFFFF" stroke="#00A878" stroke-dasharray="5 3"/>
+  <text x="792" y="294" font-size="13" font-weight="600" fill="#0D1F2D">ONE verified write</text>
+  <text x="792" y="315" font-size="11" fill="#0D1F2D">build_steps.workflow[autoIdx] = corrected</text>
+  <text x="792" y="334" font-size="11" fill="#0D1F2D">deployment.corrections[] += entry</text>
+  <text x="792" y="351" font-size="10.5" fill="#5B6B73">request · summary · reasoning · ripples · drift</text>
+  <text x="792" y="367" font-size="10.5" fill="#5B6B73">nodes_before · nodes_after</text>
+  <text x="792" y="388" font-size="11" fill="#0D1F2D">deployment.changes_note += dated line</text>
+  <text x="792" y="409" font-size="10.5" font-style="italic" fill="#E24B4A">FIRST edit of workflow outside generation</text>
+
+  <rect x="776" y="440" width="330" height="112" rx="8" fill="#FFFFFF" stroke="#00A878" stroke-dasharray="5 3"/>
+  <text x="792" y="462" font-size="12" font-weight="700" fill="#0D1F2D">No migration — and no leak</text>
+  <text x="792" y="482" font-size="10.5" fill="#5B6B73">the log rides in the existing deployment JSONB</text>
+  <text x="792" y="500" font-size="10.5" fill="#5B6B73">Order 16.7's GRAD_DEPLOY_KEYS whitelist</text>
+  <text x="792" y="516" font-size="10.5" fill="#5B6B73">(tiers, spec_extras) EXCLUDES it by default</text>
+  <text x="792" y="537" font-size="10.5" font-style="italic" fill="#00A878">a client's corrections can't reach a catalog template</text>
+
+  <rect x="776" y="572" width="330" height="90" rx="8" fill="#FFFFFF" stroke="#00A878" stroke-dasharray="5 3"/>
+  <text x="792" y="594" font-size="12" font-weight="700" fill="#0D1F2D">Ledger staleness — DERIVED</text>
+  <text x="792" y="614" font-size="10.5" fill="#5B6B73">build_steps has NO updated_at, so the log's own</text>
+  <text x="792" y="630" font-size="10.5" fill="#5B6B73">timestamps are the clock (correctionsSinceDeploy)</text>
+  <text x="792" y="650" font-size="10.5" font-style="italic" fill="#EF9F27">"corrected since deploy · re-review"</text>
+
+  <!-- ============ COLUMN 4 — the boundary ============ -->
+  <text x="1156" y="112" font-size="11" font-weight="700" fill="#5B6B73" letter-spacing="1">THE BOUNDARY</text>
+
+  <rect x="1156" y="126" width="150" height="200" rx="8" fill="#FFFFFF" stroke="#E24B4A"/>
+  <text x="1170" y="148" font-size="12" font-weight="700" fill="#E24B4A">SIBLINGS ARE</text>
+  <text x="1170" y="164" font-size="12" font-weight="700" fill="#E24B4A">NEVER WRITTEN</text>
+  <text x="1170" y="188" font-size="10.5" fill="#5B6B73">the agent reads them,</text>
+  <text x="1170" y="204" font-size="10.5" fill="#5B6B73">reasons about them,</text>
+  <text x="1170" y="220" font-size="10.5" fill="#5B6B73">and reports what it</text>
+  <text x="1170" y="236" font-size="10.5" fill="#5B6B73">finds in ripples[]</text>
+  <text x="1170" y="260" font-size="10.5" fill="#5B6B73">a correction that</text>
+  <text x="1170" y="276" font-size="10.5" fill="#5B6B73">silently edited a</text>
+  <text x="1170" y="292" font-size="10.5" fill="#5B6B73">sibling would be the</text>
+  <text x="1170" y="308" font-size="10.5" fill="#5B6B73">widest blast radius</text>
+
+  <rect x="1156" y="342" width="150" height="188" rx="8" fill="#FFFFFF" stroke="#5B6B73" stroke-dasharray="2 3"/>
+  <text x="1170" y="364" font-size="12" font-weight="700" fill="#5B6B73">DEFERRED</text>
+  <text x="1170" y="386" font-size="10.5" fill="#5B6B73">live GHL workflow reads</text>
+  <text x="1170" y="402" font-size="10.5" fill="#5B6B73">— a read scope exists,</text>
+  <text x="1170" y="418" font-size="10.5" fill="#5B6B73">but whether the payload</text>
+  <text x="1170" y="434" font-size="10.5" fill="#5B6B73">carries NODE STRUCTURE</text>
+  <text x="1170" y="450" font-size="10.5" fill="#5B6B73">is unestablished, so</text>
+  <text x="1170" y="466" font-size="10.5" fill="#5B6B73">drift vs the real canvas</text>
+  <text x="1170" y="482" font-size="10.5" fill="#5B6B73">is UNDETECTABLE</text>
+  <text x="1170" y="504" font-size="10.5" fill="#5B6B73">manifest updates · undo</text>
+  <text x="1170" y="520" font-size="10.5" fill="#5B6B73">sibling writes</text>
+
+  <!-- arrows -->
+  <path d="M340 190 L386 175" stroke="#5B6B73" stroke-width="1.6" fill="none" marker-end="url(#a)"/>
+  <path d="M340 330 L386 200" stroke="#00A878" stroke-width="1.6" fill="none" stroke-dasharray="4 3" marker-end="url(#av)"/>
+  <path d="M726 175 L772 175" stroke="#00A878" stroke-width="1.8" fill="none" marker-end="url(#av)"/>
+  <path d="M726 400 L772 330" stroke="#00A878" stroke-width="1.8" fill="none" marker-end="url(#av)"/>
+  <path d="M1106 200 L1152 210" stroke="#E24B4A" stroke-width="1.8" fill="none" marker-end="url(#ar)"/>
+
+  <!-- ============ why no dependency model ============ -->
+  <text x="40" y="668" font-size="11" font-weight="700" fill="#5B6B73" letter-spacing="1">WHY NO DEPENDENCY MODEL WAS BUILT FIRST — WHAT THE CODE ACTUALLY MODELS TODAY</text>
+  <rect x="40" y="682" width="1266" height="118" rx="8" fill="#FFFFFF" stroke="#E2E6E3"/>
+  <text x="58" y="706" font-size="12" fill="#0D1F2D"><tspan font-weight="600">config</tspan> is free prose — the ONLY place a tag or field name appears  ·  <tspan font-weight="600">node id</tspan> is stored but read by NOTHING (every .id === in the file is clients/gaps/plans)</text>
+  <text x="58" y="728" font-size="12" fill="#0D1F2D">connectivity = <tspan font-weight="600">array order + branch nesting</tspan>, no edge list  ·  the guard fork is SYNTHESIZED at render from config.split("→")  ·  <tspan font-weight="600">no validator</tspan> cross-checks manifest vs nodes</text>
+  <text x="58" y="754" font-size="12" fill="#5B6B73">An explicit dependency schema was considered and <tspan font-weight="700" fill="#E24B4A">REJECTED</tspan>: it would have to be derived from the same prose — inheriting the imprecision with added false</text>
+  <text x="58" y="772" font-size="12" fill="#5B6B73">confidence — and needs a migration plus a backfill. The manifest already supplies a closed vocabulary, which is what makes derivation tractable at all.</text>
+  <text x="58" y="791" font-size="11" font-style="italic" fill="#00A878">Deterministic where determinism is cheap, AI judgement where it isn't — the same split as computeSetupDiff vs proposeChatManifest.</text>
+
+  <!-- ============ live verification ============ -->
+  <text x="40" y="838" font-size="11" font-weight="700" fill="#5B6B73" letter-spacing="1">LIVE VERIFICATION — Aug 19 2026 · de43a1b1 position 9 automation 0 · "the day-3 reminder still fires after the customer has paid"</text>
+
+  <rect x="40" y="852" width="410" height="212" rx="8" fill="#FFFFFF" stroke="#00A878" stroke-dasharray="5 3"/>
+  <text x="56" y="874" font-size="12" font-weight="700" fill="#00A878">THE WRITE — proven</text>
+  <text x="56" y="895" font-size="10.5" fill="#5B6B73">1 correction logged · nodes_before/after both 23</text>
+  <text x="56" y="911" font-size="10.5" fill="#5B6B73">exactly n9, n13, n17 → dual-condition guards</text>
+  <text x="56" y="927" font-size="10.5" font-weight="700" fill="#0D1F2D">n2 correctly UNTOUCHED (re-entry, not payment)</text>
+  <text x="56" y="943" font-size="10.5" fill="#5B6B73">sibling automation not modified</text>
+  <text x="56" y="963" font-size="10.5" fill="#5B6B73">OPTIONS 200 → PATCH 200, 274ms apart</text>
+  <text x="56" y="979" font-size="10.5" font-weight="700" fill="#00A878">one clean write · no retries, no duplicates</text>
+  <text x="56" y="1000" font-size="10.5" fill="#5B6B73">108/108 harness assertions vs REAL pos-7 + pos-9</text>
+  <text x="56" y="1016" font-size="10.5" font-style="italic" fill="#5B6B73">several harness bugs found — all the test's, not the code's</text>
+  <text x="56" y="1036" font-size="10.5" font-style="italic" fill="#5B6B73">lost_last_reader/writer: SYNTHETIC fixture, labelled</text>
+
+  <rect x="466" y="852" width="430" height="212" rx="8" fill="#FFFFFF" stroke="#00A878" stroke-dasharray="5 3"/>
+  <text x="482" y="874" font-size="12" font-weight="700" fill="#00A878">THE REASONING IS GENUINE — the result that mattered</text>
+  <text x="482" y="893" font-size="10" fill="#5B6B73">(the DoD warned vacuous reasoning passing validation would be</text>
+  <text x="482" y="908" font-size="10" fill="#5B6B73">the thin-test bug class in a new place)</text>
+  <text x="482" y="930" font-size="10.5" fill="#0D1F2D">1 · cited the sibling's node <tspan font-weight="700">p5</tspan> BY NAME as the mechanism</text>
+  <text x="482" y="946" font-size="10.5" fill="#5B6B73">     clearing the field — and p3 as the tag writer</text>
+  <text x="482" y="966" font-size="10.5" fill="#0D1F2D">2 · diagnosed the MECHANISM, not the symptom: the tag is</text>
+  <text x="482" y="982" font-size="10.5" fill="#5B6B73">     written by another workflow → lag leaves it absent at n9</text>
+  <text x="482" y="1002" font-size="10.5" fill="#0D1F2D">3 · extended the fix to n13/n17 unprompted, with an explicit</text>
+  <text x="482" y="1018" font-size="10.5" fill="#5B6B73">     scope justification ("not scope creep — same pattern")</text>
+  <text x="482" y="1038" font-size="10.5" fill="#0D1F2D">4 · ripple named a REAL coupling its own change created</text>
+
+  <rect x="912" y="852" width="394" height="212" rx="8" fill="#FFFFFF" stroke="#EF9F27"/>
+  <text x="928" y="872" font-size="12" font-weight="700" fill="#EF9F27">REFUSAL PATH — EXERCISED, FAILED TWICE FIRST</text>
+  <text x="928" y="890" font-size="10.5" fill="#5B6B73">"change the trigger to a Scheduler" · three runs:</text>
+  <text x="928" y="911" font-size="10.5" fill="#0D1F2D">1 · two "invalid JSON" — the model self-corrected mid-</text>
+  <text x="928" y="926" font-size="10.5" fill="#5B6B73">    reasoning, emitting TWO objects → parseAiJson</text>
+  <text x="928" y="946" font-size="10.5" fill="#0D1F2D">2 · a complete VALID propose changing trigger.type:</text>
+  <text x="928" y="961" font-size="10.5" fill="#5B6B73">    the DoD's predicted failure, CONFIRMED REAL —</text>
+  <text x="928" y="976" font-size="10.5" fill="#5B6B73">    hardenCorrection rejected it, NOTHING WRITTEN</text>
+  <text x="928" y="996" font-size="10.5" fill="#0D1F2D">3 · after the fixes, a clean refusal</text>
+  <text x="928" y="1017" font-size="11" font-weight="700" fill="#0D1F2D">IDENTITY IS ENFORCED IN CODE, NOT IN THE PROMPT</text>
+  <text x="928" y="1037" font-size="10" font-style="italic" fill="#E24B4A">…but that refusal was FACTUALLY WRONG ("GHL has no native</text>
+  <text x="928" y="1050" font-size="10" font-style="italic" fill="#E24B4A">QuickBooks connector") — right answer, wrong reason · #22</text>
+</svg>
