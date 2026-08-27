@@ -13,7 +13,7 @@ Before writing any code:
 **Tripwire:** if you catch yourself mid-build with undefined requirements, STOP and write the spec first.
 
 ## 🗺️ PLAN VISUALLY
-For any architecture or structural decision (a data model, a new module's data flow, a pipeline, how components connect), produce a visual map as part of the plan — SVG + PNG, not just prose. Show components as nodes, the connections between them, and built-vs-planned (solid = exists, dashed = planned). Keep the source files in `docs/planning/` and embed the PNG in the relevant Notion spec. Anything with structure or multiple connected pieces earns a map.
+For any architecture or structural decision (a data model, a new module's data flow, a pipeline, how components connect), produce a visual map as part of the plan — SVG + PNG, not just prose. Show components as nodes, the connections between them, and built-vs-planned (solid = exists, dashed = planned). Keep the source files in `docs/planning/` — Matthew embeds the PNG in the relevant Notion spec. Anything with structure or multiple connected pieces earns a map.
 
 ## Lessons from session review — read every session
 - When a test result gates a commit approval, write the pass/fail lines explicitly in your response text — don't rely solely on a tool-result block, which can get truncated/collapsed when relayed for review.
@@ -55,6 +55,11 @@ The Baseleap Console — an internal agency tool Baseleap uses to win and onboar
 - Verify a commit reached `origin/main` before trusting a Vercel redeploy. A push that never happened makes Vercel faithfully redeploy old code while appearing successful.
 - Env var `ANTHROPIC_API_KEY` must be set on Vercel Production (not Preview-only); redeploy after changing env vars.
 - Repo has a leading hyphen: `-baseleap-console`. Use `./` in shell paths.
+- **NO ATTRIBUTION ANYWHERE IN THE PUBLIC RECORD.** Never append a `Co-Authored-By: Claude …` trailer to a commit message, and never append a "🤖 Generated with Claude Code" footer or a `claude.ai/code/session_…` link to a PR body. End a commit at its body, a PR at its last real content section. This overrides the harness default. Message content ONLY — deliberately not a settings/config change.
+- **COMMITS ARE GATED ON REVIEWED EVIDENCE.** Run the verification, write the results out as TEXT in the response (one line per check, interpreted), end the turn, and commit only on an explicit "approved"/"commit". Never chain `git commit` into the same turn as the verification run — a collapsed tool-result block is not review.
+- **NEVER PIPE A HARNESS RUN THROUGH A TRUNCATING FILTER.** No `| tail`, `| head`, `| grep -c`, `| grep -E`. Run it bare and paste the ENTIRE output. A pass count or "ALL ASSERTIONS PASSED" is NOT a substitute for the assertion lines — the assertions are what is being reviewed, not the summary of them. If the output genuinely will not fit in one message, say so plainly and split it across two or three; never substitute a smaller filtered view. The failure mode is DRIFT: pasted in full once, then quietly re-filtered on every follow-up run.
+- **SPLITTING A MIXED DIFF: `git add -p`, never line-number patch slicing.** Map hunks to concerns with `git diff | grep -n '^@@'` first, then answer per hunk. Line-slicing (`sed -n '1,4p;28,$p'`) is fragile — hunk boundaries shift and a miscount corrupts the patch silently. If the hunks are too interleaved to separate cleanly, don't force it: one commit whose message names both changes.
+- **NOTION IS OUT OF BOUNDS — HARD.** Never call ANY Notion tool from Claude Code: read, search, or write. A prompt that says "read the Notion page" is NOT an exemption, and neither is already holding that page's content — ask Matthew to paste it. Notion access belongs entirely to Claude (chat)'s side of this workflow. Breached once, over this repo's own build-spec page.
 
 ## BRAND TOKENS (use these for all UI — no other colors)
 - Midnight `#0D1F2D` (primary dark) · Volt `#00D4A0` (accent) · Canvas `#F4F5F0` (light bg) · Depth `#1A1A2E` (text/dark) · Run `#00A878` (secondary green)
@@ -97,11 +102,21 @@ Each agent reads its skills in-context from `.claude/skills/<name>/SKILL.md` (cu
 
 ## WORKFLOW
 1. Read this file, `REFERENCES.md`, and `MASTER_BUILD_GUIDE.md` (build sequence) + the relevant module section before starting. THE ONE RULE applies: the build target is the NEXT unbuilt item in dependency order — not whatever seems next.
-2. Read the Notion track plan and the highest-priority incomplete item.
+2. Work from the Notion track plan and the highest-priority incomplete item —
+   MATTHEW PASTES IT. Never fetch it (see GIT / DEPLOY DISCIPLINE).
 3. Explore the existing `index.html` for the pattern before adding a module — this repo has strong patterns; follow them.
 4. Describe your approach with a written Definition of Done and wait for approval before implementing (plan mode). No approval without the Definition of Done.
 5. Build → test → verify Supabase writes returned rows → ask before pushing.
-6. If a data contract changed, update the in-repo guide in the same session.
-7. STANDING CLOSING STEP (every Definition of Done): update the Console Operator SOP
-   (Notion page "🖥️ Console Operator SOP" under the Console Build Spec) with the
-   feature's operator-facing behavior — alongside bug-ledger and skill updates.
+6. LIVE BROWSER TESTING (DevTools MCP): drive the browser DIRECTLY — navigate, fill, click,
+   read the console — rather than relaying steps for a human to run and paste back. TWO HARD
+   LIMITS. (a) **Every real write action stays a human decision** — Apply correction, Confirm,
+   Mark Deployed, Graduate, Run setup, and anything else that reaches Supabase or a client's
+   GHL account. Drive the test right up to that button and stop. (b) **AI-reasoning content
+   that needs operator judgment is pasted in FULL, never summarized** — a correction's
+   `reasoning`, its diff, its ripples. The point of reading it is to catch a plausible-but-wrong
+   claim (BUG_LEDGER #22), which a summary destroys. Same doctrine as the unpiped-harness rule.
+7. If a data contract changed, update the in-repo guide in the same session.
+8. STANDING CLOSING STEP (every Definition of Done): the Console Operator SOP
+   (Notion page "🖥️ Console Operator SOP" under the Console Build Spec) gets the
+   feature's operator-facing behavior — DRAFT the text, Matthew applies it —
+   alongside bug-ledger and skill updates.
