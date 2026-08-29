@@ -888,10 +888,36 @@ diff and an Apply button. This matters as much as the refusal: it confirms that 
 commits of tightening did not produce over-refusal. A refusal here would have been a
 regression, not a success.
 
+### The ledger staleness chip — confirmed live Aug 29 2026
+
+Observed rendering in production on the Tracker's Deployed card, for `de43a1b1`
+position 9 (*Overdue invoices chase themselves until paid*):
+
+    corrected since deploy (1) · re-review
+
+Confirmed against the database, not read off the screen. `deployed_systems` row
+`4a4d7931` points at build step `ac05cd7f` (position 9) with `deployed_at =
+2026-08-11 23:55:16+00`. That step's `deployment->'corrections'` holds exactly ONE
+entry, stamped `2026-08-19T15:17:48.226Z`, request *"the day-3 reminder still fires
+after the customer has paid"*, `nodes_before` 23 → `nodes_after` 23 — the Aug 19
+dual-condition-guard fix — and `corrected_at > deployed_at` evaluates true. So the
+chip's `(1)` is the count the design intends, DERIVED at render from
+`deployment.corrections[]` against `deployed_at`, with no `updated_at` column and
+nothing persisted. That derived-not-stored property is the whole point, and it holds.
+
+**The bullet this replaces was factually inverted, not merely stale.** It read:
+"Position 9 is not in `deployed_systems`; position 7 is. Correcting position 7 would
+exercise it." Position 9 has been in `deployed_systems` since 2026-08-11 23:55 — the
+row the Aug 19 correction was logged against, and eight days before that line was
+written. Both positions 7 and 9 were deployed that night, 49 minutes apart, and the
+plan carries three deployed rows. So the chip was already exercisable on the very
+engine being corrected, and no position-7 correction was ever needed; it was almost
+certainly rendering on Aug 19 and simply was not looked at. The claim was wrong when
+written — later work did not make it so. **"We did not check" and "it could not be
+checked" are different failures, and this was the first.**
+
 ### Still not exercised
 
-- **The ledger staleness chip.** Position 9 is not in `deployed_systems`; position 7 is.
-  Correcting position 7 would exercise it.
 - **Which `parseAiJson` path the successful refusal took.** The function had no logging
   when that run happened, so a clean whole-string parse and a recovered two-object
   response were indistinguishable — both return silently. Logging was added afterwards
