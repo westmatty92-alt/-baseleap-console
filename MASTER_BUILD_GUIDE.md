@@ -925,6 +925,77 @@ checked" are different failures, and this was the first.**
 - **The moved-path indicator** in the rewritten diff. Both visual checks modified nodes in
   place, so `before_path` always equalled `after_path`. Covered by assertion, not by eye.
 
+### The 300s ceiling — measured Aug 29 2026, and it is not a slow path
+
+A turn-1 submission on `de43a1b1` position 9 automation 0 ("the day-3 reminder fires even
+when the invoice was already partly paid") returned **504**. The Vercel dashboard shows the
+function ran **4m50s (290s)** against `vercel.json`'s `maxDuration: 300`. The function was
+killed at its ceiling — not a model failure, not a network fault between Vercel and the
+browser.
+
+**The framing that matters, and it corrects an earlier reading.** An earlier run of the
+IDENTICAL prompt succeeded, so it completed under 300s. Wall-clock timings of ~7 minutes
+recorded for that run included polling latency, not function duration. The two runs sit
+within seconds of each other on opposite sides of the line. This is therefore **not a path
+that is usually fast and occasionally slow — it runs at the ceiling every time, and
+run-to-run variance decides the outcome.** A retry is a coin flip and always was.
+
+**Where the time goes.** Measured on the live row, automation 0 of step `ac05cd7f`:
+
+| component | chars | note |
+|---|---|---|
+| whole automation | 21,863 | 23 nodes |
+| nodes WITH `deploy` | 14,096 | |
+| nodes WITHOUT `deploy` | 5,397 | |
+| **`deploy` buckets alone** | **8,699** | **62% of the node payload** |
+| `tests` (12) | **6,343** | |
+| sibling automation (read-only context) | 4,460 | 7 nodes |
+
+`deploy` + `tests` = **15,042 of 21,863 chars — 69% of the emitted automation is verbatim
+transcription of content the correction does not change.** The system prompt requires it:
+"Return the COMPLETE corrected automation — every node, not a patch" and "Preserve every
+node's existing deploy bucket". Turn 1's real change was TWO nodes; it paid ~7,000 output
+tokens to copy 21 unchanged ones. Output generation dominates latency and input prefill is
+cheap, so **the 42,704-byte request is not the problem — the response is.**
+
+**Two things that look like fixes and are not.**
+
+- **Streaming.** `api/ai.js` awaits `upstream.json()` in one shot, so adding streaming is the
+  obvious reach. But `maxDuration` terminates the function whether or not bytes are flowing.
+  Vercel's own streaming guidance concerns idle HTTP/1.1 connection drops — a different
+  failure. Streaming would improve perceived latency; it would not have saved this request.
+- **Lowering `max_tokens`** (the correction call passes 32000). It caps output, it does not
+  accelerate generation. A lower cap converts a timeout into a truncation, which `ai()`
+  already detects and throws on. Different error, same failure.
+
+**Multi-turn does not compound this, contrary to the first reading.** Order 16.10's Option C
+history grows the INPUT, and input is the cheap axis. Turn 2's output is the same shape as
+turn 1's — one full automation re-emit — so turn 2 costs roughly what turn 1 costs.
+Multi-turn sits at the same edge; it does not walk further off it.
+
+**Plan ceilings** (Vercel, fluid compute): Hobby default 300s / max **300s** — no headroom,
+already there. Pro and Enterprise default 300s / max **800s** generally available, 1800s in
+per-function beta.
+
+**The structural obstacle.** Emitting only changed nodes requires a stable key. Node `id` is
+stored but READ BY NOTHING; connectivity is array order plus branch nesting. Merging by index
+is unsafe precisely because corrections add and remove nodes — turn 1's proposal inserted
+`n2a`. Merging by `id` would work but makes `id` load-bearing for the first time: a real
+design change with its own failure modes, not a tuning tweak.
+
+**Scoping note for a future DoD — the fix separates into two halves of very different
+difficulty.** `tests` (6,343 chars) live in their own array, NOT positionally bound to nodes,
+so preserving them unless a correction changes guard/condition count is comparatively simple
+— and that alone is ~42% of the waste. `deploy` buckets (8,699 chars) are per-node and need
+the stable key: the hard half. Solving only the cheap half captures most of the benefit.
+Neither is scoped or approved; recorded so it is not rediscovered.
+
+**The failure path itself behaved correctly, which nothing had exercised before.** The panel
+rendered `.corr-err` — "The correction couldn't be produced: AI request failed: 504" — kept
+the operator's composer text, never rendered an Apply button, and wrote nothing. A genuine
+transport failure under a real infrastructure fault, handled without crashing, hanging on
+"Thinking…", or synthesising an empty proposal.
+
 ### Follow-up fixes — four, all found by using the feature rather than by testing it
 
 Each shipped as its own commit so it can be reverted independently.
