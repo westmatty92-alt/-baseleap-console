@@ -888,16 +888,113 @@ diff and an Apply button. This matters as much as the refusal: it confirms that 
 commits of tightening did not produce over-refusal. A refusal here would have been a
 regression, not a success.
 
+### The ledger staleness chip — confirmed live Aug 29 2026
+
+Observed rendering in production on the Tracker's Deployed card, for `de43a1b1`
+position 9 (*Overdue invoices chase themselves until paid*):
+
+    corrected since deploy (1) · re-review
+
+Confirmed against the database, not read off the screen. `deployed_systems` row
+`4a4d7931` points at build step `ac05cd7f` (position 9) with `deployed_at =
+2026-08-11 23:55:16+00`. That step's `deployment->'corrections'` holds exactly ONE
+entry, stamped `2026-08-19T15:17:48.226Z`, request *"the day-3 reminder still fires
+after the customer has paid"*, `nodes_before` 23 → `nodes_after` 23 — the Aug 19
+dual-condition-guard fix — and `corrected_at > deployed_at` evaluates true. So the
+chip's `(1)` is the count the design intends, DERIVED at render from
+`deployment.corrections[]` against `deployed_at`, with no `updated_at` column and
+nothing persisted. That derived-not-stored property is the whole point, and it holds.
+
+**The bullet this replaces was factually inverted, not merely stale.** It read:
+"Position 9 is not in `deployed_systems`; position 7 is. Correcting position 7 would
+exercise it." Position 9 has been in `deployed_systems` since 2026-08-11 23:55 — the
+row the Aug 19 correction was logged against, and eight days before that line was
+written. Both positions 7 and 9 were deployed that night, 49 minutes apart, and the
+plan carries three deployed rows. So the chip was already exercisable on the very
+engine being corrected, and no position-7 correction was ever needed; it was almost
+certainly rendering on Aug 19 and simply was not looked at. The claim was wrong when
+written — later work did not make it so. **"We did not check" and "it could not be
+checked" are different failures, and this was the first.**
+
 ### Still not exercised
 
-- **The ledger staleness chip.** Position 9 is not in `deployed_systems`; position 7 is.
-  Correcting position 7 would exercise it.
 - **Which `parseAiJson` path the successful refusal took.** The function had no logging
   when that run happened, so a clean whole-string parse and a recovered two-object
   response were indistinguishable — both return silently. Logging was added afterwards
   (35f5ae3); the question is answerable on the next run, not retrospectively.
 - **The moved-path indicator** in the rewritten diff. Both visual checks modified nodes in
   place, so `before_path` always equalled `after_path`. Covered by assertion, not by eye.
+
+### The 300s ceiling — measured Aug 29 2026, and it is not a slow path
+
+A turn-1 submission on `de43a1b1` position 9 automation 0 ("the day-3 reminder fires even
+when the invoice was already partly paid") returned **504**. The Vercel dashboard shows the
+function ran **4m50s (290s)** against `vercel.json`'s `maxDuration: 300`. The function was
+killed at its ceiling — not a model failure, not a network fault between Vercel and the
+browser.
+
+**The framing that matters, and it corrects an earlier reading.** An earlier run of the
+IDENTICAL prompt succeeded, so it completed under 300s. Wall-clock timings of ~7 minutes
+recorded for that run included polling latency, not function duration. The two runs sit
+within seconds of each other on opposite sides of the line. This is therefore **not a path
+that is usually fast and occasionally slow — it runs at the ceiling every time, and
+run-to-run variance decides the outcome.** A retry is a coin flip and always was.
+
+**Where the time goes.** Measured on the live row, automation 0 of step `ac05cd7f`:
+
+| component | chars | note |
+|---|---|---|
+| whole automation | 21,863 | 23 nodes |
+| nodes WITH `deploy` | 14,096 | |
+| nodes WITHOUT `deploy` | 5,397 | |
+| **`deploy` buckets alone** | **8,699** | **62% of the node payload** |
+| `tests` (12) | **6,343** | |
+| sibling automation (read-only context) | 4,460 | 7 nodes |
+
+`deploy` + `tests` = **15,042 of 21,863 chars — 69% of the emitted automation is verbatim
+transcription of content the correction does not change.** The system prompt requires it:
+"Return the COMPLETE corrected automation — every node, not a patch" and "Preserve every
+node's existing deploy bucket". Turn 1's real change was TWO nodes; it paid ~7,000 output
+tokens to copy 21 unchanged ones. Output generation dominates latency and input prefill is
+cheap, so **the 42,704-byte request is not the problem — the response is.**
+
+**Two things that look like fixes and are not.**
+
+- **Streaming.** `api/ai.js` awaits `upstream.json()` in one shot, so adding streaming is the
+  obvious reach. But `maxDuration` terminates the function whether or not bytes are flowing.
+  Vercel's own streaming guidance concerns idle HTTP/1.1 connection drops — a different
+  failure. Streaming would improve perceived latency; it would not have saved this request.
+- **Lowering `max_tokens`** (the correction call passes 32000). It caps output, it does not
+  accelerate generation. A lower cap converts a timeout into a truncation, which `ai()`
+  already detects and throws on. Different error, same failure.
+
+**Multi-turn does not compound this, contrary to the first reading.** Order 16.10's Option C
+history grows the INPUT, and input is the cheap axis. Turn 2's output is the same shape as
+turn 1's — one full automation re-emit — so turn 2 costs roughly what turn 1 costs.
+Multi-turn sits at the same edge; it does not walk further off it.
+
+**Plan ceilings** (Vercel, fluid compute): Hobby default 300s / max **300s** — no headroom,
+already there. Pro and Enterprise default 300s / max **800s** generally available, 1800s in
+per-function beta.
+
+**The structural obstacle.** Emitting only changed nodes requires a stable key. Node `id` is
+stored but READ BY NOTHING; connectivity is array order plus branch nesting. Merging by index
+is unsafe precisely because corrections add and remove nodes — turn 1's proposal inserted
+`n2a`. Merging by `id` would work but makes `id` load-bearing for the first time: a real
+design change with its own failure modes, not a tuning tweak.
+
+**Scoping note for a future DoD — the fix separates into two halves of very different
+difficulty.** `tests` (6,343 chars) live in their own array, NOT positionally bound to nodes,
+so preserving them unless a correction changes guard/condition count is comparatively simple
+— and that alone is ~42% of the waste. `deploy` buckets (8,699 chars) are per-node and need
+the stable key: the hard half. Solving only the cheap half captures most of the benefit.
+Neither is scoped or approved; recorded so it is not rediscovered.
+
+**The failure path itself behaved correctly, which nothing had exercised before.** The panel
+rendered `.corr-err` — "The correction couldn't be produced: AI request failed: 504" — kept
+the operator's composer text, never rendered an Apply button, and wrote nothing. A genuine
+transport failure under a real infrastructure fault, handled without crashing, hanging on
+"Thinking…", or synthesising an empty proposal.
 
 ### Follow-up fixes — four, all found by using the feature rather than by testing it
 
@@ -978,3 +1075,142 @@ Live GHL workflow reads (a read scope exists, but whether the payload carries no
 structure is UNESTABLISHED — so drift against the real canvas is undetectable); sibling
 writes; manifest updates; an undo button (`nodes_before` is logged, a revert is manual SQL);
 correction of catalog engines; test-matrix regeneration.
+
+## Order 16.10 — multi-turn correction chat (Sep 1 2026)
+
+Order 16.6 shipped a correction panel that took ONE question and gave ONE answer. If the
+proposal was wrong, or right but overscoped, the only moves were Apply or Discard. 16.10
+makes the exchange a conversation: the operator can push back and the agent answers with
+the earlier turn in view.
+
+**Parts 3, 4, 5 and 8 are built. The button is labelled `Rephrase`, not "Refine"** — the
+design discussions used "Refine" throughout and the shipped label is different; two render
+sites (index.html:6514, :6562) both read `Rephrase` and both call `corrBack()`.
+
+### What each part is
+
+**Part 3 — `correctionDiffForModel(rows)`.** Serialises the diff the operator sees into
+lines the model can read: `ADDED <path> (type): …`, `REMOVED …`, and `CHANGED <before_path>
+-> <after_path> (type)` with BEFORE/AFTER on their own lines. A row flagged
+`paired_by_position` carries its warning into the model's view verbatim — *"(paired by
+position — this may not be the node you think it is)"* — so the agent inherits the same
+uncertainty the panel shows a human. It returns EMPTY STRING when nothing changed, on
+purpose: a "no changes" scaffold would read to the model as a turn that proposed something,
+which is worse than saying nothing.
+
+**Part 4 — history plumbing.** `chatHistoryForAi(messages)` takes the last 10 messages
+EXCLUDING the current one (`slice(0,-1).slice(-10)`), drops any leading assistant turn so
+the history always opens on a user message, and merges consecutive same-role turns. The
+first line reads `Array.isArray(messages) ? messages : S.setup.chat.messages` — an explicit
+type test, NOT `messages ||`, because an empty array is falsy-adjacent in the shape that
+matters and a `||` would silently fall through to the Setup Agent's chat. `corrSay(role,
+text)` appends `{role, text, at}` with the timestamp stamped at append time. `corrBack()`
+guards on `busy`, sets `phase = "input"`, clears the composer and message, and re-renders —
+**it does NOT clear the proposal**, which is what makes the next turn a continuation rather
+than a restart.
+
+**Part 5 — the log entry** gains `request` (the FIRST user message, falling back to the raw
+composer text) and `exchange` (a copy of the whole message array), so an applied correction
+records the conversation that produced it, not just the final ask.
+
+### Option C: summary plus compact diff
+
+Three history shapes were compared before building. Full echo of every prior proposal cost
+~4,996 tokens/turn (~32.6k over a session, +328% on baseline). Summary-only was cheapest but
+leaves the model unable to see its own prior proposal. **Option C — the summary line plus the
+serialised diff — costs ~558 tokens/turn (~10.4k, +37%)** and is what shipped.
+
+It works because of the RECONSTRUCTION PROPERTY: `userMsg` re-sends the stored automation in
+full on every turn, so STORED + DIFF = the complete prior proposal. The history never has to
+carry the proposal itself.
+
+### The 300s ceiling had to be fixed first, and the fix is proven
+
+The first live attempt died at the platform ceiling — see "The 300s ceiling" under Order
+16.6. `vercel.json` went 300s → 800s in `96e9b93` (Pro allows 800s; Hobby would not have).
+
+**Turn 1 then completed in ~317 seconds** — submitted 23:23:52Z, proposal present 23:29:09Z.
+That is PAST the old 300s line, so the same run would have 504'd on the previous config. The
+ceiling change is therefore proven decisive rather than merely coincident with a pass; a
+completion at 280s would have proved nothing.
+
+Turn 2 took ~95 seconds (00:06:12Z → 00:07:47Z) — roughly a third, because a `reply` emits
+prose instead of a 29-node automation. **Reply turns are cheap; propose turns are not.**
+
+### `parseAiJson`'s fallback is load-bearing, three for three
+
+Every correction call that returned a parseable response has logged:
+
+    parseAiJson: whole-string parse failed — recovered 1 top-level object(s), using the LAST.
+
+Three of three — one in the Aug session, plus turn 1 and turn 2 here. **Note the count is
+1, not 2**, so this is NOT the two-object self-correction that motivated `468e10b`; the
+whole-string parse fails for some other reason and the balanced-brace scanner recovers it.
+Without that commit every correction tonight would have surfaced as "invalid JSON". It is
+not a defensive edge case — it is the normal path for this caller.
+
+### Turn 1 — the proposal, and it was bigger than its predecessor
+
+Prompt: *"the day-3 reminder fires even when the invoice was already partly paid"* on
+`de43a1b1` position 9 automation 0.
+
+Diagnosis, and it is correct: `invoice-paid` and the `QB Invoice ID Being Chased` field are
+BOTH written only by the sibling, which fires on `invoice.paid`; a partial payment leaves QB
+status Unpaid, so neither signal is ever set and every guard passes.
+
+The fix it proposed builds an n8n round-trip INTO the workflow: three outbound webhooks to a
+QB-balance-check endpoint, three 2-minute waits for the round trip, and a CONDITION C
+(`QB Invoice Amount Due = 0 → end`) on all three guards. **Node count 23 → 29.**
+
+**An earlier run of the identical prompt reached the same diagnosis and stopped far short** —
+it fixed only the stale amount and routed the stop-the-chase question to a ripple as an
+operator decision. Same finding, very different blast radius, and the divergence is invisible
+from the diff alone. Worth knowing that this feature's output varies in ambition run to run.
+
+The moved-path indicator — the third item on Order 16.6's "Still not exercised" list —
+**is now exercised**: `changed #9 → #8`, `#12 → #16`, `#17 → #20` all rendered correctly.
+
+### Turn 2 — the proof that history threads
+
+Prompt: the n8n endpoint does not exist and is not being built; scope back to the stale
+amount; record the balance-check as a ripple.
+
+The agent returned a **`reply`, not a `propose`**, and declined even the narrowed request —
+correctly. `QB Invoice Amount Due` is written once at `n3` and read at message time; with the
+webhook-out ruled out, **no node change inside this automation can make a once-written field
+fresher.** Editing message copy would have been theatre. It moved the fix to n8n, where the
+data originates.
+
+**The sentence that proves history threading:**
+
+> "The balance-check webhook-out approach would have solved this by asking n8n to refresh the
+> field before each message, but the operator has ruled that out."
+
+That is unwritable without sight of turn 1. The phrase "webhook-out approach" appears nowhere
+in the turn-2 prompt, and nothing in stored state mentions webhook-outs because turn 1 was
+never applied. `chatHistoryForAi` + `correctionDiffForModel` genuinely carried the prior turn
+forward. **This was the one open question 143 assertions could not answer, and the answer is
+yes.**
+
+The panel rendered `corr-reply` with the header *"The agent did not propose a change"*,
+`diffRowCount: 0`, `rippleCount: 0`, and **no Apply button in the DOM** — the discriminated
+union stopping before the diff, on a second and unrelated occasion.
+
+### Known gap — `ripples[]` is unreachable on a reply turn
+
+The operator asked for the balance-check idea to be "recorded as a ripple". **It could not
+be.** A `reply` carries no `ripples[]` array by construction — the union stops before ripples
+are computed — so the idea survives only as prose inside the reply text, not as structured
+data anything can later read.
+
+That is a real limitation, not an oversight in the run: a request to "log this for later" has
+no home in the reply shape. Whether reply turns should be able to emit ripples is UNDECIDED
+after one occurrence and deliberately not designed here.
+
+### Still unexercised after 16.10
+
+- A THIRD turn. Both live sessions stopped at two.
+- `paired_by_position` reaching the model. No turn has produced a mis-paired row, so the
+  warning line has never actually been transmitted.
+- An applied multi-turn correction. `Apply` was never pressed, so `exchange` has never been
+  written to `deployment.corrections[]` in production.

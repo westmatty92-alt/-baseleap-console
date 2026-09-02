@@ -10,7 +10,12 @@
       "Bash(pwd)",
       "Bash(git log:*)",
       "Bash(git status:*)",
-      "Bash(git diff:*)"
+      "Bash(git diff:*)",
+      "mcp__chrome-devtools-mcp__navigate_page",
+      "mcp__chrome-devtools-mcp__take_snapshot",
+      "mcp__chrome-devtools-mcp__list_network_requests",
+      "mcp__chrome-devtools-mcp__list_console_messages",
+      "mcp__chrome-devtools-mcp__fill"
     ],
     "ask": [
       "Bash(git push:*)",
