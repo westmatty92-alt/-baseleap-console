@@ -1,0 +1,22 @@
+# Everything the deployed app does not need at runtime.
+# The app is index.html + assets/ + api/. Nothing else should be served.
+#
+# These paths were publicly readable on production until this file existed:
+# CLAUDE.md and MASTER_BUILD_GUIDE.md (full internal architecture), migrations/
+# (the whole schema), docs/ (bug ledger + planning maps), and .claude/skills/
+# (the GHL write matrix and the client price bands). No credential was exposed —
+# SUPABASE_ANON_KEY in index.html is the intended RLS model — but the pricing
+# figures in automation-catalog appear nowhere else in the served surface.
+#
+# Property: a file listed here is not uploaded to the deployment at all, so it
+# can never be served, whatever the request path. Verified safe because no
+# api/*.js reads any repo file — if that ever changes, the function needs
+# functions.includeFiles in vercel.json rather than removing an entry here.
+CLAUDE.md
+MASTER_BUILD_GUIDE.md
+REFERENCES.md
+README.md
+gitignore
+docs/
+migrations/
+.claude/
