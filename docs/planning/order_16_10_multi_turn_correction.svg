@@ -1,0 +1,152 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1340" height="900" viewBox="0 0 1340 900" font-family="Segoe UI, system-ui, sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#5B6B73"/>
+    </marker>
+    <marker id="av" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#00A878"/>
+    </marker>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#E24B4A"/>
+    </marker>
+  </defs>
+
+  <rect width="1340" height="900" fill="#F4F5F0"/>
+  <text x="40" y="46" font-size="21" font-weight="700" fill="#0D1F2D">Order 16.10 — multi-turn correction chat · the proposal stays, the conversation continues</text>
+  <text x="40" y="70" font-size="13" fill="#5B6B73">Solid = existed before · Dashed green = built this cycle · Red = the boundary that holds · Amber = a recorded gap · index.html, no migration</text>
+
+  <!-- ============ COLUMN 1 — what the next turn receives ============ -->
+  <text x="40" y="112" font-size="11" font-weight="700" fill="#5B6B73" letter-spacing="1">WHAT THE NEXT TURN RECEIVES</text>
+
+  <rect x="40" y="126" width="300" height="152" rx="8" fill="#FFFFFF" stroke="#00A878" stroke-dasharray="5 3"/>
+  <text x="56" y="148" font-size="13" font-weight="600" fill="#0D1F2D">Option C — two shapes rejected</text>
+  <text x="56" y="170" font-size="10.5" fill="#5B6B73">full echo of every prior proposal</text>
+  <text x="56" y="186" font-size="10.5" fill="#E24B4A">~4,996 tok/turn · ~32.6k · +328%</text>
+  <text x="56" y="207" font-size="10.5" fill="#5B6B73">summary only — cheapest, but the model</text>
+  <text x="56" y="223" font-size="10.5" fill="#E24B4A">cannot see its own prior proposal</text>
+  <text x="56" y="246" font-size="11" font-weight="700" fill="#00A878">► OPTION C ~558 tok/turn · +37%</text>
+  <text x="56" y="264" font-size="10.5" fill="#5B6B73">the summary line + the serialised diff</text>
+
+  <rect x="40" y="296" width="300" height="170" rx="8" fill="#FFFFFF" stroke="#00A878" stroke-dasharray="5 3"/>
+  <text x="56" y="318" font-size="13" font-weight="600" fill="#0D1F2D">correctionDiffForModel</text>
+  <text x="56" y="340" font-size="10.5" fill="#5B6B73">ADDED / REMOVED / CHANGED lines</text>
+  <text x="56" y="356" font-size="10.5" fill="#5B6B73">before_path -&gt; after_path when it moved</text>
+  <text x="56" y="377" font-size="10.5" font-weight="700" fill="#E24B4A">paired_by_position warning passed</text>
+  <text x="56" y="393" font-size="10.5" font-weight="700" fill="#E24B4A">to the model VERBATIM</text>
+  <text x="56" y="409" font-size="10.5" fill="#5B6B73">the agent inherits the same uncertainty</text>
+  <text x="56" y="425" font-size="10.5" fill="#5B6B73">the panel shows a human</text>
+  <text x="56" y="446" font-size="10.5" font-style="italic" fill="#00A878">EMPTY STRING when nothing changed —</text>
+  <text x="56" y="460" font-size="10.5" font-style="italic" fill="#00A878">a scaffold would read as a proposal</text>
+
+  <rect x="40" y="484" width="300" height="152" rx="8" fill="#FFFFFF" stroke="#00A878" stroke-dasharray="5 3"/>
+  <text x="56" y="506" font-size="13" font-weight="600" fill="#0D1F2D">Rephrase — NOT "Refine"</text>
+  <text x="56" y="527" font-size="10.5" fill="#5B6B73">the design name never shipped; the button</text>
+  <text x="56" y="543" font-size="10.5" fill="#5B6B73">reads Rephrase at both render sites</text>
+  <text x="56" y="564" font-size="10.5" fill="#5B6B73">corrBack() — guards on busy, phase →</text>
+  <text x="56" y="580" font-size="10.5" fill="#5B6B73">"input", clears the composer</text>
+  <text x="56" y="602" font-size="11" font-weight="700" fill="#E24B4A">IT DOES NOT CLEAR THE PROPOSAL</text>
+  <text x="56" y="622" font-size="10.5" font-style="italic" fill="#00A878">that is what makes turn 2 a continuation</text>
+
+  <!-- ============ COLUMN 2 — why it works at all ============ -->
+  <text x="390" y="112" font-size="11" font-weight="700" fill="#5B6B73" letter-spacing="1">WHY IT WORKS AT ALL</text>
+
+  <rect x="390" y="126" width="336" height="140" rx="8" fill="#FFFFFF" stroke="#00A878" stroke-dasharray="5 3"/>
+  <text x="406" y="148" font-size="13" font-weight="700" fill="#0D1F2D">THE RECONSTRUCTION PROPERTY</text>
+  <text x="406" y="171" font-size="11" fill="#5B6B73">userMsg re-sends the STORED automation in full</text>
+  <text x="406" y="187" font-size="11" fill="#5B6B73">on EVERY turn — it is never omitted</text>
+  <line x1="406" y1="203" x2="710" y2="203" stroke="#E2E6E3"/>
+  <text x="406" y="222" font-size="12" font-weight="700" fill="#00A878">STORED + DIFF = the complete prior proposal</text>
+  <text x="406" y="244" font-size="10.5" font-style="italic" fill="#5B6B73">so the history never has to carry the proposal</text>
+  <text x="406" y="258" font-size="10.5" font-style="italic" fill="#5B6B73">itself — which is what makes Option C viable</text>
+
+  <rect x="390" y="284" width="336" height="162" rx="8" fill="#FFFFFF" stroke="#E2E6E3"/>
+  <text x="406" y="306" font-size="13" font-weight="600" fill="#0D1F2D">chatHistoryForAi</text>
+  <text x="406" y="328" font-size="10.5" fill="#5B6B73">the last 10 messages, EXCLUDING the current one</text>
+  <text x="406" y="344" font-size="10.5" fill="#5B6B73">drops a leading assistant turn — history always</text>
+  <text x="406" y="360" font-size="10.5" fill="#5B6B73">opens on a user message</text>
+  <text x="406" y="376" font-size="10.5" fill="#5B6B73">merges consecutive same-role turns</text>
+  <line x1="406" y1="392" x2="710" y2="392" stroke="#E2E6E3"/>
+  <text x="406" y="411" font-size="11" font-weight="700" fill="#E24B4A">Array.isArray(messages) — NOT messages ||</text>
+  <text x="406" y="429" font-size="10.5" fill="#5B6B73">a || would fall through to the Setup Agent's chat</text>
+
+  <rect x="390" y="464" width="336" height="172" rx="8" fill="#FFFFFF" stroke="#00A878" stroke-dasharray="5 3"/>
+  <text x="406" y="486" font-size="13" font-weight="600" fill="#0D1F2D">parseAiJson fallback — the NORMAL path</text>
+  <text x="406" y="509" font-size="12" font-weight="700" fill="#00A878">THREE OF THREE correction calls</text>
+  <text x="406" y="530" font-size="10.5" fill="#5B6B73">every call that returned a parseable response</text>
+  <text x="406" y="546" font-size="10.5" fill="#5B6B73">logged "recovered 1 top-level object(s)"</text>
+  <line x1="406" y1="562" x2="710" y2="562" stroke="#E2E6E3"/>
+  <text x="406" y="581" font-size="10.5" font-weight="700" fill="#E24B4A">count is 1, NOT 2 — so this is not the</text>
+  <text x="406" y="597" font-size="10.5" font-weight="700" fill="#E24B4A">two-object case 468e10b was written for</text>
+  <text x="406" y="619" font-size="10.5" font-style="italic" fill="#5B6B73">without it every correction reads "invalid JSON"</text>
+
+  <!-- ============ COLUMN 3 — what the live run proved ============ -->
+  <text x="776" y="112" font-size="11" font-weight="700" fill="#5B6B73" letter-spacing="1">WHAT THE LIVE RUN PROVED</text>
+
+  <rect x="776" y="126" width="330" height="152" rx="8" fill="#FFFFFF" stroke="#00A878" stroke-dasharray="5 3"/>
+  <text x="792" y="148" font-size="13" font-weight="700" fill="#0D1F2D">TURN 1 · ~317 seconds</text>
+  <text x="792" y="170" font-size="10.5" fill="#5B6B73">submitted 23:23:52Z · present 23:29:09Z</text>
+  <text x="792" y="191" font-size="12" font-weight="700" fill="#E24B4A">PAST the old 300s line</text>
+  <text x="792" y="209" font-size="10.5" fill="#5B6B73">the same run would have 504'd on the</text>
+  <text x="792" y="225" font-size="10.5" fill="#5B6B73">previous config — see 96e9b93</text>
+  <text x="792" y="247" font-size="11" font-weight="700" fill="#00A878">proven decisive, not a lucky pass</text>
+  <text x="792" y="266" font-size="10.5" font-style="italic" fill="#5B6B73">a 280s completion would have proved nothing</text>
+
+  <rect x="776" y="296" width="330" height="190" rx="8" fill="#FFFFFF" stroke="#00A878" stroke-dasharray="5 3"/>
+  <text x="792" y="318" font-size="13" font-weight="700" fill="#0D1F2D">TURN 2 · ~95 seconds · a REPLY</text>
+  <text x="792" y="341" font-size="10.5" font-style="italic" fill="#0D1F2D">"the balance-check webhook-out approach</text>
+  <text x="792" y="357" font-size="10.5" font-style="italic" fill="#0D1F2D">would have solved this … but the operator</text>
+  <text x="792" y="373" font-size="10.5" font-style="italic" fill="#0D1F2D">has ruled that out"</text>
+  <line x1="792" y1="389" x2="1090" y2="389" stroke="#E2E6E3"/>
+  <text x="792" y="408" font-size="10.5" fill="#5B6B73">the phrase appears nowhere in the turn-2</text>
+  <text x="792" y="424" font-size="10.5" fill="#5B6B73">prompt, and turn 1 was NEVER APPLIED — so</text>
+  <text x="792" y="440" font-size="10.5" fill="#5B6B73">nothing in stored state mentions webhook-outs</text>
+  <text x="792" y="462" font-size="12" font-weight="700" fill="#00A878">► HISTORY GENUINELY THREADS</text>
+  <text x="792" y="478" font-size="10.5" font-style="italic" fill="#5B6B73">the one question 143 assertions could not answer</text>
+
+  <rect x="776" y="504" width="330" height="132" rx="8" fill="#FFFFFF" stroke="#EF9F27" stroke-dasharray="4 3"/>
+  <text x="792" y="526" font-size="12" font-weight="700" fill="#EF9F27">KNOWN GAP — recorded, not fixed</text>
+  <text x="792" y="548" font-size="11" font-weight="700" fill="#0D1F2D">ripples[] is unreachable on a reply turn</text>
+  <text x="792" y="569" font-size="10.5" fill="#5B6B73">the union stops before ripples are computed,</text>
+  <text x="792" y="585" font-size="10.5" fill="#5B6B73">so "record this for later" survives only as</text>
+  <text x="792" y="601" font-size="10.5" fill="#5B6B73">prose, not as structured data</text>
+  <text x="792" y="623" font-size="10.5" font-style="italic" fill="#EF9F27">UNDECIDED after one occurrence</text>
+
+  <!-- ============ THE TURN CYCLE ============ -->
+  <text x="40" y="676" font-size="11" font-weight="700" fill="#5B6B73" letter-spacing="1">THE TURN CYCLE — AND WHERE IT STOPS</text>
+
+  <rect x="40" y="690" width="272" height="86" rx="8" fill="#FFFFFF" stroke="#E2E6E3"/>
+  <text x="56" y="712" font-size="12" font-weight="600" fill="#0D1F2D">TURN 1 — propose</text>
+  <text x="56" y="733" font-size="10.5" fill="#5B6B73">23 → 29 nodes · n8n round-trip built</text>
+  <text x="56" y="749" font-size="10.5" fill="#5B6B73">into the workflow · 3 webhook-outs</text>
+  <text x="56" y="766" font-size="10.5" font-style="italic" fill="#E24B4A">an earlier run of the SAME prompt was smaller</text>
+
+  <line x1="316" y1="733" x2="360" y2="733" stroke="#00A878" stroke-width="1.5" marker-end="url(#av)"/>
+
+  <rect x="366" y="690" width="272" height="86" rx="8" fill="#FFFFFF" stroke="#00A878" stroke-dasharray="5 3"/>
+  <text x="382" y="712" font-size="12" font-weight="600" fill="#0D1F2D">Rephrase — the proposal is KEPT</text>
+  <text x="382" y="733" font-size="10.5" fill="#5B6B73">phase → "input", composer cleared,</text>
+  <text x="382" y="749" font-size="10.5" fill="#5B6B73">proposal retained in state</text>
+  <text x="382" y="766" font-size="10.5" font-style="italic" fill="#00A878">Discard is the other door — it does clear it</text>
+
+  <line x1="642" y1="733" x2="686" y2="733" stroke="#00A878" stroke-width="1.5" marker-end="url(#av)"/>
+
+  <rect x="692" y="690" width="272" height="86" rx="8" fill="#FFFFFF" stroke="#00A878" stroke-dasharray="5 3"/>
+  <text x="708" y="712" font-size="12" font-weight="600" fill="#0D1F2D">TURN 2 — propose OR reply</text>
+  <text x="708" y="733" font-size="10.5" fill="#5B6B73">it declined even the NARROWED ask,</text>
+  <text x="708" y="749" font-size="10.5" fill="#5B6B73">correctly: no node change can make a</text>
+  <text x="708" y="766" font-size="10.5" fill="#5B6B73">once-written field fresher</text>
+
+  <line x1="968" y1="733" x2="1012" y2="733" stroke="#E24B4A" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#ar)"/>
+
+  <rect x="1018" y="690" width="282" height="86" rx="8" fill="#FFFFFF" stroke="#E24B4A"/>
+  <text x="1034" y="712" font-size="12" font-weight="700" fill="#E24B4A">Apply — the ONE write</text>
+  <text x="1034" y="733" font-size="10.5" fill="#5B6B73">a reply STOPS BEFORE the diff, so no</text>
+  <text x="1034" y="749" font-size="10.5" fill="#5B6B73">Apply button ever rendered on turn 2</text>
+  <text x="1034" y="766" font-size="10.5" font-style="italic" fill="#E24B4A">never pressed — exchange still unwritten</text>
+
+  <!-- ============ FOOTER ============ -->
+  <rect x="40" y="806" width="1260" height="66" rx="8" fill="#FFFFFF" stroke="#E2E6E3" stroke-dasharray="4 3"/>
+  <text x="56" y="828" font-size="11" font-weight="700" fill="#5B6B73" letter-spacing="1">STILL UNEXERCISED AFTER 16.10</text>
+  <text x="56" y="849" font-size="11" fill="#5B6B73">a THIRD turn (both live sessions stopped at two) · paired_by_position actually reaching the model (no turn has produced a mis-paired row)</text>
+  <text x="56" y="865" font-size="11" fill="#5B6B73">an APPLIED multi-turn correction — Apply was never pressed, so `exchange` has never been written to deployment.corrections[] in production</text>
+</svg>

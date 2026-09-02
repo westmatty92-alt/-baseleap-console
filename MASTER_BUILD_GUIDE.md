@@ -1075,3 +1075,142 @@ Live GHL workflow reads (a read scope exists, but whether the payload carries no
 structure is UNESTABLISHED — so drift against the real canvas is undetectable); sibling
 writes; manifest updates; an undo button (`nodes_before` is logged, a revert is manual SQL);
 correction of catalog engines; test-matrix regeneration.
+
+## Order 16.10 — multi-turn correction chat (Sep 1 2026)
+
+Order 16.6 shipped a correction panel that took ONE question and gave ONE answer. If the
+proposal was wrong, or right but overscoped, the only moves were Apply or Discard. 16.10
+makes the exchange a conversation: the operator can push back and the agent answers with
+the earlier turn in view.
+
+**Parts 3, 4, 5 and 8 are built. The button is labelled `Rephrase`, not "Refine"** — the
+design discussions used "Refine" throughout and the shipped label is different; two render
+sites (index.html:6514, :6562) both read `Rephrase` and both call `corrBack()`.
+
+### What each part is
+
+**Part 3 — `correctionDiffForModel(rows)`.** Serialises the diff the operator sees into
+lines the model can read: `ADDED <path> (type): …`, `REMOVED …`, and `CHANGED <before_path>
+-> <after_path> (type)` with BEFORE/AFTER on their own lines. A row flagged
+`paired_by_position` carries its warning into the model's view verbatim — *"(paired by
+position — this may not be the node you think it is)"* — so the agent inherits the same
+uncertainty the panel shows a human. It returns EMPTY STRING when nothing changed, on
+purpose: a "no changes" scaffold would read to the model as a turn that proposed something,
+which is worse than saying nothing.
+
+**Part 4 — history plumbing.** `chatHistoryForAi(messages)` takes the last 10 messages
+EXCLUDING the current one (`slice(0,-1).slice(-10)`), drops any leading assistant turn so
+the history always opens on a user message, and merges consecutive same-role turns. The
+first line reads `Array.isArray(messages) ? messages : S.setup.chat.messages` — an explicit
+type test, NOT `messages ||`, because an empty array is falsy-adjacent in the shape that
+matters and a `||` would silently fall through to the Setup Agent's chat. `corrSay(role,
+text)` appends `{role, text, at}` with the timestamp stamped at append time. `corrBack()`
+guards on `busy`, sets `phase = "input"`, clears the composer and message, and re-renders —
+**it does NOT clear the proposal**, which is what makes the next turn a continuation rather
+than a restart.
+
+**Part 5 — the log entry** gains `request` (the FIRST user message, falling back to the raw
+composer text) and `exchange` (a copy of the whole message array), so an applied correction
+records the conversation that produced it, not just the final ask.
+
+### Option C: summary plus compact diff
+
+Three history shapes were compared before building. Full echo of every prior proposal cost
+~4,996 tokens/turn (~32.6k over a session, +328% on baseline). Summary-only was cheapest but
+leaves the model unable to see its own prior proposal. **Option C — the summary line plus the
+serialised diff — costs ~558 tokens/turn (~10.4k, +37%)** and is what shipped.
+
+It works because of the RECONSTRUCTION PROPERTY: `userMsg` re-sends the stored automation in
+full on every turn, so STORED + DIFF = the complete prior proposal. The history never has to
+carry the proposal itself.
+
+### The 300s ceiling had to be fixed first, and the fix is proven
+
+The first live attempt died at the platform ceiling — see "The 300s ceiling" under Order
+16.6. `vercel.json` went 300s → 800s in `96e9b93` (Pro allows 800s; Hobby would not have).
+
+**Turn 1 then completed in ~317 seconds** — submitted 23:23:52Z, proposal present 23:29:09Z.
+That is PAST the old 300s line, so the same run would have 504'd on the previous config. The
+ceiling change is therefore proven decisive rather than merely coincident with a pass; a
+completion at 280s would have proved nothing.
+
+Turn 2 took ~95 seconds (00:06:12Z → 00:07:47Z) — roughly a third, because a `reply` emits
+prose instead of a 29-node automation. **Reply turns are cheap; propose turns are not.**
+
+### `parseAiJson`'s fallback is load-bearing, three for three
+
+Every correction call that returned a parseable response has logged:
+
+    parseAiJson: whole-string parse failed — recovered 1 top-level object(s), using the LAST.
+
+Three of three — one in the Aug session, plus turn 1 and turn 2 here. **Note the count is
+1, not 2**, so this is NOT the two-object self-correction that motivated `468e10b`; the
+whole-string parse fails for some other reason and the balanced-brace scanner recovers it.
+Without that commit every correction tonight would have surfaced as "invalid JSON". It is
+not a defensive edge case — it is the normal path for this caller.
+
+### Turn 1 — the proposal, and it was bigger than its predecessor
+
+Prompt: *"the day-3 reminder fires even when the invoice was already partly paid"* on
+`de43a1b1` position 9 automation 0.
+
+Diagnosis, and it is correct: `invoice-paid` and the `QB Invoice ID Being Chased` field are
+BOTH written only by the sibling, which fires on `invoice.paid`; a partial payment leaves QB
+status Unpaid, so neither signal is ever set and every guard passes.
+
+The fix it proposed builds an n8n round-trip INTO the workflow: three outbound webhooks to a
+QB-balance-check endpoint, three 2-minute waits for the round trip, and a CONDITION C
+(`QB Invoice Amount Due = 0 → end`) on all three guards. **Node count 23 → 29.**
+
+**An earlier run of the identical prompt reached the same diagnosis and stopped far short** —
+it fixed only the stale amount and routed the stop-the-chase question to a ripple as an
+operator decision. Same finding, very different blast radius, and the divergence is invisible
+from the diff alone. Worth knowing that this feature's output varies in ambition run to run.
+
+The moved-path indicator — the third item on Order 16.6's "Still not exercised" list —
+**is now exercised**: `changed #9 → #8`, `#12 → #16`, `#17 → #20` all rendered correctly.
+
+### Turn 2 — the proof that history threads
+
+Prompt: the n8n endpoint does not exist and is not being built; scope back to the stale
+amount; record the balance-check as a ripple.
+
+The agent returned a **`reply`, not a `propose`**, and declined even the narrowed request —
+correctly. `QB Invoice Amount Due` is written once at `n3` and read at message time; with the
+webhook-out ruled out, **no node change inside this automation can make a once-written field
+fresher.** Editing message copy would have been theatre. It moved the fix to n8n, where the
+data originates.
+
+**The sentence that proves history threading:**
+
+> "The balance-check webhook-out approach would have solved this by asking n8n to refresh the
+> field before each message, but the operator has ruled that out."
+
+That is unwritable without sight of turn 1. The phrase "webhook-out approach" appears nowhere
+in the turn-2 prompt, and nothing in stored state mentions webhook-outs because turn 1 was
+never applied. `chatHistoryForAi` + `correctionDiffForModel` genuinely carried the prior turn
+forward. **This was the one open question 143 assertions could not answer, and the answer is
+yes.**
+
+The panel rendered `corr-reply` with the header *"The agent did not propose a change"*,
+`diffRowCount: 0`, `rippleCount: 0`, and **no Apply button in the DOM** — the discriminated
+union stopping before the diff, on a second and unrelated occasion.
+
+### Known gap — `ripples[]` is unreachable on a reply turn
+
+The operator asked for the balance-check idea to be "recorded as a ripple". **It could not
+be.** A `reply` carries no `ripples[]` array by construction — the union stops before ripples
+are computed — so the idea survives only as prose inside the reply text, not as structured
+data anything can later read.
+
+That is a real limitation, not an oversight in the run: a request to "log this for later" has
+no home in the reply shape. Whether reply turns should be able to emit ripples is UNDECIDED
+after one occurrence and deliberately not designed here.
+
+### Still unexercised after 16.10
+
+- A THIRD turn. Both live sessions stopped at two.
+- `paired_by_position` reaching the model. No turn has produced a mis-paired row, so the
+  warning line has never actually been transmitted.
+- An applied multi-turn correction. `Apply` was never pressed, so `exchange` has never been
+  written to `deployment.corrections[]` in production.
