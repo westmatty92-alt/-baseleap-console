@@ -215,3 +215,81 @@ probe residue, and are left alone.
 - Field values map by **fieldId, not name** — persist every returned id
   (clients.ghl_map) at creation time; the create response is the only cheap
   moment to capture it.
+
+## Outbound webhooks — UI-OBSERVED, NOT PROBED (2026-09-02)
+
+**This section is NOT part of the probed-live matrix above.** Nothing here has
+been exercised against a real request. It records what the GHL workflow builder's
+config screen offers, which is a weaker claim than the table above and must not be
+read as equivalent. The calendar-shapes entry is the precedent: shapes that were
+inferred turned out correct, and the point was that being right by inference is
+not the same as knowing.
+
+### What the Custom Webhook action's config screen shows
+
+Fields: Action name · Event · Method · URL · **Authorization** · **Headers** ·
+**Query parameters** · Content-Type (`application/json`) · Raw body.
+
+**AUTHORIZATION IS ITS OWN FIELD, SEPARATE FROM THE HEADERS EDITOR** (confirmed by
+screenshot). It is a dropdown with five types: **None · Basic Auth · Bearer Token ·
+API Key · OAuth2**. So a secret does not have to be hand-typed as a generic header
+— `API Key` is a first-class option.
+
+**Headers** is a separate arbitrary key-value editor ("Add another item"), not a
+preset list. **Query parameters** is a second arbitrary key-value editor.
+
+### The rule this establishes for inbound endpoints
+
+**Use the Authorization field's `API Key` type. Do NOT hand-type the secret into
+the generic Headers editor.** They are functionally similar, but the Authorization
+picker is the field designed for a credential, and `ghl-automation` records that
+Custom Webhook uses "OAuth2 or managed masked credentials — **never paste secrets
+into steps/notes**". Typing a secret into the generic Headers editor IS pasting a
+secret into a step; the Authorization picker is the path that rule points at.
+
+**The wire format is the remaining unknown.** "API Key" is implemented differently
+across products — some send `Authorization: <value>`, some a named header, some
+offer header-or-query placement. So the endpoint must NOT hardcode a guess.
+
+Parameterise it: read **`INTAKE_AUTH_HEADER`** (the header NAME) and
+**`INTAKE_SECRET`** (the value) from server env, compare with a timing-safe
+comparison, and REJECT BEFORE ANY WRITE. The single unknown is then resolved ONCE
+at configuration time, from one real fire, instead of being guessed in code or
+papered over by accepting the secret from several possible locations — which would
+widen the attack surface to avoid asking a question.
+
+**State the property honestly: this authenticates the SENDER, not the PAYLOAD.**
+A shared secret is bearer-shaped — anyone holding it can post — and unlike an HMAC
+it does not prove the body is unmodified. Proportionate for creating a `prospect`
+row a human then reviews. NOT proportionate for anything that writes into a
+client's GHL account.
+
+**NEVER put the secret in the query string**, even if the UI offers it — as a
+Query parameter, or as an API Key placement option. URLs are captured by access
+logs, proxy logs and Referer headers. Header only.
+
+**Design so the unverified assumption FAILS CLOSED:** if the expected header does
+not arrive, the request is rejected and nothing is written. The design must not
+depend on the header arriving — it depends on rejecting when it doesn't. That is
+what makes it safe to build against a UI observation.
+
+### Resolved since first written
+
+- **Authorization is a separate field, not the first Headers row** — confirmed by
+  screenshot 2026-09-02. Five types offered; `API Key` is the one to use.
+- **Per-execution metering is NOT a concern** — Matthew's GHL plan includes
+  unlimited API/premium executions, so authenticated intake carries no
+  per-submission cost. Recorded rather than deleted, because the concern was real
+  on a metered plan and would return on one.
+
+### Open — what would promote this into the probed matrix
+
+1. **Does the configured Authorization / API Key actually arrive, and in what
+   shape?** Only a real fire proves it, and its answer is what fills
+   `INTAKE_AUTH_HEADER`.
+2. **Does the FORM path use this action at all?** A GHL form may trigger a
+   workflow (→ this action, covered here) or expose a form-level webhook setting
+   (NOT covered here). Which one intake uses is unconfirmed.
+
+When a real submission settles both, rewrite this section as probed and move the
+verified rows into the matrix above, exactly as the calendar entry was promoted.
