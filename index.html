@@ -1251,21 +1251,89 @@ function getAuditText(){
 function editGap(i, field, val){ if(S.gaps[i]) S.gaps[i][field] = val; }
 function deleteGap(i){ S.gaps.splice(i,1); renderAudit(); }
 
+const AUDIT_SKILLS = ["audit-discovery", "operational-blueprint-probing", "root-cause-laddering"];
+const GAP_SEVERITIES = ["high", "medium", "low"];
+const GAP_CATEGORIES = ["gap", "tool", "pain", "win"];
+
+// Load authored skills from the `skills` table (migration 016) at prompt-assembly time.
+// THE REPO IS AUTHORED, THE DB IS RUNTIME: rows are written only by
+// scripts/sync-skills.mjs with the service-role key. The table has a SELECT policy and
+// no insert/update/delete policy at all, so this app cannot write one back.
+//
+// FAILS LOUDLY, NAMING THE SKILL. A silent fallback to a skill-less prompt would trade
+// write-time drift for runtime drift — the same bug this mechanism exists to kill, and
+// strictly worse because it would be invisible: the gaps would look normal and be thin.
+// The cost is real and deliberate — the Audit now depends on Supabase being reachable
+// to ANALYZE, not just to save. An outage is visible; quiet degradation is not.
+async function loadSkills(names){
+  const { data, error } = await sb.from("skills").select("name,body,content_hash").in("name", names);
+  if(error) throw new Error(`skills load failed: ${error.message}`);
+  const got = new Map((data || []).map(r => [r.name, r]));
+  const missing = names.filter(n => !got.has(n) || !String(got.get(n).body || "").trim());
+  // Name the fix, not just the fault.
+  if(missing.length) throw new Error(`missing skill(s): ${missing.join(", ")} — run: node scripts/sync-skills.mjs --apply`);
+  // content_hash is SELECTED but NOT VERIFIED in v1 — a deliberate scope decision, not an
+  // oversight. The browser has no cheap synchronous sha256 (crypto.subtle is async), so
+  // checking would add an await per skill to every audit run. The tamper vector it would
+  // catch requires the service-role key, which could alter anything else anyway, so the
+  // check is defence against accident rather than attack. Revisit if skills ever gain a
+  // second writer.
+  return names.map(n => `### SKILL: ${n}\n${got.get(n).body.trim()}`).join("\n\n");
+}
+
+// Shape validator for the gap-analysis contract, in the validateCorrectionProposal mould:
+// THROWS rather than filling defaults. The old `severity: g.severity || "medium"` caught a
+// MISSING severity but not a WRONG one, so "critical" flowed into S.gaps, into the gaps
+// table, and into the client report — where crSevCounts() folds an unrecognised value into
+// medium (index.html: "unknown severity folds into medium"). That is not a lost signal, it
+// is a MISREPORTED severity count on a document a client reads.
+function validateGapResponse(o){
+  if(!o || typeof o !== "object" || Array.isArray(o)) throw new Error("not an object");
+  if(typeof o.summary !== "string" || !o.summary.trim()) throw new Error("needs a non-empty summary");
+  if(!Array.isArray(o.gaps) || !o.gaps.length) throw new Error("needs a non-empty gaps array");
+  o.gaps.forEach((g, i) => {
+    if(!g || typeof g !== "object" || Array.isArray(g)) throw new Error(`gaps[${i}]: not an object`);
+    if(typeof g.title !== "string" || !g.title.trim()) throw new Error(`gaps[${i}].title must be a non-empty string`);
+    if(typeof g.problem !== "string" || !g.problem.trim()) throw new Error(`gaps[${i}].problem must be a non-empty string`);
+    // cost MAY be empty: operational-blueprint-probing tells the model to name an absence
+    // rather than invent a number, so rejecting "" would punish an obedient response.
+    if(typeof g.cost !== "string") throw new Error(`gaps[${i}].cost must be a string (may be empty)`);
+    if(!GAP_SEVERITIES.includes(g.severity)) throw new Error(`gaps[${i}].severity must be ${GAP_SEVERITIES.join("|")}, got ${JSON.stringify(g.severity)}`);
+    if(!GAP_CATEGORIES.includes(g.category)) throw new Error(`gaps[${i}].category must be ${GAP_CATEGORIES.join("|")}, got ${JSON.stringify(g.category)}`);
+  });
+  return o;
+}
+
 async function analyzeGaps(){
   const text = getAuditText();
   if(text.length < 40){ setAuditMsg("Add Guide notes or a transcript first."); return; }
   S.audit.analyzing = true; renderAudit();
   try{
     const stackSummary = summarizeStack(S.activeClient.current_stack);
-    const out = await ai({
-      system: "You are an expert business-systems analyst on a GHL automation agency's audit call. From the notes, identify every distinct, separately-solvable workflow gap as its own item — each gap should map ~1:1 to one automation that could be built and priced independently. Never collapse related but distinct gaps into a single item. Scale gap count to transcript richness: a brief call yields 3–5 gaps, a rich transcript yields 6–9 or more — do NOT cap at three. Separation rules: lead-capture is separate from lead-response; reminders are separate from calendar management; review requests are separate from retention follow-up; manual invoicing and payment-chasing are always their own gap. Use the client's own words in problem and cost fields. Respond ONLY with valid JSON, no markdown:\n{\"summary\":\"2-3 sentence plain-language summary of their current workflow\",\"gaps\":[{\"title\":\"short gap name\",\"problem\":\"what's happening, in their words\",\"cost\":\"the time or money cost of leaving it\",\"severity\":\"high|medium|low\",\"category\":\"gap|tool|pain|win\"}]}",
-      messages: [{ role:"user", content:`Client: ${S.activeClient.business_name} (${S.activeClient.industry||"industry n/a"})\n\nAudit notes:\n${text}`
-        + (stackSummary ? `\n\nCurrent stack (context only — what they already run, not a gap): ${stackSummary}` : "") }],
-      max_tokens: 1500,
+    // Throws if any skill is missing — before the AI call, so a broken prompt costs nothing.
+    const skills = await loadSkills(AUDIT_SKILLS);
+    const system = "You are an expert business-systems analyst on a GHL automation agency's audit call. From the notes, identify every distinct, separately-solvable workflow gap as its own item — each gap should map ~1:1 to one automation that could be built and priced independently. Never collapse related but distinct gaps into a single item. Scale gap count to transcript richness: a brief call yields 3–5 gaps, a rich transcript yields 6–9 or more — do NOT cap at three. Separation rules: lead-capture is separate from lead-response; reminders are separate from calendar management; review requests are separate from retention follow-up; manual invoicing and payment-chasing are always their own gap. Use the client's own words in problem and cost fields.\n\n"
+      + "Apply the techniques below to every gap before writing it.\n\n" + skills + "\n\n"
+      + "IF THE NOTES ARE THIN OR LARGELY EMPTY, that is a signal to lean HARDER on the probing and laddering techniques above, not a reason to return fewer gaps. A sparse transcript means interrogating what IS there more aggressively — the unstated frequency, the unnamed owner, the untracked handoff are themselves findings. Never invent a number to fill a gap you cannot quantify; name the absence in the client's own words instead.\n\n"
+      + "Respond ONLY with valid JSON, no markdown:\n{\"summary\":\"2-3 sentence plain-language summary of their current workflow\",\"gaps\":[{\"title\":\"short gap name\",\"problem\":\"the ROOT CAUSE, laddered to the buildable rung\",\"cost\":\"the time or money cost of leaving it — empty string if the notes do not support a figure\",\"severity\":\"high|medium|low\",\"category\":\"gap|tool|pain|win\"}]}";
+    const userMsg = `Client: ${S.activeClient.business_name} (${S.activeClient.industry||"industry n/a"})\n\nAudit notes:\n${text}`
+      + (stackSummary ? `\n\nCurrent stack (context only — what they already run, not a gap): ${stackSummary}` : "");
+    // aiJsonWithRetry, not a bare ai() + JSON.parse: it routes through parseAiJson (whose
+    // recovery path has fired on 3 of 3 correction calls), validates, and retries ONCE on a
+    // contract violation. That retry is what makes the strict validator safe — without it a
+    // single malformed severity would be a dead end rather than a recoverable hiccup.
+    // max_tokens 4000, sized not guessed: 9 gaps x ~100 output tokens + summary ~= 1,000-1,200,
+    // and 1500 was not comfortably clear of that. The ~1,200 tokens of skill text are INPUT,
+    // the cheap axis. The retryNudge is gap-shaped — the default is correction-shaped.
+    const parsed = await aiJsonWithRetry({
+      system, userMsg, max_tokens: 4000,
+      validate: validateGapResponse, what: "gap analysis", tag: "audit",
+      retryNudge: `Respond with the complete gap JSON only. severity must be exactly one of ${GAP_SEVERITIES.join(", ")}; category must be exactly one of ${GAP_CATEGORIES.join(", ")}.`,
     });
-    const parsed = JSON.parse(out.replace(/```json|```/g,"").trim());
     S.audit.summary = parsed.summary || null;
-    S.gaps = (parsed.gaps || []).map((g,i) => ({ title:g.title||"Untitled gap", problem:g.problem||"", cost:g.cost||"", severity:g.severity||"medium", category:g.category||"gap", sort_order:i }));
+    // No `||` defaults: validateGapResponse has already guaranteed every field's type and
+    // vocabulary, so a default here could only mask a validator that stopped working.
+    S.gaps = parsed.gaps.map((g,i) => ({ title:g.title, problem:g.problem, cost:g.cost, severity:g.severity, category:g.category, sort_order:i }));
     setAuditMsg(`${S.gaps.length} gaps found — review and save.`);
   }catch(e){
     console.error("analyzeGaps error:", e);
