@@ -1,0 +1,148 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1340" height="900" viewBox="0 0 1340 900" font-family="Segoe UI, system-ui, sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#5B6B73"/>
+    </marker>
+    <marker id="av" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#00A878"/>
+    </marker>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#E24B4A"/>
+    </marker>
+  </defs>
+
+  <rect width="1340" height="900" fill="#F4F5F0"/>
+  <text x="40" y="46" font-size="21" font-weight="700" fill="#0D1F2D">Order 14 — audit skills at runtime · the repo is authored, the DB is runtime</text>
+  <text x="40" y="70" font-size="13" fill="#5B6B73">Solid = existed before · Dashed green = built this cycle · Red = the boundary that holds · Amber = a v1 scope decision · migration 016</text>
+
+  <!-- ============ COLUMN 1 — the one-way contract ============ -->
+  <text x="40" y="112" font-size="11" font-weight="700" fill="#5B6B73" letter-spacing="1">THE ONE-WAY CONTRACT</text>
+
+  <rect x="40" y="126" width="300" height="104" rx="8" fill="#FFFFFF" stroke="#E2E6E3"/>
+  <text x="56" y="148" font-size="13" font-weight="600" fill="#0D1F2D">.claude/skills/&lt;name&gt;/SKILL.md</text>
+  <text x="56" y="170" font-size="11" font-weight="700" fill="#00A878">AUTHORED — reviewed in a PR</text>
+  <text x="56" y="189" font-size="11" fill="#5B6B73">7 files on disk · 3 read by the Audit</text>
+  <text x="56" y="210" font-size="10.5" font-style="italic" fill="#5B6B73">this is what you edit. always.</text>
+
+  <line x1="190" y1="232" x2="190" y2="286" stroke="#00A878" stroke-width="1.5" marker-end="url(#av)"/>
+  <text x="200" y="252" font-size="10.5" fill="#5B6B73">scripts/sync-skills.mjs</text>
+  <text x="200" y="268" font-size="10.5" fill="#5B6B73">service-role key · dry run default</text>
+
+  <rect x="40" y="292" width="300" height="150" rx="8" fill="#FFFFFF" stroke="#00A878" stroke-dasharray="5 3"/>
+  <text x="56" y="314" font-size="13" font-weight="600" fill="#0D1F2D">skills TABLE — migration 016</text>
+  <text x="56" y="335" font-size="11" font-weight="700" fill="#00A878">RUNTIME copy, never the source</text>
+  <line x1="56" y1="350" x2="324" y2="350" stroke="#E2E6E3"/>
+  <text x="56" y="369" font-size="11" fill="#5B6B73">SELECT policy — auth.uid() IS NOT NULL</text>
+  <text x="56" y="388" font-size="11" font-weight="700" fill="#E24B4A">NO insert / update / delete policy</text>
+  <text x="56" y="406" font-size="10.5" fill="#5B6B73">so the APP cannot write a skill, ever</text>
+  <text x="56" y="428" font-size="11" font-weight="700" fill="#00A878">► the ABSENCE is the control</text>
+
+  <rect x="40" y="458" width="300" height="94" rx="8" fill="#FFFFFF" stroke="#E24B4A" stroke-dasharray="4 3"/>
+  <text x="56" y="480" font-size="12" font-weight="700" fill="#E24B4A">✗ NOTHING FLOWS DB → REPO</text>
+  <text x="56" y="501" font-size="10.5" fill="#5B6B73">the script has no code path that reads a</text>
+  <text x="56" y="517" font-size="10.5" fill="#5B6B73">row and writes a file — asserted, not</text>
+  <text x="56" y="533" font-size="10.5" fill="#5B6B73">claimed: zero writeFile / appendFile / mkdir</text>
+
+  <rect x="40" y="568" width="300" height="112" rx="8" fill="#FFFFFF" stroke="#E24B4A" stroke-dasharray="4 3"/>
+  <text x="56" y="590" font-size="12" font-weight="700" fill="#E24B4A">✗ THE BROWSER-FETCH PLAN DIED</text>
+  <text x="56" y="611" font-size="10.5" fill="#5B6B73">D2 was going to fetch /.claude/skills/…</text>
+  <text x="56" y="629" font-size="10.5" font-weight="700" fill="#E24B4A">those files were PUBLICLY served</text>
+  <text x="56" y="645" font-size="10.5" fill="#5B6B73">GHL write matrix + the CLIENT PRICE BANDS,</text>
+  <text x="56" y="661" font-size="10.5" fill="#5B6B73">unauthenticated, for the deployment's life</text>
+  <text x="56" y="676" font-size="10.5" font-style="italic" fill="#00A878">closed by 62e7f66 — hence the table</text>
+
+  <!-- ============ COLUMN 2 — what loads, and how it fails ============ -->
+  <text x="390" y="112" font-size="11" font-weight="700" fill="#5B6B73" letter-spacing="1">WHAT LOADS, AND HOW IT FAILS</text>
+
+  <rect x="390" y="126" width="336" height="166" rx="8" fill="#FFFFFF" stroke="#00A878" stroke-dasharray="5 3"/>
+  <text x="406" y="148" font-size="13" font-weight="600" fill="#0D1F2D">loadSkills(AUDIT_SKILLS)</text>
+  <text x="406" y="170" font-size="10.5" fill="#5B6B73">SELECT name, body, content_hash</text>
+  <text x="406" y="186" font-size="10.5" fill="#5B6B73">WHERE name IN (audit-discovery,</text>
+  <text x="406" y="202" font-size="10.5" fill="#5B6B73">operational-blueprint-probing,</text>
+  <text x="406" y="218" font-size="10.5" fill="#5B6B73">root-cause-laddering)</text>
+  <line x1="406" y1="234" x2="710" y2="234" stroke="#E2E6E3"/>
+  <text x="406" y="253" font-size="11" font-weight="700" fill="#E24B4A">FAILS LOUDLY — names the skill</text>
+  <text x="406" y="269" font-size="10.5" fill="#5B6B73">AND the fix (sync-skills.mjs). Throws</text>
+  <text x="406" y="285" font-size="10.5" fill="#5B6B73">BEFORE the AI call — a broken prompt costs 0</text>
+
+  <rect x="390" y="308" width="336" height="126" rx="8" fill="#FFFFFF" stroke="#EF9F27" stroke-dasharray="4 3"/>
+  <text x="406" y="330" font-size="12" font-weight="700" fill="#EF9F27">content_hash — a v1 SCOPE DECISION</text>
+  <text x="406" y="352" font-size="11" font-weight="700" fill="#0D1F2D">SELECTED, but NOT VERIFIED</text>
+  <text x="406" y="373" font-size="10.5" fill="#5B6B73">crypto.subtle is async → checking costs an</text>
+  <text x="406" y="389" font-size="10.5" fill="#5B6B73">await per skill on every audit run</text>
+  <text x="406" y="410" font-size="10.5" fill="#5B6B73">the tamper it catches needs the service key,</text>
+  <text x="406" y="426" font-size="10.5" fill="#5B6B73">which could alter anything else anyway</text>
+
+  <rect x="390" y="450" width="336" height="146" rx="8" fill="#FFFFFF" stroke="#00A878" stroke-dasharray="5 3"/>
+  <text x="406" y="472" font-size="13" font-weight="600" fill="#0D1F2D">analyzeGaps → aiJsonWithRetry</text>
+  <text x="406" y="494" font-size="10.5" fill="#5B6B73">NOT a bare ai() + raw JSON.parse — which</text>
+  <text x="406" y="510" font-size="10.5" fill="#5B6B73">is a correction to the original plan of</text>
+  <text x="406" y="526" font-size="10.5" fill="#5B6B73">adding parseAiJson alone</text>
+  <line x1="406" y1="542" x2="710" y2="542" stroke="#E2E6E3"/>
+  <text x="406" y="561" font-size="11" font-weight="700" fill="#00A878">the RETRY is what makes a strict</text>
+  <text x="406" y="577" font-size="11" font-weight="700" fill="#00A878">validator SAFE</text>
+  <text x="406" y="592" font-size="10.5" fill="#5B6B73">max_tokens 1500 → 4000, sized not guessed</text>
+
+  <rect x="390" y="612" width="336" height="68" rx="8" fill="#FFFFFF" stroke="#E2E6E3"/>
+  <text x="406" y="634" font-size="12" font-weight="600" fill="#0D1F2D">The compensation rule, in the prompt</text>
+  <text x="406" y="655" font-size="10.5" fill="#5B6B73">thin notes → lean HARDER on probing and</text>
+  <text x="406" y="671" font-size="10.5" fill="#5B6B73">laddering. Never invent a number.</text>
+
+  <!-- ============ COLUMN 3 — the gap contract ============ -->
+  <text x="776" y="112" font-size="11" font-weight="700" fill="#5B6B73" letter-spacing="1">THE GAP CONTRACT</text>
+
+  <rect x="776" y="126" width="330" height="190" rx="8" fill="#FFFFFF" stroke="#00A878" stroke-dasharray="5 3"/>
+  <text x="792" y="148" font-size="13" font-weight="600" fill="#0D1F2D">validateGapResponse</text>
+  <text x="792" y="170" font-size="11" font-weight="700" fill="#E24B4A">THROWS — never fills defaults</text>
+  <line x1="792" y1="186" x2="1090" y2="186" stroke="#E2E6E3"/>
+  <text x="792" y="205" font-size="10.5" fill="#5B6B73">severity ∉ high|medium|low → REJECTED</text>
+  <text x="792" y="226" font-size="10.5" fill="#5B6B73">the old or-default to "medium" caught a MISSING</text>
+  <text x="792" y="242" font-size="10.5" fill="#5B6B73">severity but never a WRONG one, so</text>
+  <text x="792" y="258" font-size="10.5" font-weight="700" fill="#E24B4A">"critical" reached the CLIENT REPORT</text>
+  <text x="792" y="274" font-size="10.5" fill="#5B6B73">and crSevCounts() silently counted it</text>
+  <text x="792" y="290" font-size="10.5" fill="#5B6B73">as medium — a misreported number</text>
+  <text x="792" y="308" font-size="10.5" font-style="italic" fill="#00A878">all three or-defaults removed</text>
+
+  <rect x="776" y="332" width="330" height="112" rx="8" fill="#FFFFFF" stroke="#00A878" stroke-dasharray="5 3"/>
+  <text x="792" y="354" font-size="12" font-weight="700" fill="#0D1F2D">cost MAY be an empty string</text>
+  <text x="792" y="375" font-size="10.5" fill="#5B6B73">title and problem may NOT be</text>
+  <text x="792" y="396" font-size="10.5" fill="#5B6B73">probing tells the model to NAME an absence</text>
+  <text x="792" y="412" font-size="10.5" fill="#5B6B73">rather than invent a number, so rejecting ""</text>
+  <text x="792" y="430" font-size="10.5" font-weight="700" fill="#00A878">would punish an obedient response</text>
+
+  <rect x="776" y="460" width="330" height="136" rx="8" fill="#FFFFFF" stroke="#E24B4A" stroke-dasharray="4 3"/>
+  <text x="792" y="482" font-size="12" font-weight="700" fill="#E24B4A">NOT A PURE WIN — the accepted cost</text>
+  <text x="792" y="504" font-size="10.5" fill="#5B6B73">a model returning severity "critical" for a</text>
+  <text x="792" y="520" font-size="10.5" fill="#5B6B73">genuinely severe gap now FAILS validation</text>
+  <text x="792" y="541" font-size="10.5" fill="#5B6B73">the retry should recover it — but a stubborn</text>
+  <text x="792" y="557" font-size="10.5" fill="#5B6B73">model gives the operator an error instead</text>
+  <text x="792" y="573" font-size="10.5" fill="#5B6B73">of a gap list</text>
+  <text x="792" y="590" font-size="10.5" font-style="italic" fill="#E24B4A">right side of the trade, still a real risk</text>
+
+  <rect x="776" y="612" width="330" height="68" rx="8" fill="#FFFFFF" stroke="#E2E6E3"/>
+  <text x="792" y="634" font-size="12" font-weight="600" fill="#0D1F2D">Unexercised live</text>
+  <text x="792" y="655" font-size="10.5" fill="#5B6B73">cost:"" — this transcript was rich in figures</text>
+  <text x="792" y="671" font-size="10.5" fill="#5B6B73">(all 10 gaps came back with 121–209 chars)</text>
+
+  <!-- ============ LIVE EVIDENCE BAND ============ -->
+  <text x="40" y="716" font-size="11" font-weight="700" fill="#5B6B73" letter-spacing="1">LIVE-VERIFIED SEP 14 2026 — READ OUT OF THE SENT BYTES, NOT THE RETURN VALUE</text>
+
+  <rect x="40" y="730" width="620" height="96" rx="8" fill="#FFFFFF" stroke="#00A878" stroke-dasharray="5 3"/>
+  <text x="56" y="752" font-size="12" font-weight="600" fill="#0D1F2D">POST /api/ai — 18,105 bytes · max_tokens 4000</text>
+  <text x="56" y="773" font-size="10.5" fill="#5B6B73">### SKILL: audit-discovery                @ char 802</text>
+  <text x="56" y="789" font-size="10.5" fill="#5B6B73">### SKILL: operational-blueprint-probing  @ char 2310</text>
+  <text x="56" y="805" font-size="10.5" fill="#5B6B73">### SKILL: root-cause-laddering           @ char 4024</text>
+  <text x="56" y="821" font-size="10.5" font-style="italic" fill="#00A878">headers prove labels — so text unique to each BODY was probed too</text>
+
+  <rect x="680" y="730" width="620" height="96" rx="8" fill="#FFFFFF" stroke="#00A878" stroke-dasharray="5 3"/>
+  <text x="696" y="752" font-size="12" font-weight="600" fill="#0D1F2D">9 → 10 gaps on identical notes</text>
+  <text x="696" y="773" font-size="10.5" fill="#5B6B73">problem: pasted client quotes → "The root cause is that nothing</text>
+  <text x="696" y="789" font-size="10.5" fill="#5B6B73">triggers a response the moment a lead arrives"</text>
+  <text x="696" y="805" font-size="10.5" fill="#5B6B73">lead capture SPLIT from lead response · 1 genuinely new gap</text>
+  <text x="696" y="821" font-size="10.5" font-style="italic" fill="#00A878">a STRUCTURAL shift, and the symptom is kept as evidence</text>
+
+  <rect x="40" y="842" width="1260" height="42" rx="8" fill="#FFFFFF" stroke="#E24B4A" stroke-dasharray="4 3"/>
+  <text x="56" y="862" font-size="11" font-weight="700" fill="#E24B4A">NOT CLAIMED: that the gaps are BETTER.</text>
+  <text x="330" y="862" font-size="11" fill="#5B6B73">One run, and the old output was already good on this transcript. More buildable and more consistent — but whether it</text>
+  <text x="56" y="877" font-size="11" fill="#5B6B73">closes more work is unknowable from one run. A harness can prove the skills are IN the prompt; it cannot settle whether they helped. parseAiJson did NOT fire here — 0 of 1, vs 3 of 3 on the correction caller. Held loosely.</text>
+</svg>

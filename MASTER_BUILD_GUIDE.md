@@ -1214,3 +1214,114 @@ after one occurrence and deliberately not designed here.
   warning line has never actually been transmitted.
 - An applied multi-turn correction. `Apply` was never pressed, so `exchange` has never been
   written to `deployment.corrections[]` in production.
+
+## Order 14 — Audit skills at runtime + the gap contract (Sep 14 2026)
+
+Two halves of one commit (`9a63908`), because both touch `analyzeGaps` and splitting them
+would leave a reviewable state where the prompt is stricter than the validator, or the
+reverse.
+
+**C1 — the parse and shape fragility.** `analyzeGaps` did a bare `ai()` then a raw
+`JSON.parse` of the fence-stripped output with no shape validation, violating CLAUDE.md's
+own rule to "validate the response SHAPE, not just that it's valid JSON". It now routes
+through `aiJsonWithRetry` — a correction to the original plan of adding `parseAiJson` alone.
+The retry is what makes a strict validator SAFE: without it a single malformed field is a
+dead end instead of a recoverable hiccup.
+
+`validateGapResponse` THROWS rather than filling defaults, for a concrete reason rather than
+a principled one. The old `severity: g.severity || "medium"` caught a MISSING severity but
+never a WRONG one, so `"critical"` flowed into `S.gaps`, into `gaps`, and into the
+client-facing report — where `crSevCounts()` folds an unrecognised value into medium under a
+comment admitting "unknown severity folds into medium". Not a lost signal: a MISREPORTED
+severity count on a document a client reads. `cost` may be an EMPTY STRING while `title` and
+`problem` may not, because `operational-blueprint-probing` tells the model to name an absence
+rather than invent a number — rejecting `""` would punish the exact behaviour the skill asks
+for.
+
+**D2 — runtime skill loading.** `loadSkills` reads the three audit skills from the `skills`
+table (migration 016) on every run, so a skill can no longer inform whoever wrote the prompt
+once and then drift from it. It FAILS LOUDLY naming each missing skill and the fix, and
+throws BEFORE the AI call so a broken prompt costs nothing. The accepted trade: the Audit now
+depends on Supabase being reachable to ANALYZE, not only to save. An outage is visible; quiet
+degradation into a skill-less prompt would not be, and the gaps would look normal while being
+thin.
+
+### LIVE-VERIFIED Sep 14 2026 — the skills are in the SENT BYTES, not just the return value
+
+Run on `123 business`, the real 10,767-char Northshore Kitchen & Bath discovery transcript,
+against preview `9a63908` (`dpl_21yGCjUMYBsUMfWFvzzwfmTEWXye`, confirmed by reading the
+deployment id off the SERVED PAGE and matching it to the dashboard row — not by trusting the
+branch alias).
+
+`GET /rest/v1/skills?name=in.(audit-discovery,operational-blueprint-probing,root-cause-laddering)`
+returned 200, then `POST /api/ai` at **18,105 bytes** carrying `max_tokens: 4000`. Read out of
+the captured REQUEST BODY:
+
+| In the sent system prompt (6,326 chars) | |
+|---|---|
+| `### SKILL: audit-discovery` | char 802 |
+| `### SKILL: operational-blueprint-probing` | char 2310 |
+| `### SKILL: root-cause-laddering` | char 4024 |
+
+Headers alone would prove only that the loader emitted labels, so each skill was also probed
+by text unique to its BODY — audit-discovery's "invoicing was dropped on the first live
+test", operational-blueprint-probing's "What happens when the usual person is out",
+root-cause-laddering's "Stop at the buildable rung". All three present. The compensation
+rule, the never-invent-a-number rule and both schema changes were confirmed the same way.
+
+### Gap quality — a structural shift, NOT a claimed outcome improvement
+
+9 gaps before, 10 after, on identical notes. The honest finding is that the difference is
+real and lives in the `problem` field:
+
+- **Lead response.** BEFORE: *"If they text me, I see it… we kind of both assume the other
+  one's got it"* — a quote block. AFTER: *"…nobody acts. **The root cause is that nothing
+  triggers a response the moment a lead arrives**"*.
+- **Payment chasing.** BEFORE: *"I'm chasing people for those payments too, which is its own
+  headache."* AFTER: *"…**The root cause is the absence of an automated overdue-payment
+  sequence**"*.
+- **Reviews.** BEFORE: *"I forget to ask half the time… I just never ask."* AFTER: *"…**The
+  root cause is the absence of a triggered post-completion message**… without relying on him
+  to remember"*.
+
+Before, `problem` was the client's words pasted in. After, it is a diagnosis naming the
+buildable rung with his words retained as evidence — which is exactly what
+root-cause-laddering specifies, including keeping the symptom alongside the cause. Two
+structural changes followed: lead capture and lead response were SPLIT (the old prompt merged
+them), and one genuinely new gap appeared — "Customer data re-entered manually into three
+separate tools every job", from Dave's line about Sandra retyping the same name into the
+spreadsheet, the calendar and QuickBooks, which the old run did not itemize at all. Invoicing
+moved medium → high, matching Dave naming it the task he would remove first.
+
+**WHAT IS NOT CLAIMED.** That this is BETTER in outcome terms. It is more buildable and more
+consistent — every `problem` now names a cause an automation can act on — but whether it
+produces better proposals or closes more work is unknowable from one run. **The old output
+was already good on this transcript**; this is a shift in structure, not a rescue from
+failure. A harness can prove the skills are IN the prompt; it cannot settle whether they
+helped, and neither can a single live run.
+
+### Two findings recorded rather than resolved
+
+**`parseAiJson` did NOT fire — 0 of 1 on this caller.** No `parseAiJson:` console line, so
+the whole-string parse succeeded first time. That breaks the pattern: the CORRECTION caller
+has taken the recovery path 3 of 3. Held loosely at one sample, but it suggests the recovery
+path correlates with the correction contract's shape rather than being universal to this
+codebase. Worth re-checking on the next few audit runs before drawing anything from it.
+
+**The `cost: ""` path is UNEXERCISED LIVE.** All ten gaps came back with a populated `cost`
+(121–209 chars), because this transcript is rich in figures — Dave gives 8–10 hrs/week, 12–13
+combined, a $40,000 lost kitchen. The obedient-absence case is asserted in the harness only;
+it needs a sparse transcript to exercise for real.
+
+### Verification
+
+65 harness assertions against `loadSkills` / `validateGapResponse` / `analyzeGaps`, extracted
+from the shipped `index.html` by brace-matching so a rename breaks the harness rather than
+silently testing a stale copy. One assertion failed on the first run and was MINE, not the
+product's: a regex searching for `sha256` matched the COMMENT explaining why the hash is not
+verified. Fixed by asserting on executable lines only, plus a second assertion pinning that
+distinction so the fix cannot regress into a check that passes for the wrong reason. That was
+the third prose-read-as-code false positive in the same session.
+
+**Nothing was written.** `Save to client` was never pressed; the 10 gaps stayed in memory and
+the DB kept its original 9.
