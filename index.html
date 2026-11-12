@@ -138,7 +138,8 @@
   .bd-q .bd-req{color:var(--muted);font-size:11px;margin-left:6px;text-transform:uppercase;letter-spacing:.06em}
   .bd-opts{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:6px}
   .bd-opts label{display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer}
-  .bd-q input[type=text]{margin-top:6px;width:100%}
+  .bd-q input[type=text]{margin-top:6px;width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px;background:var(--surface)}
+  .bd-q input[type=text]:focus{outline:none;border-color:var(--volt)}
   .bd-missing{font-size:12px;color:var(--muted);margin-top:8px;line-height:1.5}
   .q:last-child{border-bottom:none}
   .tip{background:#EAF7F2;border:1px solid #B7E6D6;color:#0A5C45;font-size:12px;padding:9px 12px;border-radius:8px;margin-top:10px;line-height:1.5}
@@ -1275,7 +1276,13 @@ function bdPick(field, val){
   S.audit.bdMsg = "";
   renderAuditBody();
 }
-function bdText(field, val){ bdState()[field] = val; }
+function bdText(field, val){
+  const d = bdState();
+  d[field] = val;
+  // update the 'Still needed' line in place — a full re-render while typing would steal focus
+  const el = document.getElementById("bd-missing");
+  if(el){ const m = buildDecisionMissing(d); el.textContent = m.length ? "Still needed: " + m.join(" · ") : "All answered. Save it."; }
+}
 function bdRole(role, on){
   const d = bdState();
   d.platform_roles = on ? [...new Set([...d.platform_roles, role])] : d.platform_roles.filter(r => r !== role);
@@ -1319,7 +1326,7 @@ function renderBuildDecision(p){
         <textarea class="notes" placeholder="e.g. 'We're paying for GHL and Monday and nobody uses Monday — we want one place we own'" oninput="bdText('reason', this.value)">${esc(d.reason)}</textarea>
       </div>
       ${mode ? `<div class="tip"><b>Build mode: ${esc(BUILD_MODES[mode].label)}</b> (<code>${mode}</code>). ${esc(BUILD_MODES[mode].who)}</div>` : ""}
-      ${missing.length ? `<div class="bd-missing">Still needed: ${esc(missing.join(" · "))}</div>` : ""}
+      <div class="bd-missing" id="bd-missing">${missing.length ? `Still needed: ${esc(missing.join(" · "))}` : "All answered. Save it."}</div>
       <div class="btn-row">
         <button class="btn-primary" style="width:auto" onclick="saveBuildDecision()">Save build mode</button>
         <span class="msg" id="bd-msg">${esc(S.audit.bdMsg || (saved ? `Saved: ${BUILD_MODES[saved.build_mode].label}` : "Not saved yet"))}</span>
