@@ -1231,7 +1231,7 @@ const BUILD_MODES = {
 const BD_PLATFORM_ROLES = ["Website hosting", "Forms", "Email marketing", "SMS marketing", "Booking", "Payments"];
 
 function freshBuildDecision(){
-  return { keep_crm:null, crm_name:"", native_enough:null, platform_for_marketing:null, platform_name:"", platform_roles:[], reason:"", build_mode:null, decided_at:null };
+  return { keep_crm:null, starting_fresh:false, crm_name:"", native_enough:null, platform_for_marketing:null, platform_name:"", platform_roles:[], reason:"", build_mode:null, decided_at:null };
 }
 function hydrateBuildDecision(raw){
   const d = freshBuildDecision();
@@ -1276,6 +1276,16 @@ function bdPick(field, val){
   S.audit.bdMsg = "";
   renderAuditBody();
 }
+// Q1 has three answers: keep their CRM / want off it / nothing yet (starting from scratch).
+// "Nothing yet" is keep_crm:false + starting_fresh:true, so it routes to Q3 like "want off it".
+function bdQ1(choice){
+  const d = bdState();
+  d.keep_crm = choice === "keep";
+  d.starting_fresh = choice === "fresh";
+  d.native_enough = null; d.platform_for_marketing = null;
+  S.audit.bdMsg = "";
+  renderAuditBody();
+}
 function bdText(field, val){
   const d = bdState();
   d[field] = val;
@@ -1307,7 +1317,11 @@ function renderBuildDecision(p){
       <div class="phase-t">${esc(p.title)}</div>
       <div class="bd-q">
         <b>Q1.</b> Are you running the business on a CRM you want to keep as your main system, like GoHighLevel, Monday or HubSpot? ${req}
-        ${bdYesNo("keep_crm", "Yes, keep it", "No, or they want off it")}
+        <div class="bd-opts">
+          <label><input type="radio" name="bd-q1" ${d.keep_crm===true?"checked":""} onchange="bdQ1('keep')"> Yes, keep it</label>
+          <label><input type="radio" name="bd-q1" ${d.keep_crm===false&&!d.starting_fresh?"checked":""} onchange="bdQ1('off')"> No, or they want off it</label>
+          <label><input type="radio" name="bd-q1" ${d.keep_crm===false&&d.starting_fresh?"checked":""} onchange="bdQ1('fresh')"> Nothing yet, starting from scratch</label>
+        </div>
         ${d.keep_crm===true ? `<input type="text" placeholder="Which CRM? e.g. GoHighLevel, Monday, HubSpot" value="${escAttr(d.crm_name)}" oninput="bdText('crm_name', this.value)">` : ""}
       </div>
       ${d.keep_crm===true ? `<div class="bd-q">
@@ -1341,7 +1355,7 @@ async function saveBuildDecision(){
   if(missing.length){ S.audit.bdMsg = "Still needed: " + missing.join(" · "); renderAuditBody(); return; }
   const decision = { ...d, build_mode: deriveBuildMode(d), decided_at: new Date().toISOString() };
   // drop answers from the branch not taken, so a stale Q2/Q3 can never be read later
-  if(decision.keep_crm){ decision.platform_for_marketing = null; decision.platform_name = ""; decision.platform_roles = []; }
+  if(decision.keep_crm){ decision.starting_fresh = false; decision.platform_for_marketing = null; decision.platform_name = ""; decision.platform_roles = []; }
   else{ decision.native_enough = null; decision.crm_name = ""; if(!decision.platform_for_marketing){ decision.platform_name = ""; decision.platform_roles = []; } }
   const cid = S.activeClientId;
   const stack = { ...(S.activeClient.current_stack || {}), build_decision: decision };
@@ -1572,8 +1586,9 @@ function summarizeStack(stack){
   const bd = stack.build_decision;
   if(bd && bd.build_mode){
     const sor = bd.keep_crm ? `${bd.crm_name || "their CRM"} (client's CRM)` : "our dashboard";
+    const fresh = bd.starting_fresh ? "; starting from scratch, no existing systems" : "";
     const plat = bd.platform_for_marketing ? `; ${bd.platform_name}: ${(bd.platform_roles || []).join(", ")}` : "";
-    parts.push(`build mode: ${bd.build_mode} (system of record: ${sor}${plat})`);
+    parts.push(`build mode: ${bd.build_mode} (system of record: ${sor}${plat}${fresh})`);
   }
   return parts.join("; ");
 }
