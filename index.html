@@ -1229,6 +1229,14 @@ const BUILD_MODES = {
   custom:             { label:"Fully custom", who:"Our dashboard only. No outside platform." },
 };
 const BD_PLATFORM_ROLES = ["Website hosting", "Forms", "Email marketing", "SMS marketing", "Booking", "Payments"];
+// Brand source (Nov 13 2026). Stored separately as current_stack.brand_source; the dev team's designer reads it.
+const BRAND_SOURCES = {
+  files:       { label: "They have brand files (logo, colours, guide)", who: "Upload them below. The designer builds the brand contract from them." },
+  website:     { label: "Only a website", who: "The designer drafts the brand from the site, and you confirm the palette before any screens are designed." },
+  brand_agent: { label: "Nothing yet, or they want a new look", who: "Marketing's Brand agent builds a brand kit first (brand questionnaire, logo, colours, type)." },
+};
+const BRAND_FILE_TYPES = { brand_logo: "Logo", brand_guide: "Brand guide", brand_palette: "Colours", brand_other: "Other" };
+const CLIENT_FILES_BUCKET = "client-files";
 
 function freshBuildDecision(){
   return { keep_crm:null, starting_fresh:false, crm_name:"", native_enough:null, platform_for_marketing:null, platform_name:"", platform_roles:[], reason:"", build_mode:null, decided_at:null };
@@ -1239,9 +1247,20 @@ function hydrateBuildDecision(raw){
   return { ...d, ...raw, platform_roles: Array.isArray(raw.platform_roles) ? raw.platform_roles.slice() : [] };
 }
 function bdState(){
-  if(!S.audit.buildDecision) S.audit.buildDecision = hydrateBuildDecision(S.activeClient.current_stack && S.activeClient.current_stack.build_decision);
+  if(!S.audit.buildDecision){
+    const cs = S.activeClient.current_stack || {};
+    const d = hydrateBuildDecision(cs.build_decision);
+    const b = cs.brand_source || {};
+    d.brand_kind = BRAND_SOURCES[b.kind] ? b.kind : null;
+    d.brand_website = b.website || S.activeClient.website || "";
+    d.brand_notes = b.notes || "";
+    S.audit.buildDecision = d;
+  }
+  if(!S.audit.brandFilesLoaded){ S.audit.brandFilesLoaded = true; loadBrandFiles(); }
   return S.audit.buildDecision;
 }
+// a screens-free build (inside their CRM) doesn't need a brand for the dev team
+function needsBrand(d){ const m = deriveBuildMode(d); return !!m && m !== "in_platform"; }
 function deriveBuildMode(d){
   if(d.keep_crm === true) return d.native_enough === true ? "in_platform" : d.native_enough === false ? "platform_extension" : null;
   if(d.keep_crm === false) return d.platform_for_marketing === true ? "hybrid" : d.platform_for_marketing === false ? "custom" : null;
@@ -1262,6 +1281,10 @@ function buildDecisionMissing(d){
     }
   }
   if(!d.reason.trim()) m.push("why, in their words");
+  if(needsBrand(d)){
+    if(!d.brand_kind) m.push("brand source");
+    if(d.brand_kind === "website" && !/^https?:\/\/\S+\.\S+/i.test((d.brand_website || "").trim())) m.push("their website address (https://…)");
+  }
   return m;
 }
 function savedBuildMode(){
@@ -1340,6 +1363,7 @@ function renderBuildDecision(p){
         <textarea class="notes" placeholder="e.g. 'We're paying for GHL and Monday and nobody uses Monday — we want one place we own'" oninput="bdText('reason', this.value)">${esc(d.reason)}</textarea>
       </div>
       ${mode ? `<div class="tip"><b>Build mode: ${esc(BUILD_MODES[mode].label)}</b> (<code>${mode}</code>). ${esc(BUILD_MODES[mode].who)}</div>` : ""}
+      ${needsBrand(d) ? renderBrandSource(d) : ""}
       <div class="bd-missing" id="bd-missing">${missing.length ? `Still needed: ${esc(missing.join(" · "))}` : "All answered. Save it."}</div>
       <div class="btn-row">
         <button class="btn-primary" style="width:auto" onclick="saveBuildDecision()">Save build mode</button>
@@ -1349,23 +1373,86 @@ function renderBuildDecision(p){
     </div>`;
 }
 
+function renderBrandSource(d){
+  const files = S.audit.brandFiles || [];
+  return `
+      <div class="bd-q">
+        <b>Brand.</b> Where does their brand come from? <span class="bd-req">required</span>
+        <div class="bd-opts" style="flex-direction:column;gap:6px">
+          ${Object.entries(BRAND_SOURCES).map(([k, v]) => `<label><input type="radio" name="bd-brand" ${d.brand_kind===k?"checked":""} onchange="bdBrand('${k}')"> ${esc(v.label)}</label>`).join("")}
+        </div>
+        ${d.brand_kind ? `<div class="bd-missing">${esc(BRAND_SOURCES[d.brand_kind].who)}</div>` : ""}
+        ${d.brand_kind === "website" ? `<input type="text" placeholder="https://their-site.ca" value="${escAttr(d.brand_website)}" oninput="bdText('brand_website', this.value)">` : ""}
+        ${d.brand_kind === "files" ? `
+          <div class="bd-opts">
+            <select id="bf-type">${Object.entries(BRAND_FILE_TYPES).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("")}</select>
+            <input type="file" id="bf-input" multiple accept=".png,.jpg,.jpeg,.svg,.webp,.pdf" onchange="uploadBrandFiles(this.files)">
+          </div>
+          <div class="bd-missing" id="bf-msg">${esc(S.audit.brandMsg || (files.length ? "" : "No files yet. You can save now and upload when the client sends them."))}</div>
+          ${files.length ? `<div class="bd-opts" style="flex-direction:column;gap:4px">${files.map(f => `<span>${esc(BRAND_FILE_TYPES[f.file_type] || f.file_type)} · ${esc(f.file_name)} <button class="gap-del" title="Remove" onclick="deleteBrandFile('${f.id}')">×</button></span>`).join("")}</div>` : ""}` : ""}
+        <textarea class="notes" placeholder="Anything about their look in their words, e.g. 'navy and white like the van, nothing flashy'" oninput="bdText('brand_notes', this.value)">${esc(d.brand_notes || "")}</textarea>
+      </div>`;
+}
+function bdBrand(kind){ const d = bdState(); d.brand_kind = kind; S.audit.bdMsg = ""; S.audit.brandMsg = ""; renderAuditBody(); }
+
+async function loadBrandFiles(){
+  const cid = S.activeClientId;
+  const { data, error } = await sb.from("client_files").select("id,file_name,storage_path,file_type,created_at").eq("client_id", cid).order("created_at");
+  if(cid !== S.activeClientId) return;   // switched client while loading
+  S.audit.brandFiles = error ? [] : (data || []).filter(f => /^brand/.test(f.file_type || ""));
+  if(S.module === "audit" && S.audit.tab === "guide") renderAuditBody();
+}
+async function uploadBrandFiles(list){
+  const cid = S.activeClientId, op = S.user.id;
+  const type = (document.getElementById("bf-type") || {}).value || "brand_other";
+  const files = [...(list || [])];
+  for(const f of files){
+    if(f.size > 20 * 1024 * 1024){ S.audit.brandMsg = `${f.name} is over 20 MB.`; continue; }
+    const safe = f.name.replace(/[^\w.\- ]+/g, "_").slice(0, 120);
+    const path = `${op}/${cid}/${crypto.randomUUID()}-${safe}`;
+    const { error: upErr } = await sb.storage.from(CLIENT_FILES_BUCKET).upload(path, f, { contentType: f.type || undefined, upsert: false });
+    if(upErr){ S.audit.brandMsg = `Upload failed: ${upErr.message}`; continue; }
+    const { error: rowErr } = await sb.from("client_files").insert({ operator_id: op, client_id: cid, file_name: f.name, storage_path: path, file_type: type });
+    if(rowErr){ await sb.storage.from(CLIENT_FILES_BUCKET).remove([path]); S.audit.brandMsg = `Saved the file but not its record: ${rowErr.message}`; continue; }
+    S.audit.brandMsg = `Uploaded ${f.name}`;
+  }
+  await loadBrandFiles();
+  renderAuditBody();
+}
+async function deleteBrandFile(id){
+  const f = (S.audit.brandFiles || []).find(x => x.id === id);
+  if(!f) return;
+  const { error } = await sb.from("client_files").delete().eq("id", id);
+  if(error){ S.audit.brandMsg = `Couldn't remove it: ${error.message}`; renderAuditBody(); return; }
+  await sb.storage.from(CLIENT_FILES_BUCKET).remove([f.storage_path]);
+  S.audit.brandMsg = `Removed ${f.file_name}`;
+  await loadBrandFiles();
+  renderAuditBody();
+}
+
 async function saveBuildDecision(){
   const d = bdState();
   const missing = buildDecisionMissing(d);
   if(missing.length){ S.audit.bdMsg = "Still needed: " + missing.join(" · "); renderAuditBody(); return; }
-  const decision = { ...d, build_mode: deriveBuildMode(d), decided_at: new Date().toISOString() };
+  const now = new Date().toISOString();
+  const { brand_kind, brand_website, brand_notes, ...rest } = d;
+  const decision = { ...rest, build_mode: deriveBuildMode(d), decided_at: now };
+  const brandSource = needsBrand(d)
+    ? { kind: brand_kind, website: brand_kind === "website" ? brand_website.trim() : (brand_website || "").trim(), notes: (brand_notes || "").trim(), decided_at: now }
+    : null;
   // drop answers from the branch not taken, so a stale Q2/Q3 can never be read later
   if(decision.keep_crm){ decision.starting_fresh = false; decision.platform_for_marketing = null; decision.platform_name = ""; decision.platform_roles = []; }
   else{ decision.native_enough = null; decision.crm_name = ""; if(!decision.platform_for_marketing){ decision.platform_name = ""; decision.platform_roles = []; } }
   const cid = S.activeClientId;
   const stack = { ...(S.activeClient.current_stack || {}), build_decision: decision };
+  if(brandSource) stack.brand_source = brandSource; else delete stack.brand_source;
   const { error } = await sb.from("clients").update({ current_stack: stack }).eq("id", cid);
   if(error){ S.audit.bdMsg = "Save failed: " + error.message; renderAuditBody(); return; }
   S.activeClient.current_stack = stack;
   const idx = S.clients.findIndex(c => c.id === cid);
   if(idx > -1) S.clients[idx].current_stack = stack;
-  S.audit.buildDecision = hydrateBuildDecision(decision);
-  S.audit.bdMsg = `Saved ✓ ${BUILD_MODES[decision.build_mode].label}`;
+  S.audit.buildDecision = null;   // re-hydrate from what was saved (build + brand)
+  S.audit.bdMsg = `Saved ✓ ${BUILD_MODES[decision.build_mode].label}${brandSource ? ` · brand: ${BRAND_SOURCES[brandSource.kind].label.toLowerCase()}` : ""}`;
   renderAuditBody();
 }
 
@@ -1590,6 +1677,8 @@ function summarizeStack(stack){
     const plat = bd.platform_for_marketing ? `; ${bd.platform_name}: ${(bd.platform_roles || []).join(", ")}` : "";
     parts.push(`build mode: ${bd.build_mode} (system of record: ${sor}${plat}${fresh})`);
   }
+  const bs = stack.brand_source;
+  if(bs && bs.kind) parts.push(`brand source: ${bs.kind}${bs.website ? ` (${bs.website})` : ""}`);
   return parts.join("; ");
 }
 
@@ -1705,8 +1794,9 @@ async function saveStack(){
   const cid = S.activeClientId;
   const stack = { ...(S.audit.stackForm || emptyStack()) };
   // the Stack form doesn't own build_decision (the Guide's Build mode card does) — carry it over
-  const bd = S.activeClient.current_stack && S.activeClient.current_stack.build_decision;
-  if(bd) stack.build_decision = bd;
+  const cs = S.activeClient.current_stack || {};
+  if(cs.build_decision) stack.build_decision = cs.build_decision;
+  if(cs.brand_source) stack.brand_source = cs.brand_source;
   const { error } = await sb.from("clients").update({ current_stack: stack }).eq("id", cid);
   if(error){ setAuditMsg("Stack save failed: " + error.message); return; }
   S.activeClient.current_stack = stack;
