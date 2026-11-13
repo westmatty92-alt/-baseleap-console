@@ -134,6 +134,13 @@
   .phase-t{font-size:15px;font-weight:600;margin-bottom:10px}
   .script{background:var(--midnight);color:#E2E8F0;border-radius:10px;padding:12px 14px;font-size:13px;font-style:italic;line-height:1.6;margin-bottom:10px}
   .q{font-size:13px;padding:7px 0;border-bottom:1px solid var(--line);line-height:1.5}
+  .bd-q{font-size:13px;padding:9px 0;border-bottom:1px solid var(--line);line-height:1.5}
+  .bd-q .bd-req{color:var(--muted);font-size:11px;margin-left:6px;text-transform:uppercase;letter-spacing:.06em}
+  .bd-opts{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:6px}
+  .bd-opts label{display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer}
+  .bd-q input[type=text]{margin-top:6px;width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px;background:var(--surface)}
+  .bd-q input[type=text]:focus{outline:none;border-color:var(--volt)}
+  .bd-missing{font-size:12px;color:var(--muted);margin-top:8px;line-height:1.5}
   .q:last-child{border-bottom:none}
   .tip{background:#EAF7F2;border:1px solid #B7E6D6;color:#0A5C45;font-size:12px;padding:9px 12px;border-radius:8px;margin-top:10px;line-height:1.5}
   .notes{width:100%;min-height:64px;font-size:13px;padding:9px 11px;border:1px solid var(--line);border-radius:8px;resize:vertical;font-family:inherit;line-height:1.5;margin-top:10px}
@@ -1153,6 +1160,8 @@ const GUIDE = [
       "What is the cost of leaving things as they are — time, missed revenue, stress?",
       "If we fixed the three biggest gaps today, what would that mean for the business?"
     ]},
+  { id:"mode", label:"Build mode · mandatory", title:"What kind of build is this?", decision:true,
+    tip:"Ask all of these before you close the call. The answers decide who builds: CRM Automation inside their CRM, or our team building a dashboard. Gaps can't be saved to the client until this is saved." },
   { id:"debrief", label:"Debrief", title:"Reflect it back",
     tip:"Reflect back before proposing anything. When they say \"yes, exactly\" — trust is built.",
     script:[
@@ -1194,7 +1203,7 @@ function renderAuditBody(){
 }
 
 function renderGuide(){
-  return GUIDE.map(p => `
+  return GUIDE.map(p => p.decision ? renderBuildDecision(p) : `
     <div class="card">
       <div class="phase-h">${esc(p.label)}</div>
       <div class="phase-t">${esc(p.title)}</div>
@@ -1203,6 +1212,248 @@ function renderGuide(){
       <div class="tip">${esc(p.tip)}</div>
       <textarea class="notes" placeholder="Notes — what did they say? (in their words)" onchange="S.audit.guideNotes['${p.id}']=this.value">${esc(S.audit.guideNotes[p.id]||"")}</textarea>
     </div>`).join("");
+}
+
+/* ------------------------------------------------------------
+   BUILD MODE — mandatory onboarding decision (Nov 12 2026).
+   Stored on clients.current_stack.build_decision (no migration). Read by:
+   summarizeStack (→ Audit, Automation Agent, build plan prompts) and the dev-team
+   ledger's `client-brief`. Mirrors baseleap-devteam build-specs/build-modes.md:
+     keep their CRM? ─ yes → its own features enough? → in_platform | platform_extension
+                     └ no  → a platform still runs website/forms/email? → hybrid | custom
+------------------------------------------------------------ */
+const BUILD_MODES = {
+  in_platform:        { label:"Build inside their CRM", who:"Their CRM stays the main system and CRM Automation builds inside it. No custom dashboard." },
+  platform_extension: { label:"Their CRM + custom modules", who:"Their CRM stays the main system. We build the screens it can't do, connected through its API." },
+  hybrid:             { label:"Our dashboard + platform for marketing", who:"Our dashboard holds the customer records. The platform runs the website, forms and email/SMS marketing." },
+  custom:             { label:"Fully custom", who:"Our dashboard only. No outside platform." },
+};
+const BD_PLATFORM_ROLES = ["Website hosting", "Forms", "Email marketing", "SMS marketing", "Booking", "Payments"];
+// Brand source (Nov 13 2026). Stored separately as current_stack.brand_source; the dev team's designer reads it.
+const BRAND_SOURCES = {
+  files:       { label: "They have brand files (logo, colours, guide)", who: "Upload them below. The designer builds the brand contract from them." },
+  website:     { label: "Only a website", who: "The designer drafts the brand from the site, and you confirm the palette before any screens are designed." },
+  brand_agent: { label: "Nothing yet, or they want a new look", who: "Marketing's Brand agent builds a brand kit first (brand questionnaire, logo, colours, type)." },
+};
+const BRAND_FILE_TYPES = { brand_logo: "Logo", brand_guide: "Brand guide", brand_palette: "Colours", brand_other: "Other" };
+const CLIENT_FILES_BUCKET = "client-files";
+
+function freshBuildDecision(){
+  return { keep_crm:null, starting_fresh:false, crm_name:"", native_enough:null, platform_for_marketing:null, platform_name:"", platform_roles:[], reason:"", build_mode:null, decided_at:null };
+}
+function hydrateBuildDecision(raw){
+  const d = freshBuildDecision();
+  if(!raw || typeof raw !== "object") return d;
+  return { ...d, ...raw, platform_roles: Array.isArray(raw.platform_roles) ? raw.platform_roles.slice() : [] };
+}
+function bdState(){
+  if(!S.audit.buildDecision){
+    const cs = S.activeClient.current_stack || {};
+    const d = hydrateBuildDecision(cs.build_decision);
+    const b = cs.brand_source || {};
+    d.brand_kind = BRAND_SOURCES[b.kind] ? b.kind : null;
+    d.brand_website = b.website || S.activeClient.website || "";
+    d.brand_notes = b.notes || "";
+    S.audit.buildDecision = d;
+  }
+  if(!S.audit.brandFilesLoaded){ S.audit.brandFilesLoaded = true; loadBrandFiles(); }
+  return S.audit.buildDecision;
+}
+// a screens-free build (inside their CRM) doesn't need a brand for the dev team
+function needsBrand(d){ const m = deriveBuildMode(d); return !!m && m !== "in_platform"; }
+function deriveBuildMode(d){
+  if(d.keep_crm === true) return d.native_enough === true ? "in_platform" : d.native_enough === false ? "platform_extension" : null;
+  if(d.keep_crm === false) return d.platform_for_marketing === true ? "hybrid" : d.platform_for_marketing === false ? "custom" : null;
+  return null;
+}
+function buildDecisionMissing(d){
+  const m = [];
+  if(d.keep_crm === null) m.push("Q1");
+  if(d.keep_crm === true){
+    if(!d.crm_name.trim()) m.push("which CRM");
+    if(d.native_enough === null) m.push("Q2");
+  }
+  if(d.keep_crm === false){
+    if(d.platform_for_marketing === null) m.push("Q3");
+    if(d.platform_for_marketing === true){
+      if(!d.platform_name.trim()) m.push("which platform");
+      if(!d.platform_roles.length) m.push("what the platform does");
+    }
+  }
+  if(!d.reason.trim()) m.push("why, in their words");
+  if(needsBrand(d)){
+    if(!d.brand_kind) m.push("brand source");
+    if(d.brand_kind === "website" && !/^https?:\/\/\S+\.\S+/i.test((d.brand_website || "").trim())) m.push("their website address (https://…)");
+  }
+  return m;
+}
+function savedBuildMode(){
+  const bd = S.activeClient && S.activeClient.current_stack && S.activeClient.current_stack.build_decision;
+  return bd && BUILD_MODES[bd.build_mode] ? bd : null;
+}
+function bdPick(field, val){
+  const d = bdState();
+  d[field] = val;
+  if(field === "keep_crm"){ d.native_enough = null; d.platform_for_marketing = null; }
+  if(field === "platform_for_marketing" && val === true && !d.platform_name.trim()) d.platform_name = "GoHighLevel";
+  S.audit.bdMsg = "";
+  renderAuditBody();
+}
+// Q1 has three answers: keep their CRM / want off it / nothing yet (starting from scratch).
+// "Nothing yet" is keep_crm:false + starting_fresh:true, so it routes to Q3 like "want off it".
+function bdQ1(choice){
+  const d = bdState();
+  d.keep_crm = choice === "keep";
+  d.starting_fresh = choice === "fresh";
+  d.native_enough = null; d.platform_for_marketing = null;
+  S.audit.bdMsg = "";
+  renderAuditBody();
+}
+function bdText(field, val){
+  const d = bdState();
+  d[field] = val;
+  // update the 'Still needed' line in place — a full re-render while typing would steal focus
+  const el = document.getElementById("bd-missing");
+  if(el){ const m = buildDecisionMissing(d); el.textContent = m.length ? "Still needed: " + m.join(" · ") : "All answered. Save it."; }
+}
+function bdRole(role, on){
+  const d = bdState();
+  d.platform_roles = on ? [...new Set([...d.platform_roles, role])] : d.platform_roles.filter(r => r !== role);
+}
+function bdYesNo(field, yesLbl, noLbl){
+  const v = bdState()[field];
+  return `<div class="bd-opts">
+    <label><input type="radio" name="bd-${field}" ${v===true?"checked":""} onchange="bdPick('${field}', true)"> ${esc(yesLbl)}</label>
+    <label><input type="radio" name="bd-${field}" ${v===false?"checked":""} onchange="bdPick('${field}', false)"> ${esc(noLbl)}</label>
+  </div>`;
+}
+
+function renderBuildDecision(p){
+  const d = bdState();
+  const mode = deriveBuildMode(d);
+  const missing = buildDecisionMissing(d);
+  const saved = savedBuildMode();
+  const req = `<span class="bd-req">required</span>`;
+  return `
+    <div class="card">
+      <div class="phase-h">${esc(p.label)}</div>
+      <div class="phase-t">${esc(p.title)}</div>
+      <div class="bd-q">
+        <b>Q1.</b> Are you running the business on a CRM you want to keep as your main system, like GoHighLevel, Monday or HubSpot? ${req}
+        <div class="bd-opts">
+          <label><input type="radio" name="bd-q1" ${d.keep_crm===true?"checked":""} onchange="bdQ1('keep')"> Yes, keep it</label>
+          <label><input type="radio" name="bd-q1" ${d.keep_crm===false&&!d.starting_fresh?"checked":""} onchange="bdQ1('off')"> No, or they want off it</label>
+          <label><input type="radio" name="bd-q1" ${d.keep_crm===false&&d.starting_fresh?"checked":""} onchange="bdQ1('fresh')"> Nothing yet, starting from scratch</label>
+        </div>
+        ${d.keep_crm===true ? `<input type="text" placeholder="Which CRM? e.g. GoHighLevel, Monday, HubSpot" value="${escAttr(d.crm_name)}" oninput="bdText('crm_name', this.value)">` : ""}
+      </div>
+      ${d.keep_crm===true ? `<div class="bd-q">
+        <b>Q2.</b> Can that CRM's own features (pipelines, custom fields, automations, forms, dashboards) do what you need, or do you need screens or logic it can't do? ${req}
+        ${bdYesNo("native_enough", "Its features are enough", "Needs things it can't do")}
+      </div>` : ""}
+      ${d.keep_crm===false ? `<div class="bd-q">
+        <b>Q3.</b> Will a platform still run your website, forms or email/SMS marketing, with our dashboard as the main system? ${req}
+        ${bdYesNo("platform_for_marketing", "Yes, a platform runs those", "No, everything in our dashboard")}
+        ${d.platform_for_marketing===true ? `
+          <input type="text" placeholder="Which platform?" value="${escAttr(d.platform_name)}" oninput="bdText('platform_name', this.value)">
+          <div class="bd-opts">${BD_PLATFORM_ROLES.map(r => `<label><input type="checkbox" ${d.platform_roles.includes(r)?"checked":""} onchange="bdRole('${escAttr(r)}', this.checked);renderAuditBody()"> ${esc(r)}</label>`).join("")}</div>` : ""}
+      </div>` : ""}
+      <div class="bd-q">
+        <b>Why?</b> Budget, data ownership, what their platform can't do, compliance (e.g. no SMS for cannabis), who uses it. Use their words. ${req}
+        <textarea class="notes" placeholder="e.g. 'We're paying for GHL and Monday and nobody uses Monday — we want one place we own'" oninput="bdText('reason', this.value)">${esc(d.reason)}</textarea>
+      </div>
+      ${mode ? `<div class="tip"><b>Build mode: ${esc(BUILD_MODES[mode].label)}</b> (<code>${mode}</code>). ${esc(BUILD_MODES[mode].who)}</div>` : ""}
+      ${needsBrand(d) ? renderBrandSource(d) : ""}
+      <div class="bd-missing" id="bd-missing">${missing.length ? `Still needed: ${esc(missing.join(" · "))}` : "All answered. Save it."}</div>
+      <div class="btn-row">
+        <button class="btn-primary" style="width:auto" onclick="saveBuildDecision()">Save build mode</button>
+        <span class="msg" id="bd-msg">${esc(S.audit.bdMsg || (saved ? `Saved: ${BUILD_MODES[saved.build_mode].label}` : "Not saved yet"))}</span>
+      </div>
+      <div class="tip">${esc(p.tip)}</div>
+    </div>`;
+}
+
+function renderBrandSource(d){
+  const files = S.audit.brandFiles || [];
+  return `
+      <div class="bd-q">
+        <b>Brand.</b> Where does their brand come from? <span class="bd-req">required</span>
+        <div class="bd-opts" style="flex-direction:column;gap:6px">
+          ${Object.entries(BRAND_SOURCES).map(([k, v]) => `<label><input type="radio" name="bd-brand" ${d.brand_kind===k?"checked":""} onchange="bdBrand('${k}')"> ${esc(v.label)}</label>`).join("")}
+        </div>
+        ${d.brand_kind ? `<div class="bd-missing">${esc(BRAND_SOURCES[d.brand_kind].who)}</div>` : ""}
+        ${d.brand_kind === "website" ? `<input type="text" placeholder="https://their-site.ca" value="${escAttr(d.brand_website)}" oninput="bdText('brand_website', this.value)">` : ""}
+        ${d.brand_kind === "files" ? `
+          <div class="bd-opts">
+            <select id="bf-type">${Object.entries(BRAND_FILE_TYPES).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("")}</select>
+            <input type="file" id="bf-input" multiple accept=".png,.jpg,.jpeg,.svg,.webp,.pdf" onchange="uploadBrandFiles(this.files)">
+          </div>
+          <div class="bd-missing" id="bf-msg">${esc(S.audit.brandMsg || (files.length ? "" : "No files yet. You can save now and upload when the client sends them."))}</div>
+          ${files.length ? `<div class="bd-opts" style="flex-direction:column;gap:4px">${files.map(f => `<span>${esc(BRAND_FILE_TYPES[f.file_type] || f.file_type)} · ${esc(f.file_name)} <button class="gap-del" title="Remove" onclick="deleteBrandFile('${f.id}')">×</button></span>`).join("")}</div>` : ""}` : ""}
+        <textarea class="notes" placeholder="Anything about their look in their words, e.g. 'navy and white like the van, nothing flashy'" oninput="bdText('brand_notes', this.value)">${esc(d.brand_notes || "")}</textarea>
+      </div>`;
+}
+function bdBrand(kind){ const d = bdState(); d.brand_kind = kind; S.audit.bdMsg = ""; S.audit.brandMsg = ""; renderAuditBody(); }
+
+async function loadBrandFiles(){
+  const cid = S.activeClientId;
+  const { data, error } = await sb.from("client_files").select("id,file_name,storage_path,file_type,created_at").eq("client_id", cid).order("created_at");
+  if(cid !== S.activeClientId) return;   // switched client while loading
+  S.audit.brandFiles = error ? [] : (data || []).filter(f => /^brand/.test(f.file_type || ""));
+  if(S.module === "audit" && S.audit.tab === "guide") renderAuditBody();
+}
+async function uploadBrandFiles(list){
+  const cid = S.activeClientId, op = S.user.id;
+  const type = (document.getElementById("bf-type") || {}).value || "brand_other";
+  const files = [...(list || [])];
+  for(const f of files){
+    if(f.size > 20 * 1024 * 1024){ S.audit.brandMsg = `${f.name} is over 20 MB.`; continue; }
+    const safe = f.name.replace(/[^\w.\- ]+/g, "_").slice(0, 120);
+    const path = `${op}/${cid}/${crypto.randomUUID()}-${safe}`;
+    const { error: upErr } = await sb.storage.from(CLIENT_FILES_BUCKET).upload(path, f, { contentType: f.type || undefined, upsert: false });
+    if(upErr){ S.audit.brandMsg = `Upload failed: ${upErr.message}`; continue; }
+    const { error: rowErr } = await sb.from("client_files").insert({ operator_id: op, client_id: cid, file_name: f.name, storage_path: path, file_type: type });
+    if(rowErr){ await sb.storage.from(CLIENT_FILES_BUCKET).remove([path]); S.audit.brandMsg = `Saved the file but not its record: ${rowErr.message}`; continue; }
+    S.audit.brandMsg = `Uploaded ${f.name}`;
+  }
+  await loadBrandFiles();
+  renderAuditBody();
+}
+async function deleteBrandFile(id){
+  const f = (S.audit.brandFiles || []).find(x => x.id === id);
+  if(!f) return;
+  const { error } = await sb.from("client_files").delete().eq("id", id);
+  if(error){ S.audit.brandMsg = `Couldn't remove it: ${error.message}`; renderAuditBody(); return; }
+  await sb.storage.from(CLIENT_FILES_BUCKET).remove([f.storage_path]);
+  S.audit.brandMsg = `Removed ${f.file_name}`;
+  await loadBrandFiles();
+  renderAuditBody();
+}
+
+async function saveBuildDecision(){
+  const d = bdState();
+  const missing = buildDecisionMissing(d);
+  if(missing.length){ S.audit.bdMsg = "Still needed: " + missing.join(" · "); renderAuditBody(); return; }
+  const now = new Date().toISOString();
+  const { brand_kind, brand_website, brand_notes, ...rest } = d;
+  const decision = { ...rest, build_mode: deriveBuildMode(d), decided_at: now };
+  const brandSource = needsBrand(d)
+    ? { kind: brand_kind, website: brand_kind === "website" ? brand_website.trim() : (brand_website || "").trim(), notes: (brand_notes || "").trim(), decided_at: now }
+    : null;
+  // drop answers from the branch not taken, so a stale Q2/Q3 can never be read later
+  if(decision.keep_crm){ decision.starting_fresh = false; decision.platform_for_marketing = null; decision.platform_name = ""; decision.platform_roles = []; }
+  else{ decision.native_enough = null; decision.crm_name = ""; if(!decision.platform_for_marketing){ decision.platform_name = ""; decision.platform_roles = []; } }
+  const cid = S.activeClientId;
+  const stack = { ...(S.activeClient.current_stack || {}), build_decision: decision };
+  if(brandSource) stack.brand_source = brandSource; else delete stack.brand_source;
+  const { error } = await sb.from("clients").update({ current_stack: stack }).eq("id", cid);
+  if(error){ S.audit.bdMsg = "Save failed: " + error.message; renderAuditBody(); return; }
+  S.activeClient.current_stack = stack;
+  const idx = S.clients.findIndex(c => c.id === cid);
+  if(idx > -1) S.clients[idx].current_stack = stack;
+  S.audit.buildDecision = null;   // re-hydrate from what was saved (build + brand)
+  S.audit.bdMsg = `Saved ✓ ${BUILD_MODES[decision.build_mode].label}${brandSource ? ` · brand: ${BRAND_SOURCES[brandSource.kind].label.toLowerCase()}` : ""}`;
+  renderAuditBody();
 }
 
 function renderCapture(){
@@ -1344,6 +1595,7 @@ async function analyzeGaps(){
 
 async function saveAudit(){
   if(!S.gaps.length){ setAuditMsg("Analyze first — nothing to save."); return; }
+  if(!savedBuildMode()){ setAuditMsg("Answer and save the Build mode questions on the Guide tab first. They're mandatory."); return; }
   const op = S.user.id, cid = S.activeClientId;
   const sessionRow = { operator_id:op, client_id:cid, transcript:getAuditText(), audit_summary:S.audit.summary||null, status:"analyzed" };
   let sid = S.audit.sessionId;
@@ -1381,7 +1633,7 @@ async function loadAuditData(clientId){
 ============================================================ */
 const STACK_OPTIONS = {
   "website.platform": ["None","Wix","WordPress","Squarespace","Shopify","Webflow","Custom"],
-  "crm": ["None or spreadsheet","HubSpot"],
+  "crm": ["None or spreadsheet","GoHighLevel","HubSpot","Monday"],
   "booking": ["Manual","Google Calendar","Calendly","Acuity"],
   "invoicing": ["Manual","QuickBooks","Stripe","Square"],
   "comms": ["None","Email only","SMS","Mailchimp"],
@@ -1418,6 +1670,15 @@ function summarizeStack(stack){
   if(stack.automations && (stack.automations.tool || stack.automations.description)) parts.push(`automations: ${[stack.automations.tool, stack.automations.description].filter(Boolean).join(" — ")}`);
   if(stack.monthly_tool_spend != null) parts.push(`monthly tool spend: $${stack.monthly_tool_spend} CAD`);
   if(stack.notes) parts.push(`notes: ${stack.notes}`);
+  const bd = stack.build_decision;
+  if(bd && bd.build_mode){
+    const sor = bd.keep_crm ? `${bd.crm_name || "their CRM"} (client's CRM)` : "our dashboard";
+    const fresh = bd.starting_fresh ? "; starting from scratch, no existing systems" : "";
+    const plat = bd.platform_for_marketing ? `; ${bd.platform_name}: ${(bd.platform_roles || []).join(", ")}` : "";
+    parts.push(`build mode: ${bd.build_mode} (system of record: ${sor}${plat}${fresh})`);
+  }
+  const bs = stack.brand_source;
+  if(bs && bs.kind) parts.push(`brand source: ${bs.kind}${bs.website ? ` (${bs.website})` : ""}`);
   return parts.join("; ");
 }
 
@@ -1531,7 +1792,11 @@ async function extractStack(){
 
 async function saveStack(){
   const cid = S.activeClientId;
-  const stack = S.audit.stackForm || emptyStack();
+  const stack = { ...(S.audit.stackForm || emptyStack()) };
+  // the Stack form doesn't own build_decision (the Guide's Build mode card does) — carry it over
+  const cs = S.activeClient.current_stack || {};
+  if(cs.build_decision) stack.build_decision = cs.build_decision;
+  if(cs.brand_source) stack.brand_source = cs.brand_source;
   const { error } = await sb.from("clients").update({ current_stack: stack }).eq("id", cid);
   if(error){ setAuditMsg("Stack save failed: " + error.message); return; }
   S.activeClient.current_stack = stack;
